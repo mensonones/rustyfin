@@ -35,8 +35,8 @@ sobe em segundos e usa **poucas dezenas de megabytes de memória**.
 | Varredura de 1.000 arquivos numa pasta | 22 s | 413 s |
 
 > Medido em 17/11/2026 (Rustyfin v0.16.0, 4 CPUs, mesma biblioteca, sem metadados online). **O Jellyfin ainda ganha**
-> na primeira varredura de arquivos grandes (58 s contra 286 s) e na transcodificação simultânea. Números, metodologia,
-> ressalvas e os pontos fracos em [docs/desempenho.md](docs/desempenho.md).
+> na transcodificação com várias sessões simultâneas. Números, metodologia, ressalvas e os pontos fracos em
+> [docs/desempenho.md](docs/desempenho.md).
 
 ## Recursos
 

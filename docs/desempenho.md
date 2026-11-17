@@ -22,19 +22,24 @@ No perfil **folgado** (4 CPUs, 4 GB por container) e na mesma biblioteca:
 | Varredura de 1.000 clipes em uma pasta | **21,9 s** | 412,7 s | 19× |
 | Varredura de 3.000 clipes em uma pasta | **62,3 s** | não terminou em 15 min | |
 | Arquivo novo aparece (1.000 clipes) | **1,0 s** | 3,9 s | 4× |
-| **1ª varredura de 18 vídeos reais (~30 GB)** | 286 s | **58 s** | **Jellyfin 5× mais rápido** |
+| 1ª varredura de 18 vídeos reais (~30 GB) | **3,0 s** (v0.17.3; era 286 s na v0.16.0) | 58 s | 19× |
 | **Transcodificação, 1 sessão (4 CPUs)** | 2,97× tempo real | **5,42×** | **Jellyfin 1,8× mais rápido** |
 | **Transcodificação, 4 sessões simultâneas** | 2 de 4 concluíram | **4 de 4** | **Jellyfin** |
 
 No perfil **restrito** (1 CPU, 512 MB) o Rustyfin segue na frente em tudo o que foi medido, inclusive na transcodificação
-de 1 sessão (1,59× contra 0,95× tempo real); a 1ª varredura também fica atrás (188 s contra 56 s).
+de 1 sessão (1,59× contra 0,95× tempo real). A 1ª varredura desse perfil (188 s) também foi medida na v0.16.0, antes da
+correção descrita abaixo.
 
 ## Onde o Rustyfin perde (e por quê)
 
-1. **1ª varredura de uma biblioteca de arquivos grandes: 286 s contra 58 s.** É uma regressão da v0.13.0: a
-   funcionalidade que preserva o histórico ao mover arquivos calcula o **SHA-256 do arquivo inteiro** na primeira
-   varredura, ou seja, lê todos os 30 GB. Medido no commit anterior (`5490b99`), a mesma varredura levava **3,0 s**
-   (0,8 s até os itens aparecerem). As varreduras seguintes não pagam esse custo (rescan de 0,13 s).
+1. ~~**1ª varredura de uma biblioteca de arquivos grandes: 286 s contra 58 s.**~~ **Corrigido na v0.17.3.** Era uma
+   regressão da v0.13.0: a funcionalidade que preserva o histórico ao mover arquivos calculava o **SHA-256 do arquivo
+   inteiro** durante a varredura, ou seja, lia os 30 GB. Agora a varredura só calcula o hash quando ele decide algo
+   (arquivo alterado que já tinha hash, ou arquivo novo com o tamanho ou o nome de um item que sumiu) e o restante é
+   preenchido em segundo plano, um arquivo por vez. Medido depois da correção, a mesma varredura leva **3,0 s**
+   (1,0 s até os itens aparecerem), com o resultado completo em segundo plano. O custo é uma janela curta depois da
+   primeira varredura em que um arquivo movido ainda não tem hash: ele não é movido sozinho e vai para a fila de revisão
+   do acervo, em vez de perder o histórico em silêncio.
 2. **Transcodificação.** Com 1 sessão e 4 CPUs o Jellyfin é 1,8× mais rápido, e com 4 sessões simultâneas **duas das
    quatro sessões do Rustyfin falharam** (`playlist sem segmentos`), enquanto o Jellyfin concluiu as quatro. Ainda não
    investigado.
