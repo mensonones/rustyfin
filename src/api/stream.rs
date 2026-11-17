@@ -13,6 +13,44 @@ use std::{collections::HashMap, io::SeekFrom};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 
+/// Data HTTP (IMF-fixdate, RFC 7231) a partir de segundos Unix.
+fn http_date(secs: u64) -> String {
+    const DAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
+    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    // Dias desde 1970-01-01 → data civil (algoritmo de Howard Hinnant).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!(
+        "{}, {:02} {} {} {:02}:{:02}:{:02} GMT",
+        DAYS[(days.rem_euclid(7)) as usize],
+        d,
+        MONTHS[(m - 1) as usize],
+        y,
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
+}
+
+/// Contêiner como o Jellyfin o informa: arquivos MP4/M4V/MOV aparecem como `mov` (primeiro nome do
+/// formato do ffprobe, `mov,mp4,m4a,...`). O player da TV Samsung só lê esses arquivos por trechos
+/// (índice no fim, várias conexões) quando a URL termina em `.mov`; com `.mp4` ele lê em sequência.
+pub fn jellyfin_container(container: Option<&str>) -> Option<String> {
+    container.map(|c| match c.to_ascii_lowercase().as_str() {
+        "mp4" | "m4v" | "mov" => "mov".to_string(),
+        other => other.to_string(),
+    })
+}
+
 pub async fn stream_video(
     State(pool): State<DbPool>,
     CurrentUser(user): CurrentUser,
@@ -70,11 +108,16 @@ async fn stream_media_by_id(
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
-    let total_size = file
-        .metadata()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .len();
+    let file_meta = file.metadata().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let total_size = file_meta.len();
+    let mtime_secs = file_meta
+        .modified()
+        .ok()
+        .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let last_modified = http_date(mtime_secs);
+    let etag = format!("\"{total_size:x}-{mtime_secs:x}\"");
 
     let mime_type = match container.as_deref() {
         Some("mp4") | Some("m4v") => "video/mp4",
@@ -89,7 +132,17 @@ async fn stream_media_by_id(
         _ => "application/octet-stream",
     };
 
-    if let Some(range_header) = headers.get(header::RANGE).and_then(|h| h.to_str().ok()) {
+    // If-Range: se o validador não bate com o arquivo atual, o cliente recebe o arquivo inteiro (200).
+    let if_range_ok = headers
+        .get(header::IF_RANGE)
+        .and_then(|h| h.to_str().ok())
+        .map(|v| v.trim() == etag || v.trim() == last_modified)
+        .unwrap_or(true);
+    let range_header = headers
+        .get(header::RANGE)
+        .and_then(|h| h.to_str().ok())
+        .filter(|_| if_range_ok);
+    if let Some(range_header) = range_header {
         match parse_range_header(range_header, total_size) {
             RangeResult::Satisfiable(start, end) => {
                 let chunk_size = end - start + 1;
@@ -97,13 +150,14 @@ async fn stream_media_by_id(
                 file.seek(SeekFrom::Start(start))
                     .await
                     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
                 let body = Body::from_stream(ReaderStream::with_capacity(file.take(chunk_size), 256 * 1024));
 
                 return Response::builder()
                     .status(StatusCode::PARTIAL_CONTENT)
                     .header(header::CONTENT_TYPE, mime_type)
                     .header(header::ACCEPT_RANGES, "bytes")
+                    .header(header::LAST_MODIFIED, &last_modified)
+                    .header(header::ETAG, &etag)
                     .header(header::CONTENT_LENGTH, chunk_size.to_string())
                     .header(
                         header::CONTENT_RANGE,
@@ -129,6 +183,8 @@ async fn stream_media_by_id(
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, mime_type)
         .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::LAST_MODIFIED, &last_modified)
+        .header(header::ETAG, &etag)
         .header(header::CONTENT_LENGTH, total_size.to_string())
         .body(Body::from_stream(ReaderStream::with_capacity(file, 256 * 1024)))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
@@ -197,6 +253,21 @@ fn parse_range_header(range_val: &str, total_size: u64) -> RangeResult {
 mod tests {
     use super::*;
     use RangeResult::*;
+
+    #[test]
+    fn jellyfin_container_names() {
+        assert_eq!(jellyfin_container(Some("mp4")).as_deref(), Some("mov"));
+        assert_eq!(jellyfin_container(Some("M4V")).as_deref(), Some("mov"));
+        assert_eq!(jellyfin_container(Some("mkv")).as_deref(), Some("mkv"));
+        assert_eq!(jellyfin_container(None), None);
+    }
+
+    #[test]
+    fn http_dates() {
+        assert_eq!(http_date(0), "Thu, 01 Jan 1970 00:00:00 GMT");
+        assert_eq!(http_date(1_000_000_000), "Sun, 09 Sep 2001 01:46:40 GMT");
+        assert_eq!(http_date(1_763_388_551), "Mon, 17 Nov 2025 14:09:11 GMT");
+    }
 
     #[test]
     fn range_forms() {

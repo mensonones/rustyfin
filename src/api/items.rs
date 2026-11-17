@@ -657,19 +657,22 @@ fn map_db_item_to_dto(config: &AppConfig, row: DbItemRow) -> BaseItemDto {
         path: Some(row.path.clone()),
         protocol: "File".to_string(),
         media_streams: streams.clone(),
-        container: container.clone(),
+        container: crate::api::stream::jellyfin_container(container.as_deref()),
         size: row.size_bytes,
         name: row.name.clone(),
         is_remote: false,
         run_time_ticks: row.duration_ticks,
         supports_transcoding: false,
+        bitrate: match (row.size_bytes, row.duration_ticks) {
+            (Some(size), Some(ticks)) if size > 0 && ticks > 0 => {
+                Some((size as f64 * 8.0 / (ticks as f64 / 10_000_000.0)) as i64)
+            }
+            _ => None,
+        },
         supports_direct_stream: true,
         supports_direct_play: true,
-        direct_stream_url: Some(format!(
-            "/Videos/{}/stream.{}",
-            row.id,
-            container.as_deref().unwrap_or("mkv")
-        )),
+        // Como o Jellyfin: sem URL pronta; o cliente monta `/Videos/{id}/stream.{container}?...` sozinho.
+        direct_stream_url: None,
         transcoding_url: None,
         transcoding_sub_protocol: None,
         transcoding_container: None,
@@ -708,7 +711,7 @@ fn map_db_item_to_dto(config: &AppConfig, row: DbItemRow) -> BaseItemDto {
         server_id: config.server_id.clone(),
         r#type: item_type.to_string(),
         media_type: Some("Video".to_string()),
-        container,
+        container: crate::api::stream::jellyfin_container(container.as_deref()),
         path: Some(row.path),
         run_time_ticks: row.duration_ticks,
         size: row.size_bytes,

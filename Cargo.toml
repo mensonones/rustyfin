@@ -7,6 +7,9 @@ readme = "README.md"
 description = "Lightweight localhost media server in Rust compatible with Jellyfin clients"
 
 [dependencies]
+hyper = "1"
+hyper-util = { version = "0.1", features = ["tokio", "server", "server-auto", "http1", "http2", "service"] }
+tower = { version = "0.5", default-features = false }
 axum = { version = "0.7", features = ["macros", "multipart", "ws"] }
 tokio = { version = "1.38", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }

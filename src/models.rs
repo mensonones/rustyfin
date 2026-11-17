@@ -219,8 +219,12 @@ pub struct MediaSourceInfo {
     pub is_remote: bool,
     pub run_time_ticks: Option<i64>,
     pub supports_transcoding: bool,
+    /// Bitrate médio (bits/s), como o Jellyfin informa.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bitrate: Option<i64>,
     pub supports_direct_stream: bool,
     pub supports_direct_play: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub direct_stream_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transcoding_url: Option<String>,

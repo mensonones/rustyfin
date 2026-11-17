@@ -72,11 +72,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("===========================================================");
     println!();
 
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-    )
-    .await?;
+    serve(listener, app).await
+}
 
-    Ok(())
+/// Servidor HTTP com nomes de cabeçalho em `Title-Case` (como o Kestrel do Jellyfin): o hyper os envia
+/// em minúsculas, e players de TV com leitor de cabeçalhos simples podem não reconhecer `Accept-Ranges`.
+async fn serve(listener: tokio::net::TcpListener, app: axum::Router) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use hyper_util::{
+        rt::{TokioExecutor, TokioIo},
+        server::conn::auto::Builder,
+    };
+    use tower::Service;
+
+    let mut make_service = app.into_make_service_with_connect_info::<std::net::SocketAddr>();
+    loop {
+        let (socket, remote) = match listener.accept().await {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("accept falhou: {e}");
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                continue;
+            }
+        };
+        let _ = socket.set_nodelay(true);
+        let svc = match make_service.call(remote).await {
+            Ok(s) => s,
+            Err(never) => match never {},
+        };
+        tokio::spawn(async move {
+            let hyper_svc = hyper::service::service_fn(move |req: axum::extract::Request<hyper::body::Incoming>| {
+                svc.clone().call(req)
+            });
+            let mut builder = Builder::new(TokioExecutor::new());
+            builder.http1().title_case_headers(true);
+            let _ = builder
+                .serve_connection_with_upgrades(TokioIo::new(socket), hyper_svc)
+                .await;
+        });
+    }
 }

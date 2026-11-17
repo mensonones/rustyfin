@@ -260,7 +260,7 @@ fn norm_codec(c: &str) -> String {
 
 fn norm_container(c: &str) -> String {
     match c.trim().to_lowercase().as_str() {
-        "m4v" => "mp4".into(),
+        "m4v" | "mov" => "mp4".into(),
         "matroska" => "mkv".into(),
         "mpegts" => "ts".into(),
         other => other.into(),

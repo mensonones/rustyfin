@@ -84,25 +84,41 @@ pub async fn get_playback_info(
         transcode::can_transcode(),
     );
 
+    // Diagnóstico: por que um cliente recebeu Direct Play ou transcode.
+    tracing::debug!(
+        "PlaybackInfo {}: origem container={:?} video={:?} audio={:?} bitrate={:?} | pedido direct_play={:?} transcoding={:?} max_bitrate={:?} | perfil {:?} max={:?} direct_play_profiles={:?} | plano {:?}",
+        id,
+        container,
+        video_codec,
+        audio_codec,
+        source_bitrate,
+        req.enable_direct_play,
+        req.enable_transcoding,
+        req.max_streaming_bitrate,
+        req.device_profile.as_ref().and_then(|p| p.name.clone()),
+        req.device_profile.as_ref().and_then(|p| p.max_streaming_bitrate),
+        req.device_profile.as_ref().map(|p| &p.direct_play_profiles),
+        plan
+    );
+
     let play_session_id = Uuid::new_v4().simple().to_string();
     let mut source = MediaSourceInfo {
         id: id.clone(),
         path: None,
         protocol: "File".to_string(),
         media_streams: streams,
-        container: container.clone(),
+        container: crate::api::stream::jellyfin_container(container.as_deref()),
         size: size_bytes,
         name,
         is_remote: false,
         run_time_ticks: duration_ticks,
         supports_transcoding: transcode::can_transcode(),
+        bitrate: source_bitrate,
         supports_direct_stream: true,
         supports_direct_play: true,
-        direct_stream_url: Some(format!(
-            "/Videos/{}/stream.{}",
-            id,
-            container.as_deref().unwrap_or("mkv")
-        )),
+        // Como o Jellyfin: sem URL pronta; o cliente monta `/Videos/{id}/stream.{container}?...` sozinho
+        // (a TV Samsung só lê por trechos quando monta a própria URL).
+        direct_stream_url: None,
         transcoding_url: None,
         transcoding_sub_protocol: None,
         transcoding_container: None,
