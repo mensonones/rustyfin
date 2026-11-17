@@ -101,12 +101,16 @@ cargo run --release
 
 <table>
   <tr>
-    <td><img src="docs/assets/painel-bibliotecas.jpg" alt="Prévia de retomada entre edições no painel de Bibliotecas"></td>
-    <td><img src="docs/assets/painel-usuarios.jpg" alt="Usuários"></td>
+    <td><img src="docs/assets/painel-bibliotecas.jpg" alt="Diretório de bibliotecas com varredura e manutenção ao lado"></td>
+    <td><img src="docs/assets/painel-usuarios.jpg" alt="Usuários e permissões de acesso às bibliotecas"></td>
   </tr>
   <tr>
     <td><img src="docs/assets/painel-sessoes.jpg" alt="Sessões e dispositivos"></td>
-    <td><img src="docs/assets/painel-status.jpg" alt="Diagnóstico antes do Play comparando dois dispositivos"></td>
+    <td><img src="docs/assets/painel-status.jpg" alt="Diagnóstico do servidor com contagem do acervo e estado dos serviços"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/painel-configuracoes.jpg" alt="Configurações do servidor e dos metadados"></td>
+    <td><img src="docs/assets/busca-cenas.jpg" alt="Busca de cenas com horários, falas encontradas e filtro de spoilers"></td>
   </tr>
 </table>
 
