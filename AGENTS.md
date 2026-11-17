@@ -13,6 +13,7 @@ regras específicas deste servidor de mídia. As habilidades (*skills*) citadas 
 2. [`.cursorrules`](.cursorrules): resumo das regras acima.
 3. [`CONTRIBUTING.md`](CONTRIBUTING.md): padrão de commits e de versões.
 4. [`ROADMAP.md`](ROADMAP.md): o que já existe e o que falta.
+5. [`docs/`](docs/desenvolvimento.md): guia de desenvolvimento, [arquitetura](docs/arquitetura.md) e [API](docs/api.md). Atualize a documentação junto com a mudança.
 
 ## Configuração do projeto
 

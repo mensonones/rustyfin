@@ -1,6 +1,6 @@
-# ⚖️ Proposta: comparativo de performance Rustyfin × Jellyfin
+# Desempenho: Rustyfin × Jellyfin
 
-> Status: **executado em parte** (2026-11-17): footprint, varredura, API, imagens e Direct Play. Transcode, escala (1k–10k arquivos), TMDB e soak **não** foram medidos. O restante deste arquivo é a proposta original.
+> Medido em 2026-11-17: pegada de recursos, varredura, API, imagens e Direct Play. Transcode, escala (1k a 10k arquivos), TMDB e estabilidade longa **ainda não** foram medidos. A partir da seção 1 está a metodologia completa proposta, que serve de roteiro para as próximas rodadas.
 
 ## Resultados
 

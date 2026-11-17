@@ -1,0 +1,93 @@
+# Arquitetura
+
+O Rustyfin é **um único binário** (`rustyfin`) sobre uma biblioteca de mesmo nome. Ele combina um servidor HTTP
+(Axum/Tokio), um banco SQLite em modo WAL e o `ffmpeg` como processo externo.
+
+```
+ apps Jellyfin ──HTTP──▶  Axum (src/api)  ──▶  SQLite (WAL)
+ (Moonfin, ...)              │    │
+                             │    └──────────▶  ffmpeg / ffprobe  (processos filhos)
+ painel /admin ──────────────┘
+                              ▲
+   scanner + watcher ─────────┘   TMDB (via curl)
+```
+
+## Estrutura do código
+
+| Caminho | Responsabilidade |
+|---|---|
+| `src/main.rs` | Inicialização: logs, configuração, banco, tarefas em segundo plano e servidor HTTP |
+| `src/lib.rs` | Declara os módulos da biblioteca |
+| `src/config.rs` | Variáveis de ambiente |
+| `src/settings.rs` | Configurações editáveis em tempo de execução (painel), guardadas no banco |
+| `src/db.rs` | Conexão SQLite, criação e migração de tabelas |
+| `src/libraries.rs` | Bibliotecas e pastas; regra "pasta mais específica" |
+| `src/scanner.rs` | Varredura, `ffprobe`, imagens locais, identidade de séries e temporadas |
+| `src/library.rs` | Laço do scan automático e monitoramento de pastas (`notify`) |
+| `src/parser.rs` | Interpreta nomes de arquivo e de pastas (título, ano, temporada, episódio) |
+| `src/metadata.rs` | TMDB: busca, elenco, estúdios, classificação, trailers e imagens |
+| `src/users.rs` | Usuários, senhas (Argon2), tokens, sessões e permissões por biblioteca |
+| `src/discovery.rs` | Descoberta automática (UDP 7359) |
+| `src/models.rs` | DTOs do contrato Jellyfin (PascalCase) |
+| `src/transcode/` | Decisão Direct Play/Remux/Transcode, argumentos do ffmpeg, processos e sessões HLS |
+| `src/api/` | Rotas: itens, séries, imagens, streaming, transcodificação, legendas, usuários, painel |
+| `src/admin.html` | Painel de administração (página única, embutida no binário) |
+| `tests/` | Testes de integração do roteador |
+| `tools/client_probe.py` | Simula o fluxo de um app Jellyfin contra um servidor em execução |
+
+## Fluxo de uma requisição
+
+1. O roteador (`api::build_router`) aplica o CORS, o *log* de requisições e a **autenticação**: toda rota exige token,
+   exceto as [públicas](usuarios-e-seguranca.md#o-que-não-exige-token).
+2. O *handler* extrai o usuário (`CurrentUser`), confere o acesso à biblioteca do item e consulta o SQLite.
+3. Respostas de mídia **não carregam o arquivo na memória**: usam `ReaderStream` com leitura em blocos.
+4. Trabalho pesado ou bloqueante (varredura de pastas, hash de senha) roda em `spawn_blocking`; processos externos usam
+   `tokio::process` com `kill_on_drop`.
+
+## Banco de dados
+
+SQLite com `journal_mode = WAL`, criado e migrado na inicialização (`db::init_db`), sem ferramenta externa de migração.
+
+| Tabela | Conteúdo |
+|---|---|
+| `items` | Um registro por arquivo de vídeo: caminho, contêiner, duração, codecs, trilhas (JSON), identificação da série, biblioteca, dados do TMDB |
+| `series`, `season_art` | Dados e imagens de séries e temporadas (os itens `Series`/`Season` são **virtuais**, derivados dos episódios) |
+| `playback_state` | Progresso, assistido, favorito e contagem, **por usuário e item** |
+| `libraries`, `library_paths` | Bibliotecas e suas pastas |
+| `users`, `user_libraries`, `access_tokens` | Contas, acesso por biblioteca e um token por dispositivo |
+| `people` | Foto (caminho no TMDB) de cada pessoa do elenco |
+| `settings` | Configurações do painel |
+
+Os IDs dos itens são UUIDs v5 do caminho do arquivo, então reindexar não os muda. Os IDs de séries e temporadas são
+UUIDs v5 do nome (e do ano, quando há) normalizado.
+
+## Cache em disco (`RUSTYFIN_CACHE_DIR`)
+
+| Pasta | Conteúdo |
+|---|---|
+| `thumbs/` | Quadros de vídeo usados como capa e fundo |
+| `resized/` | Imagens redimensionadas sob demanda |
+| `tmdb/` | Imagens baixadas do TMDB (inclui fotos de pessoas) |
+| `subs/` | Legendas extraídas |
+| `avatars/` | Fotos de perfil dos usuários |
+| `transcodes/` | Sessões HLS (apagadas ao iniciar e quando ociosas) |
+
+## Varredura
+
+1. `library::spawn_autoscan` roda a cada intervalo, ao iniciar, sob demanda (`/Library/Refresh`) e quando o *watcher*
+   detecta mudanças de arquivo.
+2. `scanner::run_scan` lista os vídeos de cada pasta (em `spawn_blocking`) e processa vários arquivos em paralelo
+   (`ffprobe`). Arquivos inalterados (tamanho e data) só atualizam nome e imagens.
+3. Itens cujo arquivo sumiu são removidos, **mas só se todas as pastas foram lidas sem erro**: uma pasta indisponível
+   ou um erro de leitura nunca apaga o catálogo nem o progresso.
+4. Depois, `metadata::enrich_pending` busca o TMDB (em lotes paralelos) e as miniaturas ausentes são geradas em
+   segundo plano.
+
+## Decisões de projeto
+
+- **Compatibilidade antes de tudo:** os DTOs seguem o contrato do Jellyfin e, onde um cliente exige um comportamento
+  específico (como o contêiner `mov` para a TV Samsung), o servidor o reproduz.
+- **Leve por construção:** nada de coleta de lixo, uma só conexão por assunto, caches em disco e imagens sob demanda.
+- **Sem dependências de runtime além do `ffmpeg` e do `curl`:** o cliente HTTP do TMDB é o `curl`, para não puxar uma
+  pilha TLS dentro do binário.
+- **Erros nas bordas:** `?` e `Result` por dentro; `StatusCode` nos *handlers*. Sem `unwrap()` em rotas.
