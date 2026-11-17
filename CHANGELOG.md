@@ -8,6 +8,7 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 ### Adicionado
 - Legendas: trilhas de texto embutidas são extraídas (SRT/VTT/ASS) e entregues como `External` em `/Videos/{id}/{src}/Subtitles/{n}/Stream.{ext}`; legendas de imagem (PGS/DVD) são queimadas no transcode quando selecionadas.
 - Trilhas informam título e flag de legenda forçada.
+- Arquivos SRT com o mesmo nome do vídeo (ex.: `Filme.mkv` e `Filme.srt`) aparecem como trilhas externas após a varredura.
 
 ## [0.2.0] - 2026-11-17
 

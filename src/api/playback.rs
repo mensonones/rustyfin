@@ -21,9 +21,9 @@ pub async fn get_playback_info(
     if !users::item_allowed(&pool, &user, &normalize_id(&item_id)).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)? {
         return Err(StatusCode::NOT_FOUND);
     }
-    type Row = (String, String, Option<String>, Option<i64>, Option<i64>, Option<String>, Option<String>, Option<i32>, Option<i32>, Option<String>);
+    type Row = (String, String, Option<String>, Option<i64>, Option<i64>, Option<String>, Option<String>, Option<i32>, Option<i32>, Option<String>, Option<String>);
     let row = sqlx::query_as::<_, Row>(
-        "SELECT id, name, container, duration_ticks, size_bytes, video_codec, audio_codec, width, height, streams_json FROM items WHERE id = ?"
+        "SELECT id, name, container, duration_ticks, size_bytes, video_codec, audio_codec, width, height, streams_json, subtitle_path FROM items WHERE id = ?"
     )
     .bind(normalize_id(&item_id))
     .fetch_optional(&pool)
@@ -31,13 +31,14 @@ pub async fn get_playback_info(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .ok_or(StatusCode::NOT_FOUND)?;
 
-    let (id, name, container, duration_ticks, size_bytes, video_codec, audio_codec, width, height, streams_json) = row;
+    let (id, name, container, duration_ticks, size_bytes, video_codec, audio_codec, width, height, streams_json, subtitle_path) = row;
     let mut streams = build_streams(
         streams_json.as_deref(),
         video_codec.as_deref(),
         audio_codec.as_deref(),
         width,
         height,
+        subtitle_path.is_some(),
     );
     crate::api::items::decorate_subtitles(&id, &mut streams);
 

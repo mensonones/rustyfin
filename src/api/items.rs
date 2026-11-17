@@ -96,6 +96,7 @@ struct DbItemRow {
     video_codec: Option<String>,
     audio_codec: Option<String>,
     streams_json: Option<String>,
+    subtitle_path: Option<String>,
     modified_at: i64,
     poster_path: Option<String>,
     backdrop_path: Option<String>,
@@ -119,7 +120,7 @@ struct DbItemRow {
 const SELECT_ITEM: &str = r#"
     SELECT
         i.id, i.name, i.path, i.media_type, i.container, i.duration_ticks, i.size_bytes,
-        i.width, i.height, i.video_codec, i.audio_codec, i.streams_json,
+        i.width, i.height, i.video_codec, i.audio_codec, i.streams_json, i.subtitle_path,
         i.modified_at,
         COALESCE(i.poster_path, i.tmdb_poster) AS poster_path,
         COALESCE(i.backdrop_path, i.tmdb_backdrop) AS backdrop_path,
@@ -562,7 +563,6 @@ pub async fn fetch_dtos_by_ids(
     Ok(rows.into_iter().map(|r| map_db_item_to_dto(config, r)).collect())
 }
 
-/// Monta as trilhas: usa o JSON completo do ffprobe; sem ele, cai para os codecs principais.
 /// Legendas de texto são entregues como arquivo externo (`DeliveryUrl`); as de imagem (PGS/DVD) só
 /// funcionam queimadas no vídeo (transcode).
 pub fn decorate_subtitles(item_id: &str, streams: &mut [MediaStream]) {
@@ -580,7 +580,31 @@ pub fn decorate_subtitles(item_id: &str, streams: &mut [MediaStream]) {
     }
 }
 
+/// Usa as trilhas do ffprobe (ou os codecs principais) e acrescenta a legenda do mesmo nome.
 pub fn build_streams(
+    streams_json: Option<&str>,
+    video_codec: Option<&str>,
+    audio_codec: Option<&str>,
+    width: Option<i32>,
+    height: Option<i32>,
+    has_sidecar: bool,
+) -> Vec<MediaStream> {
+    let mut streams = embedded_streams(streams_json, video_codec, audio_codec, width, height);
+    if has_sidecar {
+        let last_index = streams.iter().map(|s| s.index).max().unwrap_or(-1);
+        if let Some(index) = last_index.checked_add(1) {
+            streams.push(MediaStream {
+                display_title: Some("SRT".to_string()),
+                is_default: false,
+                is_external: true,
+                ..MediaStream::basic("subrip", "Subtitle", index)
+            });
+        }
+    }
+    streams
+}
+
+fn embedded_streams(
     streams_json: Option<&str>,
     video_codec: Option<&str>,
     audio_codec: Option<&str>,
@@ -623,6 +647,7 @@ fn map_db_item_to_dto(config: &AppConfig, row: DbItemRow) -> BaseItemDto {
         row.audio_codec.as_deref(),
         row.width,
         row.height,
+        row.subtitle_path.is_some(),
     );
     decorate_subtitles(&row.id, &mut streams);
 

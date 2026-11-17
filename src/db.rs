@@ -52,6 +52,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
     add_column_if_missing(&pool, "items", "modified_at", "INTEGER NOT NULL DEFAULT 0").await?;
     add_column_if_missing(&pool, "items", "probed", "BOOLEAN NOT NULL DEFAULT 0").await?;
     add_column_if_missing(&pool, "items", "streams_json", "TEXT").await?;
+    add_column_if_missing(&pool, "items", "subtitle_path", "TEXT").await?;
     add_column_if_missing(&pool, "items", "poster_path", "TEXT").await?;
     add_column_if_missing(&pool, "items", "backdrop_path", "TEXT").await?;
     add_column_if_missing(&pool, "items", "production_year", "INTEGER").await?;

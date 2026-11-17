@@ -38,38 +38,54 @@ const FOLDER_POSTERS: &[&str] = &["poster", "cover", "folder", "movie"];
 const FOLDER_BACKDROPS: &[&str] = &["backdrop", "fanart", "background", "landscape"];
 
 #[derive(Debug, Default, PartialEq, Eq)]
-pub struct LocalImages {
-    pub poster: Option<String>,
-    pub backdrop: Option<String>,
+struct LocalAssets {
+    poster: Option<String>,
+    backdrop: Option<String>,
+    subtitle: Option<String>,
 }
 
-/// Procura imagens locais ao lado do vídeo (bloqueante: use `spawn_blocking`).
+/// Procura imagens e legendas locais ao lado do vídeo (bloqueante: use `spawn_blocking`).
 ///
 /// - `<nome>.jpg`, `<nome>-poster.jpg` → poster; `<nome>-fanart.jpg`, `<nome>-backdrop.jpg` → backdrop
 /// - `poster.jpg`/`cover.jpg`/`folder.jpg`... só valem se o vídeo é o único da pasta
 ///   (evita que todos os filmes de uma pasta "solta" herdem o mesmo poster).
-pub fn find_local_images(video: &Path) -> LocalImages {
+/// - `<nome>.srt` → legenda de texto; o nome base deve coincidir com o do vídeo.
+fn find_local_assets(video: &Path) -> LocalAssets {
     let (Some(dir), Some(stem)) = (video.parent(), video.file_stem().and_then(|s| s.to_str())) else {
-        return LocalImages::default();
+        return LocalAssets::default();
     };
     let Ok(entries) = std::fs::read_dir(dir) else {
-        return LocalImages::default();
+        return LocalAssets::default();
     };
 
-    let stem = stem.to_lowercase();
+    let image_stem = stem.to_lowercase();
     let mut videos = 0usize;
     // (prioridade, caminho): menor prioridade vence.
     let mut poster: Option<(u8, PathBuf)> = None;
     let mut backdrop: Option<(u8, PathBuf)> = None;
     let mut folder_poster: Option<(u8, PathBuf)> = None;
     let mut folder_backdrop: Option<(u8, PathBuf)> = None;
+    let mut subtitle: Option<(bool, PathBuf)> = None;
 
     for entry in entries.filter_map(|e| e.ok()) {
         let p = entry.path();
+        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if ext.eq_ignore_ascii_case("srt") {
+            if p.file_stem().and_then(|s| s.to_str()) == Some(stem)
+                && entry.file_type().is_ok_and(|kind| kind.is_file())
+            {
+                // Prefere a extensão minúscula se houver mais de um arquivo com o mesmo nome.
+                let candidate = (ext != "srt", p);
+                if subtitle.as_ref().is_none_or(|current| &candidate < current) {
+                    subtitle = Some(candidate);
+                }
+            }
+            continue;
+        }
         if !p.is_file() {
             continue;
         }
-        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        let ext = ext.to_lowercase();
         if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
             videos += 1;
             continue;
@@ -89,11 +105,11 @@ pub fn find_local_images(video: &Path) -> LocalImages {
             }
         };
 
-        if name == format!("{stem}-poster") {
+        if name == format!("{image_stem}-poster") {
             consider(&mut poster, 0);
-        } else if name == stem {
+        } else if name == image_stem {
             consider(&mut poster, 1);
-        } else if name == format!("{stem}-fanart") || name == format!("{stem}-backdrop") {
+        } else if name == format!("{image_stem}-fanart") || name == format!("{image_stem}-backdrop") {
             consider(&mut backdrop, 0);
         } else if let Some(i) = FOLDER_POSTERS.iter().position(|n| *n == name) {
             consider(&mut folder_poster, i as u8);
@@ -104,9 +120,10 @@ pub fn find_local_images(video: &Path) -> LocalImages {
 
     let alone = videos <= 1;
     let to_s = |o: Option<(u8, PathBuf)>| o.map(|(_, p)| p.to_string_lossy().to_string());
-    LocalImages {
+    LocalAssets {
         poster: to_s(poster.or(if alone { folder_poster } else { None })),
         backdrop: to_s(backdrop.or(if alone { folder_backdrop } else { None })),
+        subtitle: subtitle.map(|(_, path)| path.to_string_lossy().into_owned()),
     }
 }
 
@@ -323,9 +340,9 @@ async fn process_media_file(
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
 
-    let images = {
+    let assets = {
         let p = path.to_path_buf();
-        tokio::task::spawn_blocking(move || find_local_images(&p))
+        tokio::task::spawn_blocking(move || find_local_assets(&p))
             .await
             .unwrap_or_default()
     };
@@ -336,10 +353,10 @@ async fn process_media_file(
             .fetch_optional(pool)
             .await?;
 
-    // Scan incremental: arquivo inalterado e já inspecionado → só atualiza nome/imagens (baratos).
+    // Atualiza arquivos auxiliares mesmo quando o vídeo já foi inspecionado e não mudou.
     if let Some((_, old_size, old_mtime, probed)) = &existing {
         if *old_size == size_bytes && *old_mtime == modified_at && *probed {
-            update_parsed(pool, &path_str, &parsed, &images, library_id.as_deref()).await?;
+            update_parsed(pool, &path_str, &parsed, &assets, library_id.as_deref()).await?;
             return Ok(());
         }
     }
@@ -399,18 +416,18 @@ async fn process_media_file(
     .execute(pool)
     .await?;
 
-    update_parsed(pool, &path_str, &parsed, &images, library_id.as_deref()).await?;
+    update_parsed(pool, &path_str, &parsed, &assets, library_id.as_deref()).await?;
 
     info!("Indexado: {} [{}]", parsed.title, item_id);
     Ok(())
 }
 
-/// Campos derivados do nome do arquivo e das imagens locais (recalculados a cada scan).
+/// Campos derivados do nome do arquivo e dos arquivos auxiliares (recalculados a cada scan).
 async fn update_parsed(
     pool: &DbPool,
     path: &str,
     parsed: &Parsed,
-    images: &LocalImages,
+    assets: &LocalAssets,
     library_id: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     let (kind, series, season, episode) = match &parsed.kind {
@@ -430,7 +447,7 @@ async fn update_parsed(
             name = ?, media_type = ?, production_year = COALESCE(?, production_year),
             series_name = ?, season_number = ?, episode_number = ?,
             series_id = ?, season_id = ?,
-            poster_path = ?, backdrop_path = ?, library_id = ?
+            poster_path = ?, backdrop_path = ?, subtitle_path = ?, library_id = ?
         WHERE path = ?
         "#,
     )
@@ -442,8 +459,9 @@ async fn update_parsed(
     .bind(episode)
     .bind(series_id)
     .bind(season_id)
-    .bind(&images.poster)
-    .bind(&images.backdrop)
+    .bind(&assets.poster)
+    .bind(&assets.backdrop)
+    .bind(&assets.subtitle)
     .bind(library_id)
     .bind(path)
     .execute(pool)
@@ -589,18 +607,59 @@ mod tests {
         touch("Filme.mkv");
         touch("Poster.JPG");
         touch("fanart.png");
-        let r = find_local_images(&dir.join("Filme.mkv"));
+        let r = find_local_assets(&dir.join("Filme.mkv"));
         assert!(r.poster.unwrap().to_lowercase().ends_with("poster.jpg"));
         assert!(r.backdrop.unwrap().ends_with("fanart.png"));
 
         // Com dois vídeos, imagens de pasta não são herdadas; imagens por nome sim.
         touch("Outro.mkv");
         touch("Filme-poster.jpg");
-        let r = find_local_images(&dir.join("Filme.mkv"));
+        let r = find_local_assets(&dir.join("Filme.mkv"));
         assert!(r.poster.unwrap().ends_with("Filme-poster.jpg"));
         assert_eq!(r.backdrop, None);
-        assert_eq!(find_local_images(&dir.join("Outro.mkv")), LocalImages::default());
+        assert_eq!(find_local_assets(&dir.join("Outro.mkv")), LocalAssets::default());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn incremental_scan_refreshes_same_name_subtitles() {
+        let pool = crate::db::init_db("sqlite::memory:").await.unwrap();
+        let dir = std::env::temp_dir().join(format!("rf_sub_{}", Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let video = dir.join("Filme.mkv");
+        let subtitle = dir.join("Filme.SRT");
+        std::fs::write(&video, b"x").unwrap();
+        std::fs::write(dir.join("Outro.srt"), b"x").unwrap();
+        let path = video.to_str().unwrap();
+        let modified_at = std::fs::metadata(&video)
+            .unwrap()
+            .modified()
+            .unwrap()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        sqlx::query("INSERT INTO items (id, name, path, media_type, size_bytes, modified_at, probed) VALUES ('old', 'Filme', ?, 'Movie', 1, ?, 1)")
+            .bind(path)
+            .bind(modified_at)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let read_subtitle = || {
+            sqlx::query_scalar::<_, Option<String>>("SELECT subtitle_path FROM items WHERE id = 'old'")
+                .fetch_one(&pool)
+        };
+
+        process_media_file(&pool, &video, &[]).await.unwrap();
+        assert_eq!(read_subtitle().await.unwrap(), None);
+
+        std::fs::write(&subtitle, b"x").unwrap();
+        process_media_file(&pool, &video, &[]).await.unwrap();
+        assert_eq!(read_subtitle().await.unwrap().as_deref(), subtitle.to_str());
+
+        std::fs::remove_file(&subtitle).unwrap();
+        process_media_file(&pool, &video, &[]).await.unwrap();
+        assert_eq!(read_subtitle().await.unwrap(), None);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

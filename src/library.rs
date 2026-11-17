@@ -48,10 +48,10 @@ pub type ScanTrigger = Arc<Notify>;
 const DEBOUNCE: Duration = Duration::from_secs(3);
 
 const WATCHED_EXTENSIONS: &[&str] = &[
-    "mkv", "mp4", "avi", "mov", "webm", "m4v", "ts", "jpg", "jpeg", "png", "webp",
+    "mkv", "mp4", "avi", "mov", "webm", "m4v", "ts", "jpg", "jpeg", "png", "webp", "srt",
 ];
 
-/// Evento relevante: criação/remoção/alteração de vídeo, imagem ou pasta (sem extensão).
+/// Evento relevante: criação/remoção/alteração de vídeo, imagem, legenda ou pasta.
 /// Ignora acessos, temporários (`.part`, `.tmp`) e o diretório de cache.
 fn is_relevant(event: &Event, cache_dir: &Path) -> bool {
     if !matches!(
@@ -189,6 +189,7 @@ mod tests {
         let create = EventKind::Create(CreateKind::File);
         assert!(is_relevant(&ev(create, "/media/a.MKV"), cache));
         assert!(is_relevant(&ev(create, "/media/poster.jpg"), cache));
+        assert!(is_relevant(&ev(create, "/media/a.SRT"), cache));
         assert!(is_relevant(&ev(create, "/media/NovaPasta"), cache));
         assert!(is_relevant(&ev(EventKind::Modify(ModifyKind::Any), "/media/a.mp4"), cache));
         assert!(!is_relevant(&ev(create, "/media/a.mkv.part"), cache));
