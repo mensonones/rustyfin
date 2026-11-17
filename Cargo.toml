@@ -25,6 +25,14 @@ items_after_statements = "allow"
 format_push_string = "allow"
 similar_names = "allow"
 assert_is_empty = "allow"        # nos testes
+# A biblioteca é interna ao servidor (não é publicada): documentar cada erro/pânico das funções públicas
+# e marcar tudo com #[must_use] só geraria ruído.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+module_name_repetitions = "allow"
+implicit_hasher = "allow"          # os extratores do axum fixam HashMap<String, String>
 
 [dependencies]
 hyper = "1"

@@ -1,18 +1,4 @@
-mod api;
-mod config;
-mod db;
-mod discovery;
-mod libraries;
-mod library;
-mod metadata;
-mod models;
-mod parser;
-mod scanner;
-mod settings;
-mod transcode;
-mod users;
-
-use config::AppConfig;
+use rustyfin::{api, config::AppConfig, db, discovery, libraries, library, settings, transcode, users};
 use std::sync::Arc;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
