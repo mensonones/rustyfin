@@ -5,6 +5,11 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.17.3] - 2026-11-17
+
+### Corrigido
+- A primeira varredura de uma biblioteca grande lia todos os arquivos inteiros para calcular o hash de conteúdo (286 s para 30 GB). Agora o hash só é calculado na varredura quando decide algo (arquivo substituído ou possível destino de um arquivo que sumiu) e o restante é preenchido em segundo plano: a mesma varredura leva 3 s. Um arquivo movido antes de o hash existir não é movido sozinho e vai para a fila de revisão do acervo.
+
 ## [0.17.2] - 2026-11-17
 
 ### Alterado
