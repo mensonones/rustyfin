@@ -6,6 +6,7 @@ pub mod items;
 pub mod playback;
 pub mod shows;
 pub mod stream;
+pub mod subtitles;
 pub mod system;
 pub mod transcoding;
 pub mod views;
@@ -124,6 +125,8 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
         .route("/Videos/:id/stream", get(stream::stream_video).with_state(pool.clone()))
         .route("/Videos/:id/stream.:ext", get(stream::stream_video_with_ext).with_state(pool.clone()))
         .route("/Audio/:id/stream", get(stream::stream_audio).with_state(pool.clone()))
+        .route("/Videos/:id/:source/Subtitles/:index/Stream.:ext", get(subtitles::get_subtitle).with_state(app_state_tuple.clone()))
+        .route("/Videos/:id/:source/Subtitles/:index/:start/Stream.:ext", get(subtitles::get_subtitle_from).with_state(app_state_tuple.clone()))
         // Administração (painel /admin e /Library/VirtualFolders*): só rede local
         .merge(admin::router(config.clone(), pool.clone(), scan))
         // Toda rota (exceto as públicas) exige token válido; o CORS fica por fora para o preflight passar

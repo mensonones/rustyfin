@@ -244,6 +244,46 @@ pub struct MediaStream {
     pub channels: Option<i32>,
     pub sample_rate: Option<i32>,
     pub display_title: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub is_forced: bool,
+    #[serde(default)]
+    pub is_external: bool,
+    #[serde(default)]
+    pub is_text_subtitle_stream: bool,
+    #[serde(default)]
+    pub supports_external_stream: bool,
+    /// "External" (cliente baixa `DeliveryUrl`) ou "Encode" (queimada no vídeo).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_method: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_url: Option<String>,
+}
+
+impl MediaStream {
+    /// Faixa básica (sem legenda/idioma): usada ao reconstruir trilhas só a partir dos codecs.
+    pub fn basic(codec: &str, kind: &str, index: i32) -> Self {
+        Self {
+            codec: codec.to_string(),
+            language: None,
+            r#type: kind.to_string(),
+            index,
+            is_default: true,
+            width: None,
+            height: None,
+            channels: None,
+            sample_rate: None,
+            display_title: None,
+            title: None,
+            is_forced: false,
+            is_external: false,
+            is_text_subtitle_stream: false,
+            supports_external_stream: false,
+            delivery_method: None,
+            delivery_url: None,
+        }
+    }
 }
 
 /// Playback session reporting

@@ -30,7 +30,7 @@
 - [x] Varredura de pastas configuradas (`walkdir` em `spawn_blocking`), incremental por tamanho/mtime e com remoção de arquivos ausentes.
 - [ ] Extração de metadados:
   - [x] Duração, resolução e codecs principais via `ffprobe` (sem ffprobe: campos ficam vazios e o item é reinspecionado no próximo scan).
-  - [ ] Todas as trilhas de áudio/legenda, canais, idioma e flags default.
+  - [x] Todas as trilhas de áudio/legenda com canais, idioma, título e flags default/forçada (trilhas antigas são reinspecionadas uma vez).
   - [x] Limpeza de título, ano e tags de release; detecção de episódios (`S01E02`, `1x02`, pastas `Serie/Season 1`).
 - [ ] Indexação de bibliotecas no SQLite:
   - [x] UUIDs determinísticos (v5 do caminho).
@@ -101,7 +101,9 @@
 - [x] Encoder configurável (`libx264` ou hardware via `RUSTYFIN_VIDEO_ENCODER`).
 - [x] Validado no Docker com `ffmpeg`/`ffprobe` reais: HLS H.264+AAC, remux HEVC preservado, `StartTimeTicks`, miniaturas, Direct Play com Range e sem processos órfãos.
 - [ ] Validar com clientes reais (Moonfin/Swiftfin/Findroid); *seek* em HLS só dentro do já transcodificado (playlist `EVENT`).
-- [ ] Legendas (extração para `/Videos/{id}/{src}/Subtitles` e *burn-in*), tone mapping HDR, múltiplas qualidades (ABR), fMP4 HLS.
+- [x] Legendas: as de texto (SRT, ASS, mov_text, WebVTT) são extraídas pelo ffmpeg para `/Videos/{id}/{src}/Subtitles/{n}/[{ticks}/]Stream.{srt|vtt|ass}` (com cache) e anunciadas como `External` no `PlaybackInfo`; as de imagem (PGS/DVD) são queimadas no vídeo (transcode com *overlay*, ainda sem teste com arquivo real).
+- [ ] Legendas externas ao lado do vídeo (`.srt` com o mesmo nome).
+- [ ] Tone mapping HDR, múltiplas qualidades (ABR), fMP4 HLS.
 
 ---
 

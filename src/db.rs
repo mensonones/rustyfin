@@ -70,6 +70,12 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
     add_column_if_missing(&pool, "items", "library_id", "TEXT").await?;
     add_column_if_missing(&pool, "items", "season_id", "TEXT").await?;
     add_column_if_missing(&pool, "playback_state", "is_favorite", "BOOLEAN NOT NULL DEFAULT 0").await?;
+    // Trilhas gravadas antes de `IsForced`/`Title` existirem: reinspeciona uma vez no próximo scan.
+    let _ = sqlx::query(
+        "UPDATE items SET probed = 0 WHERE streams_json IS NOT NULL AND streams_json NOT LIKE '%\"IsForced\"%'",
+    )
+    .execute(&pool)
+    .await;
     add_column_if_missing(&pool, "playback_state", "play_count", "INTEGER NOT NULL DEFAULT 0").await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_items_name ON items(name COLLATE NOCASE)")

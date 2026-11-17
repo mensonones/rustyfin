@@ -32,13 +32,14 @@ pub async fn get_playback_info(
     .ok_or(StatusCode::NOT_FOUND)?;
 
     let (id, name, container, duration_ticks, size_bytes, video_codec, audio_codec, width, height, streams_json) = row;
-    let streams = build_streams(
+    let mut streams = build_streams(
         streams_json.as_deref(),
         video_codec.as_deref(),
         audio_codec.as_deref(),
         width,
         height,
     );
+    crate::api::items::decorate_subtitles(&id, &mut streams);
 
     // Bitrate médio do arquivo (bits/s), usado para respeitar MaxStreamingBitrate.
     let source_bitrate = match (size_bytes, duration_ticks) {
@@ -57,6 +58,15 @@ pub async fn get_playback_info(
             .map(|s| s.codec.clone())
     });
     let audio_codec = selected_audio.or(audio_codec);
+    // Legenda de imagem (PGS/DVD) só aparece queimada no vídeo: força transcode com overlay.
+    let burn_subtitle = req
+        .subtitle_stream_index
+        .filter(|i| {
+            streams
+                .iter()
+                .any(|s| s.index == *i && s.r#type == "Subtitle" && !transcode::is_text_subtitle(&s.codec))
+        })
+        .filter(|_| req.enable_transcoding.unwrap_or(true) && transcode::can_transcode());
     let plan = transcode::decide(
         &transcode::SourceInfo {
             container: container.as_deref(),
@@ -97,6 +107,26 @@ pub async fn get_playback_info(
         transcoding_container: None,
     };
 
+    let plan = match (plan, burn_subtitle) {
+        (transcode::Plan::Direct, Some(_)) => transcode::Plan::Transcode(transcode::TranscodePlan {
+            video_copy: false,
+            audio_copy: false,
+            container: transcode::Container::Mkv,
+            hls: false,
+            video_bitrate: None,
+        }),
+        (transcode::Plan::Transcode(mut t), Some(_)) => {
+            t.video_copy = false;
+            transcode::Plan::Transcode(t)
+        }
+        (plan, _) => plan,
+    };
+    if let (Some(i), transcode::Plan::Transcode(_)) = (burn_subtitle, &plan) {
+        if let Some(s) = source.media_streams.iter_mut().find(|s| s.index == i) {
+            s.delivery_method = Some("Encode".to_string());
+        }
+    }
+
     if let transcode::Plan::Transcode(t) = plan {
         source.supports_direct_play = false;
         source.supports_direct_stream = false;
@@ -108,6 +138,7 @@ pub async fn get_playback_info(
             &play_session_id,
             req.audio_stream_index,
             req.start_time_ticks,
+            burn_subtitle,
         ));
         source.transcoding_sub_protocol = Some(if t.hls { "hls" } else { "http" }.to_string());
         source.transcoding_container = Some(t.container.ext().to_string());

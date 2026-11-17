@@ -563,6 +563,23 @@ pub async fn fetch_dtos_by_ids(
 }
 
 /// Monta as trilhas: usa o JSON completo do ffprobe; sem ele, cai para os codecs principais.
+/// Legendas de texto são entregues como arquivo externo (`DeliveryUrl`); as de imagem (PGS/DVD) só
+/// funcionam queimadas no vídeo (transcode).
+pub fn decorate_subtitles(item_id: &str, streams: &mut [MediaStream]) {
+    for s in streams.iter_mut().filter(|s| s.r#type == "Subtitle") {
+        if crate::transcode::is_text_subtitle(&s.codec) {
+            s.is_text_subtitle_stream = true;
+            s.supports_external_stream = true;
+            s.delivery_method = Some("External".to_string());
+            s.delivery_url = Some(format!(
+                "/Videos/{item_id}/{item_id}/Subtitles/{}/0/Stream.{}",
+                s.index,
+                crate::transcode::subtitle_ext(&s.codec)
+            ));
+        }
+    }
+}
+
 pub fn build_streams(
     streams_json: Option<&str>,
     video_codec: Option<&str>,
@@ -579,46 +596,35 @@ pub fn build_streams(
     let mut streams = Vec::new();
     if let Some(v) = video_codec {
         streams.push(MediaStream {
-            codec: v.to_string(),
-            language: None,
-            r#type: "Video".to_string(),
-            index: 0,
-            is_default: true,
             width,
             height,
-            channels: None,
-            sample_rate: None,
             display_title: Some(match height {
                 Some(h) => format!("{v} ({h}p)"),
                 None => v.to_string(),
             }),
+            ..MediaStream::basic(v, "Video", 0)
         });
     }
     if let Some(a) = audio_codec {
         streams.push(MediaStream {
-            codec: a.to_string(),
-            language: None,
-            r#type: "Audio".to_string(),
-            index: 1,
-            is_default: true,
-            width: None,
-            height: None,
             channels: Some(2),
             sample_rate: Some(48000),
             display_title: Some(a.to_string()),
+            ..MediaStream::basic(a, "Audio", 1)
         });
     }
     streams
 }
 
 fn map_db_item_to_dto(config: &AppConfig, row: DbItemRow) -> BaseItemDto {
-    let streams = build_streams(
+    let mut streams = build_streams(
         row.streams_json.as_deref(),
         row.video_codec.as_deref(),
         row.audio_codec.as_deref(),
         row.width,
         row.height,
     );
+    decorate_subtitles(&row.id, &mut streams);
 
     let container = row.container.clone();
     let media_source = MediaSourceInfo {

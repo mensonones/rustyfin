@@ -277,12 +277,30 @@ pub fn decide(
 // ---------------------------------------------------------------- URL e parâmetros
 
 /// URL que o cliente deve usar quando o plano é Remux/Transcode.
+/// Legenda de texto (extraível para SRT/VTT/ASS), em oposição às de imagem (PGS, DVD, DVB).
+pub fn is_text_subtitle(codec: &str) -> bool {
+    matches!(
+        codec.to_ascii_lowercase().as_str(),
+        "subrip" | "srt" | "ass" | "ssa" | "webvtt" | "vtt" | "mov_text" | "text" | "subviewer" | "microdvd" | "sami" | "realtext"
+    )
+}
+
+/// Formato em que a legenda é entregue ao cliente.
+pub fn subtitle_ext(codec: &str) -> &'static str {
+    match codec.to_ascii_lowercase().as_str() {
+        "ass" | "ssa" => "ass",
+        "webvtt" | "vtt" => "vtt",
+        _ => "srt",
+    }
+}
+
 pub fn transcode_url(
     item_id: &str,
     plan: &TranscodePlan,
     play_session_id: &str,
     audio_index: Option<i32>,
     start_ticks: Option<i64>,
+    burn_subtitle: Option<i32>,
 ) -> String {
     let path = if plan.hls {
         format!("/Videos/{item_id}/master.m3u8")
@@ -301,6 +319,10 @@ pub fn transcode_url(
     if let Some(t) = start_ticks.filter(|t| *t > 0) {
         q.push(format!("startTimeTicks={t}"));
     }
+    if let Some(i) = burn_subtitle.filter(|i| *i >= 0) {
+        q.push(format!("subtitleStreamIndex={i}"));
+        q.push("subtitleMethod=encode".to_string());
+    }
     if let Some(b) = plan.video_bitrate {
         q.push(format!("videoBitrate={b}"));
     }
@@ -316,6 +338,8 @@ pub struct TranscodeParams {
     pub audio_index: Option<i32>,
     pub start_secs: f64,
     pub video_bitrate: Option<i64>,
+    /// Legenda de imagem (índice absoluto da trilha) queimada no vídeo.
+    pub burn_subtitle: Option<i32>,
 }
 
 impl TranscodeParams {
@@ -339,6 +363,11 @@ impl TranscodeParams {
                 .map(|t| t as f64 / 10_000_000.0)
                 .unwrap_or(0.0),
             video_bitrate: get("videoBitrate").and_then(|v| v.parse().ok()).filter(|b: &i64| *b > 0),
+            burn_subtitle: if get("subtitleMethod").map(|m| m.eq_ignore_ascii_case("encode")).unwrap_or(false) {
+                get("subtitleStreamIndex").and_then(|v| v.parse().ok()).filter(|i: &i32| *i >= 0)
+            } else {
+                None
+            },
         })
     }
 }
@@ -369,8 +398,19 @@ pub fn build_args(
     add(&mut a, input);
 
     // Trilhas: primeiro vídeo + áudio escolhido (ou o primeiro, se existir); sem legendas.
-    add(&mut a, "-map");
-    add(&mut a, "0:v:0");
+    match p.burn_subtitle.filter(|_| !p.video_copy) {
+        Some(i) => {
+            // Legenda de imagem: sobrepõe a trilha escolhida ao vídeo antes de codificar.
+            add(&mut a, "-filter_complex");
+            add(&mut a, format!("[0:v:0][0:{i}]overlay=eof_action=pass[v]"));
+            add(&mut a, "-map");
+            add(&mut a, "[v]");
+        }
+        None => {
+            add(&mut a, "-map");
+            add(&mut a, "0:v:0");
+        }
+    }
     add(&mut a, "-map");
     match p.audio_index {
         Some(i) => add(&mut a, format!("0:{i}")),
@@ -786,7 +826,7 @@ mod tests {
     #[test]
     fn url_roundtrip() {
         let plan = TranscodePlan { video_copy: false, audio_copy: false, container: Container::Mkv, hls: false, video_bitrate: Some(6_000_000) };
-        let url = transcode_url("abc", &plan, "sess1", Some(2), Some(50_000_000));
+        let url = transcode_url("abc", &plan, "sess1", Some(2), Some(50_000_000), None);
         assert!(url.starts_with("/Videos/abc/stream.mkv?"));
         let q: HashMap<String, String> = url
             .split_once('?')
@@ -813,7 +853,38 @@ mod tests {
     }
 
     fn params(video_copy: bool, audio_copy: bool, container: Container, hls: bool) -> TranscodeParams {
-        TranscodeParams { video_copy, audio_copy, container, hls, audio_index: None, start_secs: 0.0, video_bitrate: None }
+        TranscodeParams { video_copy, audio_copy, container, hls, audio_index: None, start_secs: 0.0, video_bitrate: None, burn_subtitle: None }
+    }
+
+    #[test]
+    fn burn_in_image_subtitle() {
+        let mut p = params(false, false, Container::Mkv, false);
+        p.burn_subtitle = Some(4);
+        let a = args_str(&p, None);
+        assert!(a.contains("-filter_complex [0:v:0][0:4]overlay=eof_action=pass[v]"), "{a}");
+        assert!(a.contains("-map [v]") && !a.contains("-map 0:v:0"));
+        // Com vídeo copiado não dá para queimar: segue o mapeamento normal.
+        let mut r = params(true, false, Container::Mkv, false);
+        r.burn_subtitle = Some(4);
+        assert!(args_str(&r, None).contains("-map 0:v:0"));
+
+        let q: HashMap<String, String> = [("transcode", "full"), ("subtitleStreamIndex", "4"), ("subtitleMethod", "encode")]
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        assert_eq!(TranscodeParams::from_query(&q, Container::Mkv, false).unwrap().burn_subtitle, Some(4));
+        let mut q2 = q.clone();
+        q2.remove("subtitleMethod");
+        assert_eq!(TranscodeParams::from_query(&q2, Container::Mkv, false).unwrap().burn_subtitle, None);
+    }
+
+    #[test]
+    fn subtitle_kinds() {
+        assert!(is_text_subtitle("subrip") && is_text_subtitle("ASS") && is_text_subtitle("mov_text"));
+        assert!(!is_text_subtitle("hdmv_pgs_subtitle") && !is_text_subtitle("dvd_subtitle"));
+        assert_eq!(subtitle_ext("ssa"), "ass");
+        assert_eq!(subtitle_ext("webvtt"), "vtt");
+        assert_eq!(subtitle_ext("mov_text"), "srt");
     }
 
     #[test]

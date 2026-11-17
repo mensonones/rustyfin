@@ -526,6 +526,11 @@ fn parse_ffprobe(stdout: &[u8]) -> Option<MediaMetadata> {
                 .and_then(|v| v.as_str())
                 .map(String::from);
             let title = stream.pointer("/tags/title").and_then(|v| v.as_str());
+            let is_forced = stream
+                .pointer("/disposition/forced")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0)
+                == 1;
             let is_default = stream
                 .pointer("/disposition/default")
                 .and_then(|v| v.as_i64())
@@ -547,16 +552,16 @@ fn parse_ffprobe(stdout: &[u8]) -> Option<MediaMetadata> {
             });
 
             streams.push(MediaStream {
-                codec,
-                language,
-                r#type: kind.to_string(),
-                index,
-                is_default,
                 width: w,
                 height: h,
                 channels,
                 sample_rate,
                 display_title,
+                language,
+                is_default,
+                title: title.map(String::from),
+                is_forced,
+                ..MediaStream::basic(&codec, kind, index)
             });
         }
     }
