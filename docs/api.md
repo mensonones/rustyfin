@@ -81,7 +81,7 @@ Listas que o Rustyfin não modela respondem **vazias**: `Items/{id}/Ancestors`, 
 
 ## API do painel
 
-Usada por `/admin`. Segue as mesmas regras de acesso do painel (rede local e, se houver, senha de administrador).
+Usada por `/admin`. O painel abre em Bibliotecas, onde mostra a última varredura e permite iniciar outra. A aba Diagnóstico reúne os totais do acervo e o estado dos serviços. Segue as mesmas regras de acesso do painel (rede local e, se houver, senha de administrador).
 
 | Rota | Descrição |
 |---|---|
