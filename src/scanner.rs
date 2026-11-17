@@ -1,3 +1,5 @@
+mod identidade;
+
 use crate::{
     db::DbPool,
     libraries::{self, LibRef, Library},
@@ -26,7 +28,7 @@ pub struct MediaMetadata {
     pub streams: Vec<MediaStream>,
 }
 
-/// ID determinístico (UUID v5 do caminho): reindexar não muda os IDs.
+/// ID inicial determinístico (UUID v5 do caminho). Mudanças reconhecidas mantêm o ID anterior.
 pub fn item_id_for_path(path: &str) -> String {
     Uuid::new_v5(&Uuid::NAMESPACE_URL, path.as_bytes())
         .simple()
@@ -333,14 +335,17 @@ fn scan_concurrency() -> usize {
         })
 }
 
-/// Varre as pastas de todas as bibliotecas e devolve quantos arquivos de vídeo foram vistos.
-pub async fn run_scan(pool: &DbPool, libraries: &[Library]) -> usize {
-    info!("Iniciando varredura das pastas de mídia...");
+struct Lote {
+    arquivos: Vec<(PathBuf, Parsed)>,
+    refs: Vec<LibRef>,
+    folder_art: FolderArt,
+    listings: DirListings,
+}
 
-    let mut seen: HashSet<String> = HashSet::new();
+async fn coletar_lotes(libraries: &[Library]) -> (Vec<Lote>, bool) {
+    let mut lotes = Vec::new();
     let mut all_dirs_ok = true;
     let mut visitadas = HashSet::new();
-
     for (dir, refs) in libraries::scan_roots(libraries) {
         // Pasta ausente (drive desmontado, erro de digitação): não cria nada e preserva os itens.
         if !dir.is_dir() {
@@ -371,65 +376,123 @@ pub async fn run_scan(pool: &DbPool, libraries: &[Library]) -> usize {
             }
         };
 
-        // ffprobe domina o custo: processa vários arquivos ao mesmo tempo (limitado).
-        let refs = Arc::new(refs);
-        let gate = Arc::new(tokio::sync::Semaphore::new(scan_concurrency()));
-        let folder_art = Arc::new(folder_art);
-        let listings = Arc::new(listings);
         let mut arquivos: Vec<_> = files.into_iter().map(|path| {
             let parsed = parser::parse_path(&path);
             (path, parsed)
         }).collect();
         completar_anos(&mut arquivos);
-        let mut tasks = tokio::task::JoinSet::new();
-        for (path, parsed) in arquivos {
-            // Pastas mais profundas vêm primeiro: o arquivo fica com a biblioteca mais específica.
-            if !seen.insert(path.to_string_lossy().to_string()) {
-                continue;
+        lotes.push(Lote { arquivos, refs, folder_art, listings });
+    }
+    (lotes, all_dirs_ok)
+}
+
+async fn indexar_lote(pool: &DbPool, lote: Lote) {
+    // ffprobe domina o custo: processa vários arquivos ao mesmo tempo (limitado).
+    let refs = Arc::new(lote.refs);
+    let gate = Arc::new(tokio::sync::Semaphore::new(scan_concurrency()));
+    let folder_art = Arc::new(lote.folder_art);
+    let listings = Arc::new(lote.listings);
+    let mut tasks = tokio::task::JoinSet::new();
+    for (path, parsed) in lote.arquivos {
+        let (pool, refs, gate) = (pool.clone(), refs.clone(), gate.clone());
+        let folder_art = folder_art.clone();
+        let listings = listings.clone();
+        tasks.spawn(async move {
+            let Ok(_permit) = gate.acquire_owned().await else {
+                return;
+            };
+            if let Err(err) =
+                process_media_file(&pool, &path, &parsed, &refs, &folder_art, &listings).await
+            {
+                error!("Erro ao processar {}: {}", path.display(), err);
             }
-            let (pool, refs, gate) = (pool.clone(), refs.clone(), gate.clone());
-            let folder_art = folder_art.clone();
-            let listings = listings.clone();
-            tasks.spawn(async move {
-                let Ok(_permit) = gate.acquire_owned().await else {
-                    return;
-                };
-                if let Err(err) = process_media_file(&pool, &path, &parsed, &refs, &folder_art, &listings).await {
-                    error!("Erro ao processar {}: {}", path.display(), err);
+        });
+    }
+    while tasks.join_next().await.is_some() {}
+}
+
+/// Varre as pastas de todas as bibliotecas e devolve quantos arquivos de vídeo foram vistos.
+pub async fn run_scan(pool: &DbPool, libraries: &[Library]) -> usize {
+    info!("Iniciando varredura das pastas de mídia...");
+    let (mut lotes, mut all_dirs_ok) = coletar_lotes(libraries).await;
+    let mut vistos = HashMap::new();
+    for lote in &mut lotes {
+        // Raízes mais profundas vêm primeiro e conservam a biblioteca mais específica.
+        lote.arquivos.retain(|(path, parsed)| {
+            let caminho = path.to_string_lossy().into_owned();
+            if let std::collections::hash_map::Entry::Vacant(entrada) = vistos.entry(caminho) {
+                entrada.insert(libraries::pick_library(
+                    &lote.refs, matches!(parsed.kind, Kind::Episode { .. }),
+                ));
+                return true;
+            }
+            false
+        });
+    }
+
+    let verificacao = match identidade::preparar(pool, vistos.keys().cloned().collect()).await {
+        Ok(resultado) => {
+            all_dirs_ok &= resultado.completa;
+            if all_dirs_ok {
+                if let Err(erro) = resultado.mover(pool, &vistos).await {
+                    error!("Falha ao reassociar arquivos movidos: {erro}");
+                    all_dirs_ok = false;
                 }
-            });
+            }
+            Some(resultado)
         }
-        while tasks.join_next().await.is_some() {}
+        Err(erro) => {
+            error!("Falha ao verificar identidades de mídia: {erro}");
+            all_dirs_ok = false;
+            None
+        }
+    };
+
+    for lote in lotes {
+        indexar_lote(pool, lote).await;
+    }
+    if let Some(resultado) = verificacao {
+        if let Err(erro) = resultado.salvar(pool).await {
+            error!("Falha ao salvar assinaturas de mídia: {erro}");
+            all_dirs_ok = false;
+        }
     }
 
     // Só remove órfãos se todas as pastas foram lidas (evita apagar tudo com um drive desmontado).
     if all_dirs_ok {
-        if let Err(e) = remove_missing(pool, &seen).await {
+        if let Err(e) = remove_missing(pool, &vistos).await {
             error!("Erro ao remover itens ausentes: {}", e);
         }
     }
 
-    info!("Varredura de mídia concluída ({} arquivos).", seen.len());
-    seen.len()
+    info!("Varredura de mídia concluída ({} arquivos).", vistos.len());
+    vistos.len()
 }
 
 async fn remove_missing(
     pool: &DbPool,
-    seen: &HashSet<String>,
+    vistos: &HashMap<String, Option<String>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let rows: Vec<(String, String)> = sqlx::query_as("SELECT id, path FROM items")
         .fetch_all(pool)
         .await?;
 
-    for (id, path) in rows {
-        if !seen.contains(&path) {
-            sqlx::query("DELETE FROM items WHERE id = ?").bind(&id).execute(pool).await?;
+    let ausentes: Vec<_> = rows.into_iter().filter(|(_, path)| !vistos.contains_key(path)).collect();
+    if ausentes.is_empty() {
+        return Ok(());
+    }
+    let mut tx = pool.begin().await?;
+    for (id, path) in &ausentes {
+        let removido = sqlx::query("DELETE FROM items WHERE id = ? AND path = ?")
+            .bind(id).bind(path).execute(&mut *tx).await?;
+        if removido.rows_affected() != 0 {
             sqlx::query("DELETE FROM playback_state WHERE item_id = ?")
-                .bind(&id)
-                .execute(pool)
-                .await?;
-            info!("Removido (arquivo ausente): {}", path);
+                .bind(id).execute(&mut *tx).await?;
         }
+    }
+    tx.commit().await?;
+    for (_, path) in ausentes {
+        info!("Removido (arquivo ausente): {path}");
     }
     Ok(())
 }
@@ -481,7 +544,16 @@ async fn process_media_file(
         }
     }
 
-    let item_id = existing.map_or_else(|| item_id_for_path(&path_str), |(id, ..)| id);
+    let item_id = if let Some((id, ..)) = existing {
+        id
+    } else {
+        let inicial = item_id_for_path(&path_str);
+        let ocupado: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM items WHERE id = ?)")
+            .bind(&inicial)
+            .fetch_one(pool)
+            .await?;
+        if ocupado { Uuid::new_v4().simple().to_string() } else { inicial }
+    };
 
     // Sem ffprobe não inventamos codecs: ficam NULL e `probed = 0` (nova tentativa no próximo scan).
     let probed_meta = probe_file(path).await;

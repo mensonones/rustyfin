@@ -78,10 +78,26 @@ UUIDs v5 do nome (e do ano, quando há) normalizado.
    detecta mudanças de arquivo.
 2. `scanner::run_scan` lista os vídeos de cada pasta (em `spawn_blocking`) e processa vários arquivos em paralelo
    (`ffprobe`). Arquivos inalterados (tamanho e data) só atualizam nome e imagens.
-3. Itens cujo arquivo sumiu são removidos, **mas só se todas as pastas foram lidas sem erro**: uma pasta indisponível
-   ou um erro de leitura nunca apaga o catálogo nem o progresso.
+3. Antes de descartar itens ausentes, o scanner tenta reconhecer arquivos movidos pelo conteúdo. Só reconcilia
+   caminhos ou remove itens após uma varredura completa, para preservar o catálogo se uma pasta ficar indisponível.
 4. Depois, `metadata::enrich_pending` busca o TMDB (em lotes paralelos) e as miniaturas ausentes são geradas em
    segundo plano.
+
+### Identidade de arquivos movidos
+
+Na primeira varredura após a atualização, cada vídeo recebe uma impressão SHA-256 persistida no
+SQLite. A leitura é sequencial, em blocos, e pode aumentar o tempo desse primeiro scan.
+Varreduras seguintes reaproveitam a impressão enquanto o tamanho e a data de alteração
+continuarem iguais.
+
+Depois de mover um vídeo, o próximo scan mantém seu ID se encontrar uma única origem
+catalogada ausente e um único destino novo com a mesma impressão. O progresso e os favoritos
+continuam associados ao ID. O destino assume as permissões da biblioteca em que foi encontrado.
+Faça pelo menos uma varredura antes de mover arquivos que já estavam catalogados.
+
+Cópias que já foram indexadas separadamente mantêm IDs próprios. A associação só ocorre em
+uma varredura completa. Arquivos reencodados, editados ou com metadados internos alterados
+têm outra impressão digital.
 
 ## Decisões de projeto
 

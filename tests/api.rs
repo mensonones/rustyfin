@@ -6,7 +6,7 @@ use axum::{
     extract::ConnectInfo,
     http::{Method, Request, StatusCode, header},
 };
-use rustyfin::{api, config::AppConfig, db, users};
+use rustyfin::{api, config::AppConfig, db, libraries::Library, scanner, users};
 use serde_json::{Value, json};
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tower::ServiceExt;
@@ -207,4 +207,59 @@ async fn diagnostico_usa_perfil_observado_sem_alterar_a_ultima_decisao() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (_, depois) = call(&s.app, Method::GET, "/admin/api/reproducao/perfis", None, None).await;
     assert_eq!(depois, perfis);
+}
+
+
+#[tokio::test]
+async fn mover_arquivo_preserva_id_posicao_e_favorito_sem_mesclar_copia() {
+    let s = server("arquivo-movido").await;
+    let pool = db::init_db(&test_config(&s.dir).database_url).await.unwrap();
+    let midia = s.dir.join("midia");
+    std::fs::create_dir_all(midia.join("destino")).unwrap();
+    let origem = midia.join("Filme exemplo.mp4");
+    let destino = midia.join("destino").join("Filme exemplo.mp4");
+    std::fs::write(&origem, b"conteudo identico depois da mudanca").unwrap();
+    let bibliotecas = [
+        Library {
+            id: "filmes".into(), name: "Filmes".into(), collection_type: "movies".into(),
+            paths: vec![midia.to_str().unwrap().into()],
+        },
+        Library {
+            id: "arquivo".into(), name: "Arquivo".into(), collection_type: "movies".into(),
+            paths: vec![midia.join("destino").to_str().unwrap().into()],
+        },
+    ];
+    assert_eq!(scanner::run_scan(&pool, &bibliotecas).await, 1);
+    let id = scanner::item_id_for_path(origem.to_str().unwrap());
+    let token = login(&s.app, "Admin").await;
+    let posicao = 19_300_000_000_i64;
+    let (status, _) = call(
+        &s.app, Method::POST, "/Sessions/Playing/Progress", Some(&token),
+        Some(json!({ "ItemId": id, "PositionTicks": posicao })),
+    ).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = call(
+        &s.app, Method::POST, &format!("/UserFavoriteItems/{id}"), Some(&token), None,
+    ).await;
+    assert!(status.is_success());
+
+    std::fs::rename(&origem, &destino).unwrap();
+    assert_eq!(scanner::run_scan(&pool, &bibliotecas).await, 1);
+    let (status, item) = call(
+        &s.app, Method::GET, &format!("/Items/{id}"), Some(&token), None,
+    ).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(item["Id"], id);
+    assert_eq!(item["UserData"]["PlaybackPositionTicks"], posicao);
+    assert_eq!(item["UserData"]["IsFavorite"], true);
+    let biblioteca: String = sqlx::query_scalar("SELECT library_id FROM items WHERE id = ?")
+        .bind(&id).fetch_one(&pool).await.unwrap();
+    assert_eq!(biblioteca, "arquivo");
+
+    std::fs::copy(&destino, &origem).unwrap();
+    assert_eq!(scanner::run_scan(&pool, &bibliotecas).await, 2);
+    let rows: Vec<(String, String)> = sqlx::query_as("SELECT id, path FROM items")
+        .fetch_all(&pool).await.unwrap();
+    assert!(rows.iter().any(|(i, p)| *i == id && std::path::Path::new(p) == destino));
+    assert!(rows.iter().any(|(i, p)| *i != id && std::path::Path::new(p) == origem));
 }

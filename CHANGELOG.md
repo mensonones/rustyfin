@@ -5,6 +5,13 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.13.0] - 2026-11-17
+
+### Alterado
+- Mover um arquivo de mídia para outro caminho pode preservar o ID, o progresso e os favoritos.
+  O scanner compara o SHA-256 e reaproveita o ID quando há uma única origem ausente e um
+  único destino novo. Cópias simultâneas continuam como itens separados.
+
 ## [0.12.0] - 2026-11-17
 
 ### Adicionado

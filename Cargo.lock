@@ -1405,7 +1405,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "rustyfin"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "argon2",
  "axum",
@@ -1420,6 +1420,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
+ "sha2",
  "sqlx",
  "tokio",
  "tokio-util",

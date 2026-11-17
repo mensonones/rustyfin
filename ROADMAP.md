@@ -127,8 +127,11 @@ ou convites pela internet.
 - [x] **Diagnóstico antes do Play.** Comparar até dois perfis recebidos de clientes locais
   para o mesmo título e faixas selecionadas. Mostrar Direct Play, remux ou transcodificação,
   os motivos da decisão e a última decisão observada por dispositivo.
-- [ ] **Identidade estável do acervo.** Preservar progresso e favoritos ao mover arquivos.
-  Reconhecer cópias idênticas e mostrar substituições e associações ambíguas para revisão.
+- [x] **Identidade estável ao mover arquivos.** Preservar ID, progresso e favoritos quando
+  o mesmo conteúdo reaparece em um único caminho novo. Cópias e correspondências ambíguas
+  mantêm identidades separadas.
+- [ ] **Revisão de alterações do acervo.** Mostrar substituições de arquivo e associações
+  ambíguas para revisão no painel.
 - [ ] **Correção de legendas.** Salvar ajustes reversíveis por arquivo e faixa. Começar com
   atraso e desvio de tempo em SRT e oferecer prévia em dois pontos antes de aplicar.
 

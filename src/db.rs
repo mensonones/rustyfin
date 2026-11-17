@@ -50,6 +50,8 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
 
     // Migrações incrementais (bancos criados por versões anteriores).
     add_column_if_missing(&pool, "items", "modified_at", "INTEGER NOT NULL DEFAULT 0").await?;
+    add_column_if_missing(&pool, "items", "content_sha256", "BLOB").await?;
+    add_column_if_missing(&pool, "items", "content_mtime", "TEXT").await?;
     add_column_if_missing(&pool, "items", "probed", "BOOLEAN NOT NULL DEFAULT 0").await?;
     add_column_if_missing(&pool, "items", "streams_json", "TEXT").await?;
     add_column_if_missing(&pool, "items", "subtitle_path", "TEXT").await?;
