@@ -5,6 +5,12 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.17.1] - 2026-11-17
+
+### Alterado
+- Painel administrativo com navegação lateral e manutenção agrupada abaixo das bibliotecas.
+- Busca de cenas com status de carregamento, horários em coluna e atualização ao alternar spoilers.
+
 ## [0.17.0] - 2026-11-17
 
 ### Adicionado

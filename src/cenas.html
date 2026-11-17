@@ -3,32 +3,96 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Pesquise falas nas legendas locais e filtre cenas pelo seu progresso.">
 <title>Busca de cenas · Rustyfin</title>
 <style>
-:root { color-scheme: light dark; --fonte: system-ui, sans-serif; --foco: #bc704c; }
+/* Hallmark · v2.0.0 · theme: Terrazzo · shape: app screen · genre: modern-minimal */
+/* Hallmark · critique: make the query and spoiler setting visible before the first result */
+:root {
+  color-scheme: light dark; --font: system-ui, sans-serif; --bg: #f5f1ea; --paper: #fffdf9;
+  --text: #29231e; --muted: #645950; --line: #d9cec1; --accent: #943d24;
+  --on-accent: #fffdf9; --selected: #f2e0d5; --danger: #a32724;
+  --motion: 160ms ease-out;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1c1917; --paper: #25211e; --text: #f4ede4; --muted: #c3b5a8;
+    --line: #473d35; --accent: #f2a480; --on-accent: #2d170e; --selected: #412b21;
+    --danger: #ffaaa4; }
+}
+* { box-sizing: border-box; }
 html, body { overflow-x: clip; }
-body { font: 1rem/1.5 var(--fonte); margin: 0; }
-main { max-width: 48rem; margin: auto; padding: 1.5rem; }
-form, article { border-block-start: 1px solid; padding-block: 1rem; }
-label { display: block; margin-block: .5rem; }
-input, button { font: inherit; padding: .5rem; }
-input:not([type=checkbox]) { width: min(100%, 28rem); box-sizing: border-box; }
-:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
-article p { white-space: pre-wrap; overflow-wrap: anywhere; }
+body { font: 1rem/1.5 var(--font); margin: 0; background: var(--bg); color: var(--text); }
+[hidden] { display: none !important; }
+.mast, main { width: min(100% - 32px, 48rem); margin-inline: auto; }
+.mast { display: flex; min-height: 68px; align-items: center; justify-content: space-between;
+  gap: 12px; border-bottom: 1px solid var(--line); }
+.brand { font-weight: 700; letter-spacing: -.02em; }
+main { padding-block: clamp(32px, 7vw, 76px) 64px; }
+h1 { margin: 0; min-width: 0; overflow-wrap: break-word; font-size: clamp(2.2rem, 6vw, 3.8rem);
+  line-height: 1.08; text-wrap: balance; letter-spacing: -.05em; }
+.intro { margin: 12px 0 28px; color: var(--muted); }
+form { padding: clamp(16px, 4vw, 24px); background: var(--paper); border: 1px solid var(--line);
+  border-radius: 12px; }
+#entrada { max-width: 27rem; display: grid; gap: 8px; }
+#entrada button { justify-self: start; margin-top: 8px; }
+label, #estado, time { font-size: .875rem; }
+label { display: block; font-weight: 600; }
+input, button { font: inherit; }
+input:not([type=checkbox]) { width: 100%; min-width: 0; min-height: 46px; padding: 8px 12px;
+  border: 1px solid var(--muted); border-radius: 8px; background: var(--bg); color: var(--text); }
+button { min-height: 44px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 16px;
+  background: var(--paper); color: var(--text); cursor: pointer;
+  transition: transform var(--motion), opacity var(--motion); }
+button:enabled:hover { background: var(--selected); }
+button.primary:enabled:hover { background: var(--accent); opacity: .86; }
+button:not(:disabled):active { transform: translateY(1px); }
+button.primary:disabled { background: var(--bg); color: var(--muted); border-color: var(--line); cursor: wait; }
+.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.query { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 8px; }
+.spoilers { display: flex; gap: 8px; align-items: center; margin-top: 16px; min-height: 44px;
+  width: fit-content; padding: 4px 12px; border-radius: 8px; background: var(--bg); cursor: pointer; }
+.spoilers:has(:checked) { background: var(--selected); }
+input[type=checkbox] { accent-color: var(--accent); margin: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#estado { color: var(--muted); min-height: 1.5em; margin: 16px 0; }
+#estado[data-erro] { color: var(--danger); }
+article { border-block-start: 1px solid var(--line); padding: 16px 0; }
+article header { display: flex; justify-content: space-between; gap: 12px; }
+article strong { overflow-wrap: anywhere; }
+article p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0; color: var(--muted); }
+time { color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
+@keyframes aparecer { from { opacity: .55; transform: translateY(4px); } }
+#resultados:not(:empty), #busca:not([hidden]) { animation: aparecer var(--motion); }
+@media (max-width: 360px) { .query { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) {
+  :root { --motion: 0s; }
+  button:not(:disabled):active { transform: none; }
+  #resultados:not(:empty), #busca:not([hidden]) { animation: none; }
+}
 </style>
 </head>
-<body><main>
+<body>
+<header class="mast">
+  <span class="brand">Rustyfin</span>
+  <button id="sair" type="button" hidden>Sair</button>
+</header>
+<main>
 <h1>Busca de cenas</h1>
-<form id="entrada">
-  <label>Usuário <input name="usuario" autocomplete="username" required></label>
-  <label>Senha <input name="senha" type="password" autocomplete="current-password"></label>
-  <button>Entrar</button>
+<p class="intro" id="intro">Entre com seu perfil para pesquisar falas da biblioteca.</p>
+<form id="entrada" method="post" aria-label="Entrar no Rustyfin">
+  <label for="usuario">Usuário</label>
+  <input id="usuario" name="usuario" autocomplete="username" required>
+  <label for="senha">Senha</label>
+  <input id="senha" name="senha" type="password" autocomplete="current-password">
+  <button class="primary">Entrar</button>
 </form>
-<form id="busca" hidden>
-  <label>Trecho da fala <input name="termo" required minlength="2" maxlength="128"></label>
-  <label><input name="spoilers" type="checkbox"> Incluir cenas além do meu progresso</label>
-  <button>Buscar</button>
-  <button id="sair" type="button">Sair</button>
+<form id="busca" role="search" aria-label="Buscar nas legendas" hidden>
+  <label for="termo">Trecho da fala</label>
+  <div class="query">
+    <input id="termo" name="termo" type="search" required minlength="2" maxlength="128">
+    <button class="primary">Buscar</button>
+  </div>
+  <label class="spoilers"><input name="spoilers" type="checkbox"> Incluir cenas além do meu progresso</label>
 </form>
 <p id="estado" role="status"></p>
 <div id="resultados"></div>
@@ -38,55 +102,90 @@ const entrada = document.getElementById('entrada');
 const busca = document.getElementById('busca');
 const estado = document.getElementById('estado');
 const resultados = document.getElementById('resultados');
+const sair = document.getElementById('sair');
+const intro = document.getElementById('intro');
 let token, geracao = 0;
 const el = (tag, texto) => Object.assign(document.createElement(tag), {textContent: texto});
+function mensagem(texto, erro = false) {
+  estado.toggleAttribute('data-erro', erro);
+  estado.textContent = texto;
+}
 entrada.onsubmit = async (evento) => {
   evento.preventDefault();
-  evento.submitter.disabled = true;
+  const botao = entrada.querySelector('button');
+  botao.disabled = true;
+  botao.textContent = 'Entrando…';
+  mensagem('');
   try {
     const r = await fetch('/Users/AuthenticateByName', {method: 'POST', headers: {
       'Content-Type': 'application/json', 'X-Emby-Authorization': 'MediaBrowser Client="Rustyfin Cenas"',
     }, body: JSON.stringify({Username: entrada.usuario.value, Pw: entrada.senha.value})});
     if (!r.ok) throw new Error('Confira o usuário e a senha.');
     token = (await r.json()).AccessToken;
-    estado.textContent = '';
     entrada.hidden = true;
     busca.hidden = false;
+    sair.hidden = false;
+    intro.textContent = 'Encontre uma fala nas legendas indexadas.';
     busca.termo.focus();
-  } catch (e) { estado.textContent = e.message; }
-  finally { entrada.senha.value = ''; evento.submitter.disabled = false; }
+  } catch (e) { mensagem(e.message, true); }
+  finally {
+    entrada.senha.value = '';
+    botao.disabled = false;
+    botao.textContent = 'Entrar';
+  }
 };
 busca.onsubmit = async (evento) => {
   evento.preventDefault();
   const atual = ++geracao;
   resultados.replaceChildren();
-  estado.textContent = 'Buscando…';
+  mensagem('Buscando…');
+  resultados.setAttribute('aria-busy', 'true');
   try {
     const query = new URLSearchParams({q: busca.termo.value, spoilers: busca.spoilers.checked});
     const r = await fetch('/api/cenas?' + query, {headers: {'X-Emby-Token': token}});
     if (!r.ok) throw new Error('Não foi possível buscar as cenas.');
     const cenas = await r.json();
     if (atual !== geracao) return;
+    const lista = document.createDocumentFragment();
     for (const c of cenas) {
       const sec = Math.floor(c.inicioTicks / 10000000);
-      const art = document.createElement('article');
-      art.append(el('strong', c.titulo + ' / ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2,'0')),
-        el('p', c.previa));
-      resultados.append(art);
+      const artigo = document.createElement('article');
+      const cabecalho = document.createElement('header');
+      const tempo = el('time', Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'));
+      tempo.dateTime = 'PT' + sec + 'S';
+      cabecalho.append(el('strong', c.titulo), tempo);
+      artigo.append(cabecalho, el('p', c.previa));
+      lista.append(artigo);
     }
-    estado.textContent = cenas.length ? '' : 'Nenhuma fala encontrada para este perfil.';
-  } catch (e) { if (atual === geracao) estado.textContent = e.message; }
+    resultados.append(lista);
+    mensagem(cenas.length ? cenas.length + (cenas.length === 1 ? ' fala encontrada' : ' falas encontradas') :
+      'Nenhuma fala encontrada. Tente outro trecho.');
+  } catch (e) {
+    if (atual === geracao) mensagem(e.message, true);
+  } finally {
+    if (atual === geracao) resultados.removeAttribute('aria-busy');
+  }
 };
-busca.spoilers.onchange = () => { geracao++; resultados.replaceChildren(); estado.textContent = ''; };
-document.getElementById('sair').onclick = () => {
+busca.spoilers.onchange = () => {
+  geracao++;
+  resultados.replaceChildren();
+  resultados.removeAttribute('aria-busy');
+  if (busca.termo.value.trim().length >= 2) busca.requestSubmit();
+  else mensagem('');
+};
+sair.onclick = () => {
   const anterior = token;
   token = undefined;
   geracao++;
   resultados.replaceChildren();
+  resultados.removeAttribute('aria-busy');
   busca.reset();
   busca.hidden = true;
   entrada.hidden = false;
-  estado.textContent = '';
+  sair.hidden = true;
+  intro.textContent = 'Entre com seu perfil para pesquisar falas da biblioteca.';
+  mensagem('');
+  entrada.usuario.focus();
   if (anterior) fetch('/Sessions/Logout', {method: 'POST', headers: {'X-Emby-Token': anterior}}).catch(() => {});
 };
 </script>
