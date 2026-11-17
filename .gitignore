@@ -12,3 +12,4 @@ rustyfin.db*
 docker-compose.override.yml
 *.log
 .DS_Store
+.argus/
