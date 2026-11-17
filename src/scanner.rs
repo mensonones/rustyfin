@@ -480,6 +480,11 @@ pub async fn run_scan(pool: &DbPool, libraries: &[Library]) -> usize {
     vistos.len()
 }
 
+/// Calcula em segundo plano os hashes de conteúdo que a varredura adiou (veja `identidade::verificar`).
+pub async fn completar_hashes(pool: &DbPool) {
+    identidade::completar_pendentes(pool).await;
+}
+
 async fn remove_missing(
     pool: &DbPool,
     vistos: &HashMap<String, Option<String>>,

@@ -135,6 +135,15 @@ pub fn spawn_autoscan(pool: DbPool, config: Arc<AppConfig>, trigger: ScanTrigger
             RUNNING.store(true, Ordering::Relaxed);
             let files = scanner::run_scan(&pool, &libs).await;
             metadata::enrich_pending(&pool, &config).await;
+            // Assinaturas de conteúdo que a varredura adiou: não atrasam a biblioteca.
+            static HASHING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if !HASHING.swap(true, Ordering::AcqRel) {
+                let hash_pool = pool.clone();
+                tokio::spawn(async move {
+                    scanner::completar_hashes(&hash_pool).await;
+                    HASHING.store(false, Ordering::Release);
+                });
+            }
             // Miniaturas/backdrops dos itens sem arte: prontos antes do 1º acesso (em segundo plano).
             tokio::spawn(crate::api::images::pregenerate(pool.clone(), config.clone()));
             LAST_FILES.store(files, Ordering::Relaxed);

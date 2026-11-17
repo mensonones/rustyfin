@@ -79,24 +79,61 @@ fn verificar(caminhos: &[String], catalogo: Vec<Catalogado>) -> Verificacao {
     let mut recalculadas = HashMap::new();
     let mut completa = true;
     let mut buffer = vec![0; 256 * 1024];
+
+    // Arquivos do catálogo que sumiram: só eles podem ter sido movidos ou editados.
+    let vistos: HashSet<_> = caminhos.iter().map(String::as_str).collect();
+    let mut ausentes: HashMap<&[u8], Vec<&Catalogado>> = HashMap::new();
+    for item in catalogo.values() {
+        if vistos.contains(item.path.as_str()) {
+            continue;
+        }
+        // Sem hash (adiado pela varredura e ainda não calculado), o item não casa por conteúdo: entra com a
+        // chave vazia e só pode ser oferecido na revisão do acervo, pelo nome, nunca movido sozinho.
+        let hash = item.content_sha256.as_deref().unwrap_or_default();
+        match Path::new(&item.path).try_exists() {
+            Ok(false) => ausentes.entry(hash).or_default().push(item),
+            Ok(true) => {}
+            Err(e) => {
+                completa = false;
+                warn!(
+                    "Não foi possível verificar o caminho anterior {}: {e}",
+                    item.path
+                );
+            }
+        }
+    }
+    let tamanhos_ausentes: HashSet<i64> = ausentes.values().flatten().map(|i| i.size_bytes).collect();
+    let chaves_ausentes: HashSet<Chave> = ausentes.values().flatten().map(|i| chave(&i.path).0).collect();
+
+    // O hash do arquivo inteiro custa uma leitura completa (30 GB levavam ~5 min). Só é calculado aqui quando
+    // serve para decidir algo agora: um arquivo alterado que já tinha hash (substituição) ou um arquivo novo que
+    // pode ser o destino de um movimento (mesmo tamanho ou mesmo nome que um ausente). Os demais ficam sem hash
+    // e o `completar_pendentes` os preenche em segundo plano, sem atrasar a biblioteca.
     for caminho in caminhos {
         let path = Path::new(caminho);
         let leitura = (|| {
             let (mtime, tamanho) = estado(&std::fs::metadata(path)?)?;
-            if let Some(item) = catalogo.get(caminho) {
+            let precisa = if let Some(item) = catalogo.get(caminho) {
                 if item.size_bytes == tamanho && item.content_mtime.as_deref() == Some(&mtime) {
                     if let Some(hash) = &item.content_sha256 {
-                        return Ok(hash.clone());
+                        return Ok(Some(hash.clone()));
                     }
                 }
+                item.content_sha256.is_some()
+            } else {
+                tamanhos_ausentes.contains(&tamanho) || chaves_ausentes.contains(&chave(caminho).0)
+            };
+            if !precisa {
+                return Ok(None);
             }
             let assinatura = assinar(path, mtime, tamanho, &mut buffer)?;
             let hash = assinatura.sha256.clone();
             recalculadas.insert(caminho.clone(), assinatura);
-            Ok::<_, io::Error>(hash)
+            Ok::<_, io::Error>(Some(hash))
         })();
         match leitura {
-            Ok(hash) => por_assinatura.entry(hash).or_default().push(caminho),
+            Ok(Some(hash)) => por_assinatura.entry(hash).or_default().push(caminho),
+            Ok(None) => {}
             Err(e) => {
                 completa = false;
                 warn!(
@@ -107,26 +144,6 @@ fn verificar(caminhos: &[String], catalogo: Vec<Catalogado>) -> Verificacao {
         }
     }
 
-    let vistos: HashSet<_> = caminhos.iter().map(String::as_str).collect();
-    let mut ausentes: HashMap<&[u8], Vec<&Catalogado>> = HashMap::new();
-    for item in catalogo.values() {
-        if vistos.contains(item.path.as_str()) {
-            continue;
-        }
-        if let Some(hash) = item.content_sha256.as_deref() {
-            match Path::new(&item.path).try_exists() {
-                Ok(false) => ausentes.entry(hash).or_default().push(item),
-                Ok(true) => {}
-                Err(e) => {
-                    completa = false;
-                    warn!(
-                        "Não foi possível verificar o caminho anterior {}: {e}",
-                        item.path
-                    );
-                }
-            }
-        }
-    }
     let movimentos: Vec<_> = ausentes
         .iter()
         .filter_map(|(hash, origens)| {
@@ -258,6 +275,44 @@ fn sugerir_revisoes(
     revisoes
 }
 
+/// Hashes que a varredura deixou para depois (arquivos novos sem relação com algum ausente), calculados um por vez,
+/// em segundo plano (quem chama garante que só um preenchimento roda por vez).
+pub(super) async fn completar_pendentes(pool: &DbPool) {
+    let pendentes: Vec<(String, i64)> =
+        sqlx::query_as("SELECT path, size_bytes FROM items WHERE content_sha256 IS NULL ORDER BY size_bytes")
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+    if !pendentes.is_empty() {
+        info!("Calculando a assinatura de {} arquivos em segundo plano...", pendentes.len());
+    }
+    for (caminho, tamanho) in pendentes {
+        let alvo = caminho.clone();
+        let resultado = tokio::task::spawn_blocking(move || {
+            let (mtime, tam) = estado(&std::fs::metadata(&alvo)?)?;
+            if tam != tamanho {
+                return Err(io::Error::other("O tamanho mudou desde a varredura"));
+            }
+            let mut buffer = vec![0; 256 * 1024];
+            assinar(Path::new(&alvo), mtime, tam, &mut buffer)
+        })
+        .await;
+        match resultado {
+            Ok(Ok(a)) => {
+                let _ = sqlx::query("UPDATE items SET content_sha256 = ?, content_mtime = ? WHERE path = ? AND size_bytes = ?")
+                    .bind(a.sha256)
+                    .bind(a.mtime)
+                    .bind(&caminho)
+                    .bind(a.tamanho)
+                    .execute(pool)
+                    .await;
+            }
+            Ok(Err(e)) => warn!("Assinatura adiada de {caminho} não calculada: {e}"),
+            Err(_) => {}
+        }
+    }
+}
+
 pub(super) async fn preparar(
     pool: &DbPool,
     caminhos: Vec<String>,
@@ -371,6 +426,65 @@ impl Verificacao {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arquivo_novo_sem_ausentes_nao_e_lido() {
+        let dir = std::env::temp_dir().join(format!("rustyfin-identidade-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let novo = dir.join("novo.mp4");
+        std::fs::write(&novo, b"conteudo novo").unwrap();
+        let resultado = verificar(&[novo.to_str().unwrap().into()], Vec::new());
+        std::fs::remove_dir_all(dir).unwrap();
+        assert!(resultado.completa);
+        assert!(resultado.recalculadas.is_empty(), "sem ausentes não há o que casar: nada é lido");
+    }
+
+    #[test]
+    fn novo_com_o_tamanho_ou_o_nome_de_um_ausente_e_lido() {
+        let dir = std::env::temp_dir().join(format!("rustyfin-identidade-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let ausente = Catalogado {
+            id: "a".into(),
+            path: dir.join("Filme (2020).mp4").to_str().unwrap().into(),
+            size_bytes: 13,
+            content_sha256: Some(Sha256::digest(b"outro arquivo").to_vec()),
+            content_mtime: None,
+        };
+        let mesmo_tamanho = dir.join("renomeado.mp4");
+        let mesmo_nome = dir.join("sub").join("Filme (2020).mkv");
+        let alheio = dir.join("alheio.mp4");
+        std::fs::create_dir(dir.join("sub")).unwrap();
+        std::fs::write(&mesmo_tamanho, b"outro arquivo").unwrap();
+        std::fs::write(&mesmo_nome, b"re-encodado, tamanho diferente").unwrap();
+        std::fs::write(&alheio, b"coisa sem relacao").unwrap();
+        let caminhos: Vec<String> = [&mesmo_tamanho, &mesmo_nome, &alheio].iter().map(|p| p.to_str().unwrap().into()).collect();
+        let resultado = verificar(&caminhos, vec![ausente]);
+        std::fs::remove_dir_all(dir).unwrap();
+        assert_eq!(resultado.recalculadas.len(), 2, "só o de mesmo tamanho e o de mesmo nome são lidos");
+        assert!(!resultado.recalculadas.contains_key(alheio.to_str().unwrap()));
+        assert_eq!(resultado.movimentos.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn pendentes_sao_preenchidos_em_segundo_plano() {
+        let pool = crate::db::init_db("sqlite::memory:").await.unwrap();
+        let dir = std::env::temp_dir().join(format!("rustyfin-identidade-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let arquivo = dir.join("filme.mp4");
+        std::fs::write(&arquivo, b"conteudo do filme").unwrap();
+        let caminho = arquivo.to_str().unwrap().to_string();
+        sqlx::query("INSERT INTO items (id, name, path, media_type, size_bytes) VALUES ('i1', 'Filme', ?, 'Movie', 17)")
+            .bind(&caminho)
+            .execute(&pool)
+            .await
+            .unwrap();
+        completar_pendentes(&pool).await;
+        let (hash, mtime): (Option<Vec<u8>>, Option<String>) =
+            sqlx::query_as("SELECT content_sha256, content_mtime FROM items WHERE id = 'i1'").fetch_one(&pool).await.unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+        assert_eq!(hash.unwrap(), Sha256::digest(b"conteudo do filme").to_vec());
+        assert!(mtime.is_some());
+    }
 
     #[test]
     fn dois_destinos_com_o_mesmo_conteudo_sao_ambiguos() {

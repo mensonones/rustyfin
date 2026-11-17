@@ -237,6 +237,8 @@ async fn mover_arquivo_preserva_id_posicao_e_favorito_sem_mesclar_copia() {
         },
     ];
     assert_eq!(scanner::run_scan(&pool, &bibliotecas).await, 1);
+    // A varredura adia o hash do conteúdo; em produção ele é calculado em segundo plano logo depois.
+    scanner::completar_hashes(&pool).await;
     let id = scanner::item_id_for_path(origem.to_str().unwrap());
     let token = login(&s.app, "Admin").await;
     let posicao = 19_300_000_000_i64;
@@ -344,6 +346,7 @@ async fn revisao_de_substituicao_transfere_marcadores_sem_sobrescrever_posicao()
         paths: vec![midia.to_str().unwrap().into()],
     }];
     assert_eq!(scanner::run_scan(&pool, &libs).await, 1);
+    scanner::completar_hashes(&pool).await;
     let antigo = scanner::item_id_for_path(caminho.to_str().unwrap());
     let token = login(&s.app, "Admin").await;
     for rota in [format!("/UserFavoriteItems/{antigo}"), format!("/UserPlayedItems/{antigo}")] {
@@ -474,4 +477,29 @@ async fn busca_de_cenas_respeita_progresso_e_biblioteca() {
     let sem_filtro = format!("{rota}&spoilers=true");
     let (_, cenas) = call(&s.app, Method::GET, &sem_filtro, Some(&visitante), None).await;
     assert_eq!(cenas, json!([]));
+}
+
+#[tokio::test]
+async fn arquivo_movido_antes_do_hash_vai_para_a_revisao_em_vez_de_perder_o_historico() {
+    let s = server("movido-antes-do-hash").await;
+    let pool = db::init_db(&test_config(&s.dir).database_url).await.unwrap();
+    let midia = s.dir.join("midia");
+    std::fs::create_dir_all(midia.join("destino")).unwrap();
+    let origem = midia.join("Filme exemplo (2020).mp4");
+    let destino = midia.join("destino").join("Filme exemplo (2020).mp4");
+    std::fs::write(&origem, b"conteudo do filme").unwrap();
+    let libs = [Library {
+        id: "filmes".into(), name: "Filmes".into(), collection_type: "movies".into(),
+        paths: vec![midia.to_str().unwrap().into()],
+    }];
+    assert_eq!(scanner::run_scan(&pool, &libs).await, 1);
+    let id = scanner::item_id_for_path(origem.to_str().unwrap());
+    // movido antes de o hash em segundo plano terminar: não dá para casar por conteúdo
+    std::fs::rename(&origem, &destino).unwrap();
+    assert_eq!(scanner::run_scan(&pool, &libs).await, 1);
+    let (status, fila) = call(&s.app, Method::GET, "/admin/api/acervo/revisoes", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(fila.as_array().unwrap().len(), 1, "{fila}");
+    assert_eq!(fila[0]["id"], id);
+    assert_eq!(fila[0]["motivo"], "possivel_edicao");
 }
