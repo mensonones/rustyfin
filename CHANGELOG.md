@@ -5,6 +5,14 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.5.1] - 2026-11-17
+
+### Corrigido
+- Direct Play na TV Samsung (Moonfin Tizen): arquivos MP4/M4V/MOV passam a ser informados como contêiner `mov` e o `PlaybackInfo` não envia mais `DirectStreamUrl`, como o Jellyfin; a TV monta a própria URL `stream.mov` e lê por trechos, abrindo em poucos segundos e permitindo avançar.
+- O servidor HTTP envia os nomes de cabeçalho em `Title-Case` (`Accept-Ranges`, `Content-Range`...), como o Kestrel do Jellyfin.
+- As respostas de vídeo trazem `Last-Modified` e `ETag` e respeitam `If-Range`; o `MediaSource` informa o `Bitrate`.
+- Perfis de cliente que listam `mp4` ou `mov` reconhecem ambos para Direct Play.
+
 ## [0.5.0] - 2026-11-17
 
 ### Adicionado
