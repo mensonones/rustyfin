@@ -28,13 +28,15 @@ sobe em segundos e usa **poucas dezenas de megabytes de memória**.
 
 | | Rustyfin | Jellyfin 12.4 |
 |---|---|---|
-| Memória após indexar e usar | ~16 MiB | ~440 MiB |
-| Imagem Docker | 785 MB | 2,49 GB |
-| Varredura de 18 vídeos (~30 GB) | 0,55 s | 52,7 s |
-| Direct Play, 1 stream | 183 MB/s | 95 MB/s |
+| Memória em repouso (biblioteca indexada) | 11 MiB | 391 MiB |
+| Imagem Docker | 790 MB | 2,49 GB |
+| API, 1 conexão (p50) | 1,5 a 2,5 ms | 12 a 25 ms |
+| Direct Play, 1 stream | 185 MB/s | 78 MB/s |
+| Varredura de 1.000 arquivos numa pasta | 22 s | 413 s |
 
-> Números de uma rodada na mesma máquina, com a mesma biblioteca e sem metadados online. São indicativos, não um
-> estudo estatístico. Metodologia e ressalvas em [docs/desempenho.md](docs/desempenho.md).
+> Medido em 17/11/2026 (Rustyfin v0.16.0, 4 CPUs, mesma biblioteca, sem metadados online). **O Jellyfin ainda ganha**
+> na primeira varredura de arquivos grandes (58 s contra 286 s) e na transcodificação simultânea. Números, metodologia,
+> ressalvas e os pontos fracos em [docs/desempenho.md](docs/desempenho.md).
 
 ## Recursos
 

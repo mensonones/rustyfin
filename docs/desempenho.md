@@ -1,30 +1,241 @@
 # Desempenho: Rustyfin × Jellyfin
 
-> Medido em 2026-11-17: pegada de recursos, varredura, API, imagens e Direct Play. Transcode, escala (1k a 10k arquivos), TMDB e estabilidade longa **ainda não** foram medidos. A partir da seção 1 está a metodologia completa proposta, que serve de roteiro para as próximas rodadas.
+Comparativo medido em **17/11/2026** com o Rustyfin **v0.16.0** e o Jellyfin **12.4.0** (imagem `latest` do dia),
+com o *harness* que está em [`tools/bench/`](../tools/bench/README.md) e os resultados brutos em
+`tools/bench/results/`. Os números são de uma máquina e de uma rodada completa, não um estudo estatístico: leia as
+[ressalvas](#ressalvas) antes de citá-los.
 
-## Resultados
+## Resumo
 
-Mesma máquina, mesma biblioteca (18 vídeos, ~30 GB, montada `:ro`), cada servidor em container com 4 CPUs / 4 GB, config limpa, **sem metadados online**, cliente Python local, 1 rodada (sem repetições/mediana: indicativo, não estatístico). Jellyfin 12.4.0 contra Rustyfin (build desta data).
+No perfil **folgado** (4 CPUs, 4 GB por container) e na mesma biblioteca:
 
-| Métrica | Rustyfin | Jellyfin |
-|---|---|---|
-| Imagem Docker | 785 MB | 2,49 GB |
-| RAM após indexar e ser usado | ~16 MiB | ~440 MiB |
-| Varredura inicial (18 arquivos) | **0,55 s** | 52,7 s |
-| `UserViews` / `Items` (1 conexão, p50) | 1,7 / 2,7 ms | 29 / 30 ms |
-| `Items/{id}` com 50 conexões (req/s, p50) | ~2.970 req/s, 6 ms | ~72 req/s, 658 ms |
-| `Items?Recursive` com 50 conexões | ~1.500 req/s, 21 ms | ~170 req/s, 274 ms |
-| Direct Play: vazão de 1 stream | 183 MB/s | 95 MB/s |
-| Direct Play: 5 streams (agregado) | 258 MB/s | ~213–233 MB/s |
-| Seek `Range` 64 KB (p50 / p95) | 3,9 / 26 ms | 16 / 32 ms |
-| Tempo até o 1º byte | ~17 ms | ~33–72 ms |
+| | Rustyfin | Jellyfin | |
+|---|---|---|---|
+| Memória em repouso (biblioteca indexada) | **11 MiB** | 391 MiB | 36× menos |
+| Imagem Docker | **790 MB** | 2.490 MB | 3,2× menor |
+| Subida até a API responder | **0,6 s** | 6,0 s | 10× mais rápido |
+| API, 1 conexão (p50) | **1,5 a 2,5 ms** | 12 a 25 ms | 6 a 15× |
+| API, 50 conexões, `Items/{id}` | **2.567 req/s** | 67 req/s | 38× |
+| Direct Play, 1 stream | **185 MB/s** | 78 MB/s | 2,4× |
+| Direct Play, 20 streams (agregado) | 228 MB/s | 206 MB/s | 1,1× |
+| Rescan sem mudanças | **0,13 s** | 6,1 s | 45× |
+| Varredura de 1.000 clipes em uma pasta | **21,9 s** | 412,7 s | 19× |
+| Varredura de 3.000 clipes em uma pasta | **62,3 s** | não terminou em 15 min | |
+| Arquivo novo aparece (1.000 clipes) | **1,0 s** | 3,9 s | 4× |
+| **1ª varredura de 18 vídeos reais (~30 GB)** | 286 s | **58 s** | **Jellyfin 5× mais rápido** |
+| **Transcodificação, 1 sessão (4 CPUs)** | 2,97× tempo real | **5,42×** | **Jellyfin 1,8× mais rápido** |
+| **Transcodificação, 4 sessões simultâneas** | 2 de 4 concluíram | **4 de 4** | **Jellyfin** |
 
-Ressalvas importantes:
-- O Direct Play do Rustyfin estava em **22 MB/s** (4× pior que o Jellyfin) por causa de leitura em blocos de 4 KB. Corrigido para 256 KB durante este teste; a tabela mostra o valor após a correção.
-- **Imagens:** o filme medido (The Odyssey) não tem arte local, então os dois servidores usam um quadro do vídeo; o Jellyfin o gera durante a varredura (original ~790 KB, ~30 ms). O Rustyfin gerava sob demanda (~180 ms no 1º acesso); agora **pré-gera em segundo plano após a varredura** e o 1º acesso leva **~3 ms**. Redimensionado (`maxWidth=300`) o Rustyfin entrega ~4 KB (Jellyfin ~29 KB), mas a 1ª geração de cada tamanho ainda custa ~80–100 ms (depois fica em cache).
-- O Jellyfin faz bem mais por arquivo na varredura (imagens, chapters, banco), e o tempo foi medido por polling da tarefa agendada; não é "trabalho idêntico".
-- Máquina e Docker Desktop/WSL2 com bind mount do Windows: leitura de disco ruidosa; a ordem alternada reduz, mas não elimina, efeito de cache.
-- Não medido: transcodificação, legendas, ABR, aceleração de hardware, TMDB, escala e estabilidade longa (onde o Jellyfin tem mais recursos).
+No perfil **restrito** (1 CPU, 512 MB) o Rustyfin segue na frente em tudo o que foi medido, inclusive na transcodificação
+de 1 sessão (1,59× contra 0,95× tempo real); a 1ª varredura também fica atrás (188 s contra 56 s).
+
+## Onde o Rustyfin perde (e por quê)
+
+1. **1ª varredura de uma biblioteca de arquivos grandes: 286 s contra 58 s.** É uma regressão da v0.13.0: a
+   funcionalidade que preserva o histórico ao mover arquivos calcula o **SHA-256 do arquivo inteiro** na primeira
+   varredura, ou seja, lê todos os 30 GB. Medido no commit anterior (`5490b99`), a mesma varredura levava **3,0 s**
+   (0,8 s até os itens aparecerem). As varreduras seguintes não pagam esse custo (rescan de 0,13 s).
+2. **Transcodificação.** Com 1 sessão e 4 CPUs o Jellyfin é 1,8× mais rápido, e com 4 sessões simultâneas **duas das
+   quatro sessões do Rustyfin falharam** (`playlist sem segmentos`), enquanto o Jellyfin concluiu as quatro. Ainda não
+   investigado.
+3. **Reinício a quente: 3,8 s contra 2,6 s** no perfil folgado (no restrito o Rustyfin ganha: 3,7 s contra 6,2 s). O
+   tempo inclui o `docker restart`, que espera o encerramento do processo.
+
+## O que o Rustyfin faz melhor (e por quê)
+
+- **Memória e imagem:** binário único em Rust, sem coleta de lixo e sem a pilha .NET.
+- **API:** consultas simples ao SQLite, sem camada de serviços entre a rota e o banco. A diferença cresce com a
+  concorrência.
+- **Direct Play:** leitura em blocos de 256 KB sem copiar o arquivo para a memória.
+- **Varredura de muitos arquivos pequenos:** cada pasta é listada uma única vez (antes de 5490b99, listar a pasta por
+  vídeo tornava a varredura quadrática: 1.000 clipes levavam 212 s e 3.000 não terminavam).
+
+## Metodologia
+
+- **Máquina:** i7-11800H (8 núcleos, 16 threads), 32 GB de RAM, Docker Desktop com WSL2 (16 CPUs e 15,5 GiB visíveis).
+- **Um sistema por vez**, cada um num container com os mesmos limites: **folgado** (`--cpus 4 --memory 4g`) e **restrito**
+  (`--cpus 1 --memory 512m`). Volume de dados novo em cada subida.
+- **Mesma biblioteca**, montada somente leitura: 18 vídeos reais (~30 GB, 8 filmes e 1 série) e, para a escala, 1.000 e
+  3.000 clipes de 2 s (cópias de um mesmo arquivo) numa única pasta.
+- **Sem metadados online** nos dois (compara o motor, não a rede). No Jellyfin: sem provedores da internet, sem monitor
+  em tempo real, sem imagens de capítulos e sem *trickplay*. No Rustyfin: sem o monitor de pastas.
+- **Cache de arquivos aquecido** dentro da VM do Docker antes de cada sistema (o começo e o fim de cada vídeo, e o filme
+  usado nos testes de streaming), para que o primeiro a rodar não pague a leitura fria do disco do Windows.
+- **Repetições:** 4 rodadas, descartando a primeira, e a mediana das 3 restantes (API e streaming); 3 rodadas na
+  transcodificação.
+- **Transcodificação:** o perfil do cliente limita o bitrate a 700 kbps (abaixo do arquivo, que tem ~1 Mbps) para os dois
+  **recodificarem** o vídeo H.264 para HLS em uma qualidade. Sem isso o Jellyfin apenas copia o vídeo, o que não é o mesmo
+  trabalho. Cada sessão baixa 6 segmentos de 6 s; a "velocidade" é 36 s de vídeo dividido pelo tempo total. O Jellyfin usa
+  o `jellyfin-ffmpeg` próprio dele; o Rustyfin usa o `ffmpeg` da imagem Debian.
+- **Estabilidade:** 5 minutos de carga mista (2 leitores de arquivo, navegação pela API e uma transcodificação em
+  repetição). A memória é medida **em repouso, antes e depois**, porque durante a carga o `docker stats` soma os
+  processos do `ffmpeg`.
+- **Varredura:** o tempo conta desde o pedido de varredura até o número esperado de itens aparecer na API (e até a
+  tarefa terminar).
+
+## Ressalvas
+
+- **Uma máquina, uma rodada completa** (mais as correções descritas abaixo). Há variação entre execuções: em outras
+  rodadas o Direct Play do Rustyfin ficou entre 132 e 195 MB/s e o do Jellyfin entre 57 e 95 MB/s.
+- Duas outras sessões de trabalho mexiam no mesmo repositório e reconstruíram a imagem `latest` durante as primeiras
+  tentativas, e uma varredura fria do disco montado do Windows foi extremamente lenta. As primeiras rodadas foram
+  descartadas; os números acima vêm de uma rodada final com a imagem fixada em `rustyfin-bench:v0.16.0` e o cache aquecido.
+- A "RAM" é a do cgroup do container (`docker stats`), que inclui processos filhos como o `ffmpeg`. Com 1 CPU e 512 MB a
+  transcodificação encosta no limite de memória nos dois.
+- O "reinício a quente" inclui o tempo de o Docker encerrar o processo.
+- O Jellyfin não terminou a varredura de 3.000 clipes em 15 minutos (limite do teste); o número real é maior.
+- Não medido: legendas, HDR, ABR comparável (o Jellyfin tem uma qualidade só nesse perfil), TMDB, bibliotecas com
+  dezenas de milhares de itens e estabilidade de horas. O Jellyfin faz mais por arquivo na varredura (imagens, banco),
+  então o trabalho não é idêntico.
+
+## Resultados completos
+
+<details>
+<summary>Tabelas dos perfis folgado e restrito</summary>
+
+### Perfil folgado
+
+| Métrica | Rustyfin | Jellyfin | Vantagem do Rustyfin |
+|---|---|---|---|
+| Imagem Docker (MB) | 790 | 2 490 | 3,2× |
+| Subida até responder (s, volume novo) | 0,6 | 6,0 | 10,5× |
+| Reinício a quente (s) | 3,8 | 2,6 | 0,7× |
+| RAM em repouso, biblioteca vazia (MiB) | 5 | 191 | 40,9× |
+| RAM em repouso, biblioteca indexada (MiB) | 11 | 391 | 36,5× |
+| CPU em repouso, indexada (%) | 0,0 | 0,5 |  |
+
+**Biblioteca**
+
+| Métrica | Rustyfin | Jellyfin | Vantagem |
+|---|---|---|---|
+| 1ª varredura de 18 vídeos reais: visíveis na API (s) | 286,2 | 38,5 | 0,1× |
+| 1ª varredura: concluída (s) | 286,2 | 57,7 | 0,2× |
+| Pico de RAM na varredura (MiB) | 121 | 462 | 3,8× |
+| Rescan sem mudanças (s) | 0,13 | 6,07 | 45,5× |
+| Varredura de 1000 clipes (s) | 21,9 | 412,7 | 18,9× |
+|   pico de RAM com 1000 clipes (MiB) | 64 | 289 | 4,5× |
+|   listar 50 itens com 1000 clipes (ms, p50) | 4,5 | 31,0 | 6,8× |
+| Varredura de 3000 clipes (s) | 62,3 | n/d |  |
+|   pico de RAM com 3000 clipes (MiB) | 66 | 352 | 5,3× |
+|   listar 50 itens com 3000 clipes (ms, p50) | 6,1 | n/d |  |
+| Arquivo novo aparece (s, com 1000 clipes) | 1,0 | 3,9 | 4,0× |
+
+**API (p50 em ms e requisições por segundo; mediana de 3 rodadas)**
+
+| Rota | Conexões | Rustyfin p50 | Jellyfin p50 | Rustyfin req/s | Jellyfin req/s |
+|---|---|---|---|---|---|
+| `UserViews` | 1 | 1,5 | 16,6 | 262 | 48 |
+| `Items?Recursive` | 1 | 2,4 | 19,0 | 185 | 42 |
+| `Items/{id}` | 1 | 1,6 | 24,5 | 283 | 33 |
+| `Latest` | 1 | 2,5 | 15,9 | 178 | 45 |
+| `Shows/Seasons` | 1 | 2,2 | 12,3 | 214 | 56 |
+| `UserViews` | 10 | 4,1 | 49,2 | 1 867 | 199 |
+| `Items?Recursive` | 10 | 5,7 | 51,0 | 1 346 | 180 |
+| `Items/{id}` | 10 | 3,5 | 109,6 | 2 565 | 81 |
+| `Latest` | 10 | 8,0 | 42,6 | 1 027 | 219 |
+| `Shows/Seasons` | 10 | 4,5 | 34,3 | 1 776 | 266 |
+| `UserViews` | 50 | 7,5 | 255,7 | 2 128 | 183 |
+| `Items?Recursive` | 50 | 34,6 | 274,5 | 982 | 174 |
+| `Items/{id}` | 50 | 7,0 | 667,2 | 2 567 | 67 |
+| `Latest` | 50 | 60,0 | 253,4 | 735 | 177 |
+| `Shows/Seasons` | 50 | 12,6 | 200,2 | 1 391 | 231 |
+
+**Direct Play**
+
+| Métrica | Rustyfin | Jellyfin | Vantagem |
+|---|---|---|---|
+| Tempo até o 1º byte (ms) | 4,2 | 13,7 | 3,3× |
+| Vazão de 1 stream (MB/s) | 185 | 78 | 2,4× |
+| Seek de 64 KB, p50 (ms) | 4,4 | 9,2 | 2,1× |
+| Seek de 64 KB, p95 (ms) | 23,4 | 28,6 | 1,2× |
+| 5 streams simultâneos, vazão agregada (MB/s) | 246 | 200 | 1,2× |
+| 10 streams simultâneos, vazão agregada (MB/s) | 226 | 205 | 1,1× |
+| 20 streams simultâneos, vazão agregada (MB/s) | 228 | 206 | 1,1× |
+
+**Transcodificação HLS (H.264, uma qualidade; 6 segmentos = 36 s de vídeo)**
+
+| Sessões | Sistema | OK | 1º segmento (s) | Velocidade por sessão (× tempo real) | CPU máx (%) | RAM máx (MiB) |
+|---|---|---|---|---|---|---|
+| 1 | Rustyfin | 1/1 | 2,4 | 2,97 | 402 | 597 |
+| 1 | Jellyfin | 1/1 | 2,5 | 5,42 | 407 | 908 |
+| 2 | Rustyfin | 2/2 | 12,1 | 0,76 | 436 | 1 718 |
+| 2 | Jellyfin | 2/2 | 12,7 | 1,39 | 410 | 1 883 |
+| 4 | Rustyfin | 2/4 | 17,1 | 0,59 | 410 | 2 315 |
+| 4 | Jellyfin | 4/4 | 20,3 | 0,86 | 412 | 2 537 |
+| 1 (ABR, 2 qualidades) | Rustyfin | 1/1 | 7,9 | 1,01 | 411 | 1 250 |
+
+**Estabilidade (Rustyfin, 5 min de carga mista)**: RAM em repouso 54 → 53 MiB (pico durante a carga 1 486), 1187 requisições de API, 0 erros.
+
+**Estabilidade (Jellyfin, 5 min de carga mista)**: RAM em repouso 398 → 392 MiB (pico durante a carga 1 666), 450 requisições de API, 0 erros.
+
+### Perfil restrito
+
+| Métrica | Rustyfin | Jellyfin | Vantagem do Rustyfin |
+|---|---|---|---|
+| Imagem Docker (MB) | 790 | 2 490 | 3,2× |
+| Subida até responder (s, volume novo) | 0,6 | 3,9 | 6,2× |
+| Reinício a quente (s) | 3,7 | 6,2 | 1,7× |
+| RAM em repouso, biblioteca vazia (MiB) | 4 | 180 | 43,0× |
+| RAM em repouso, biblioteca indexada (MiB) | 7 | 374 | 50,0× |
+| CPU em repouso, indexada (%) | 0,0 | 0,4 |  |
+
+**Biblioteca**
+
+| Métrica | Rustyfin | Jellyfin | Vantagem |
+|---|---|---|---|
+| 1ª varredura de 18 vídeos reais: visíveis na API (s) | 188,5 | 37,8 | 0,2× |
+| 1ª varredura: concluída (s) | 188,5 | 56,0 | 0,3× |
+| Pico de RAM na varredura (MiB) | 156 | 444 | 2,8× |
+| Rescan sem mudanças (s) | 0,15 | 7,53 | 48,9× |
+
+**API (p50 em ms e requisições por segundo; mediana de 3 rodadas)**
+
+| Rota | Conexões | Rustyfin p50 | Jellyfin p50 | Rustyfin req/s | Jellyfin req/s |
+|---|---|---|---|---|---|
+| `UserViews` | 1 | 1,5 | 17,1 | 170 | 44 |
+| `Items?Recursive` | 1 | 2,6 | 29,1 | 114 | 38 |
+| `Items/{id}` | 1 | 1,6 | 38,8 | 156 | 28 |
+| `Latest` | 1 | 2,9 | 29,1 | 117 | 41 |
+| `Shows/Seasons` | 1 | 1,7 | 17,6 | 159 | 47 |
+| `UserViews` | 10 | 3,0 | 135,3 | 2 336 | 70 |
+| `Items?Recursive` | 10 | 6,1 | 151,2 | 840 | 63 |
+| `Items/{id}` | 10 | 2,9 | 211,0 | 2 739 | 45 |
+| `Latest` | 10 | 6,2 | 121,4 | 679 | 77 |
+| `Shows/Seasons` | 10 | 3,1 | 100,2 | 1 810 | 97 |
+| `UserViews` | 50 | 12,2 | 678,6 | 2 265 | 73 |
+| `Items?Recursive` | 50 | 55,3 | 749,9 | 826 | 67 |
+| `Items/{id}` | 50 | 8,1 | 997,7 | 2 575 | 49 |
+| `Latest` | 50 | 79,1 | 609,3 | 673 | 81 |
+| `Shows/Seasons` | 50 | 16,0 | 478,9 | 1 582 | 103 |
+
+**Direct Play**
+
+| Métrica | Rustyfin | Jellyfin | Vantagem |
+|---|---|---|---|
+| Tempo até o 1º byte (ms) | 4,9 | 12,1 | 2,5× |
+| Vazão de 1 stream (MB/s) | 195 | 91 | 2,1× |
+| Seek de 64 KB, p50 (ms) | 3,9 | 9,6 | 2,4× |
+| Seek de 64 KB, p95 (ms) | 27,7 | 30,7 | 1,1× |
+| 5 streams simultâneos, vazão agregada (MB/s) | 272 | 206 | 1,3× |
+| 10 streams simultâneos, vazão agregada (MB/s) | 252 | 202 | 1,2× |
+| 20 streams simultâneos, vazão agregada (MB/s) | 209 | 194 | 1,1× |
+
+**Transcodificação HLS (H.264, uma qualidade; 6 segmentos = 36 s de vídeo)**
+
+| Sessões | Sistema | OK | 1º segmento (s) | Velocidade por sessão (× tempo real) | CPU máx (%) | RAM máx (MiB) |
+|---|---|---|---|---|---|---|
+| 1 | Rustyfin | 1/1 | 7,0 | 1,59 | 102 | 512 |
+| 1 | Jellyfin | 1/1 | 22,1 | 0,95 | 104 | 512 |
+| 1 (ABR, 2 qualidades) | Rustyfin | 1/1 | 15,4 | 0,62 | 101 | 512 |
+
+
+</details>
+
+---
+
+## Metodologia proposta (roteiro completo)
+
+O restante deste documento é o roteiro original, com cenários que ainda não foram medidos.
 
 ## 1. Ambiente e ponto de partida
 
