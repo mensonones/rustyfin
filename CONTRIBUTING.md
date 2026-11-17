@@ -50,9 +50,10 @@ incorporados com `git rebase --autosquash` antes de enviar o pull request.
 ## Testes
 
 O GitHub Actions roda a suíte Rust em pull requests e pushes para `main`.
-Execute o mesmo comando localmente:
+Ele também roda o Clippy com `-D warnings` (o projeto está sem avisos). Execute os mesmos comandos localmente:
 
 ```sh
+cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 ```
 
