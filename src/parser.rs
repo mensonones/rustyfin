@@ -151,7 +151,15 @@ pub fn parse_name(stem: &str, parent: Option<&str>, grandparent: Option<&str>) -
 
         let year = year_re()
             .captures(&series)
-            .and_then(|c| c[1].parse().ok());
+            .and_then(|c| c[1].parse().ok())
+            // Nome do arquivo sem ano: usa o da pasta da série ("Ghosts (2019)/Season 1/...").
+            .or_else(|| {
+                let folder = match parent {
+                    Some(p) if !season_dir_re().is_match(p.trim()) => Some(p),
+                    _ => grandparent,
+                }?;
+                year_re().captures(&normalize(folder)).and_then(|c| c[1].parse().ok())
+            });
         let series = strip_year(&series);
         let title = if after.is_empty() {
             format!("Episódio {episode}")
@@ -268,6 +276,17 @@ mod tests {
         let p = parse_name("S01E01", Some("Dark (2017)"), Some("Series"));
         assert_eq!(p.kind, Kind::Episode { series: "Dark".into(), season: 1, episode: 1 });
         assert_eq!(p.year, Some(2017));
+    }
+
+    #[test]
+    fn series_year_from_folder_when_file_has_none() {
+        let p = parse_name("Ghosts S01E01", Some("Season 1"), Some("Ghosts (2019)"));
+        assert_eq!(p.year, Some(2019));
+        assert_eq!(p.kind, Kind::Episode { series: "Ghosts".into(), season: 1, episode: 1 });
+        let p = parse_name("Ghosts S01E01", Some("Ghosts (2021)"), Some("Series"));
+        assert_eq!(p.year, Some(2021));
+        // Sem ano em lugar nenhum: continua sem ano.
+        assert_eq!(parse_name("Dark S01E01", Some("Season 1"), Some("Dark")).year, None);
     }
 
     #[test]

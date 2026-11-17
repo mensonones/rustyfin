@@ -114,15 +114,61 @@ fn normalize_series_key(name: &str) -> String {
     name.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
 }
 
-/// ID determinístico da série (UUID v5 do nome normalizado): mesmos episódios, mesma série.
-pub fn series_id_for(series_name: &str) -> String {
-    let key = format!("series:{}", normalize_series_key(series_name));
+/// Identidade da série: nome normalizado + ano de estreia quando conhecido, para que
+/// "Ghosts (2019)" e "Ghosts (2021)" sejam séries distintas.
+fn series_key(name: &str, year: Option<i32>) -> String {
+    match year {
+        Some(y) => format!("{} ({y})", normalize_series_key(name)),
+        None => normalize_series_key(name),
+    }
+}
+
+/// ID determinístico da série (UUID v5): mesmos episódios, mesma série.
+pub fn series_id_for(series_name: &str, year: Option<i32>) -> String {
+    let key = format!("series:{}", series_key(series_name, year));
     Uuid::new_v5(&Uuid::NAMESPACE_URL, key.as_bytes()).simple().to_string()
 }
 
-pub fn season_id_for(series_name: &str, season: i32) -> String {
-    let key = format!("season:{}:{}", normalize_series_key(series_name), season);
+pub fn season_id_for(series_name: &str, year: Option<i32>, season: i32) -> String {
+    let key = format!("season:{}:{}", series_key(series_name, year), season);
     Uuid::new_v5(&Uuid::NAMESPACE_URL, key.as_bytes()).simple().to_string()
+}
+
+/// Antes de o ano entrar na identidade, o ID dependia só do nome. Ao passar para o ID novo, os dados
+/// da série (TMDB) e o poster da temporada são copiados do ID antigo, para não perder o enriquecimento
+/// nem refazer as buscas. Só copia se o ano gravado for compatível; o progresso dos usuários fica nos
+/// episódios (`playback_state`) e não é afetado.
+async fn migrate_legacy_series(
+    pool: &DbPool,
+    name: &str,
+    year: i32,
+    season: Option<i32>,
+) -> Result<(), sqlx::Error> {
+    let old_series = series_id_for(name, None);
+    let new_series = series_id_for(name, Some(year));
+    sqlx::query(
+        "INSERT OR IGNORE INTO series (id, tmdb_id, tmdb_title, overview, rating, genres, year, poster, backdrop) \
+         SELECT ?, tmdb_id, tmdb_title, overview, rating, genres, year, poster, backdrop FROM series \
+         WHERE id = ? AND (year IS NULL OR year = ?)",
+    )
+    .bind(&new_series)
+    .bind(&old_series)
+    .bind(year)
+    .execute(pool)
+    .await?;
+    if let Some(n) = season {
+        sqlx::query(
+            "INSERT OR IGNORE INTO season_art (season_id, poster) \
+             SELECT ?, poster FROM season_art WHERE season_id = ? \
+               AND EXISTS (SELECT 1 FROM series WHERE id = ?)",
+        )
+        .bind(season_id_for(name, Some(year), n))
+        .bind(season_id_for(name, None, n))
+        .bind(&new_series)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
 }
 
 /// Lista arquivos de vídeo (bloqueante: rode dentro de `spawn_blocking`).
@@ -373,8 +419,11 @@ async fn update_parsed(
             ("Episode", Some(series.as_str()), Some(*season), Some(*episode))
         }
     };
-    let series_id = series.map(series_id_for);
-    let season_id = series.zip(season).map(|(s, n)| season_id_for(s, n));
+    let series_id = series.map(|s| series_id_for(s, parsed.year));
+    let season_id = series.zip(season).map(|(s, n)| season_id_for(s, parsed.year, n));
+    if let (Some(name), Some(year)) = (series, parsed.year) {
+        migrate_legacy_series(pool, name, year, season).await?;
+    }
     sqlx::query(
         r#"
         UPDATE items SET
@@ -551,10 +600,14 @@ mod tests {
 
     #[test]
     fn series_ids_ignore_case_and_spacing() {
-        assert_eq!(series_id_for("Dark"), series_id_for("  dark "));
-        assert_ne!(series_id_for("Dark"), series_id_for("Lost"));
-        assert_ne!(season_id_for("Dark", 1), season_id_for("Dark", 2));
-        assert_ne!(series_id_for("Dark"), season_id_for("Dark", 1));
+        assert_eq!(series_id_for("Dark", None), series_id_for("  dark ", None));
+        assert_ne!(series_id_for("Dark", None), series_id_for("Lost", None));
+        assert_ne!(season_id_for("Dark", None, 1), season_id_for("Dark", None, 2));
+        assert_ne!(series_id_for("Dark", None), season_id_for("Dark", None, 1));
+        // Mesmo nome, anos diferentes = séries diferentes (e temporadas diferentes).
+        assert_ne!(series_id_for("Ghosts", Some(2019)), series_id_for("Ghosts", Some(2021)));
+        assert_ne!(series_id_for("Ghosts", Some(2019)), series_id_for("Ghosts", None));
+        assert_ne!(season_id_for("Ghosts", Some(2019), 1), season_id_for("Ghosts", Some(2021), 1));
     }
 
     #[test]
