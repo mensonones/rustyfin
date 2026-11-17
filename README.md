@@ -154,3 +154,7 @@ Nomes de arquivo reconhecidos: `Filme (2020).mkv`, `The.Matrix.1999.1080p.BluRay
 * **[ROADMAP.md](ROADMAP.md)**: Fases de evolução do projeto (Scanners, Direct Play, Scrobbling, Posters, Transcodificação sob demanda).
 * **[RUST_STANDARDS.md](RUST_STANDARDS.md)**: Guia completo de boas práticas e arquitetura para LLMs e desenvolvedores (regras do Tokio, Axum 0.7, SQLx, Zero-Copy streaming e contrato Jellyfin).
 * **[.cursorrules](.cursorrules)**: Regras diretas para agentes de IA que editam o projeto.
+
+## 📄 Licença e versões
+
+Licença [MIT](LICENSE). Versões seguem [SemVer](https://semver.org/lang/pt-BR/) e as mudanças ficam no [CHANGELOG](CHANGELOG.md); cada versão é marcada com uma tag `vX.Y.Z`.
