@@ -155,12 +155,13 @@ pub fn spawn_autoscan(pool: DbPool, config: Arc<AppConfig>, trigger: ScanTrigger
                 w.sync(&dirs);
             }
 
-            if config.scan_interval_secs == 0 {
+            let interval = crate::settings::scan_interval_secs();
+            if interval == 0 {
                 trigger.notified().await;
             } else {
                 tokio::select! {
                     _ = trigger.notified() => {}
-                    _ = tokio::time::sleep(Duration::from_secs(config.scan_interval_secs)) => {}
+                    _ = tokio::time::sleep(Duration::from_secs(interval)) => {}
                 }
             }
 

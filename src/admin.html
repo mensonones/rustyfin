@@ -78,6 +78,7 @@
 <nav role="tablist">
   <button role="tab" data-tab="libs" aria-selected="true">Bibliotecas</button>
   <button role="tab" data-tab="users" aria-selected="false">Usuários</button>
+  <button role="tab" data-tab="sessions" aria-selected="false">Sessões</button>
   <button role="tab" data-tab="settings" aria-selected="false">Configurações</button>
   <button role="tab" data-tab="status" aria-selected="false">Status</button>
 </nav>
@@ -105,7 +106,31 @@
     <div id="users"></div>
   </section>
 
+  <section id="tab-sessions" hidden>
+    <div class="row between" style="margin-bottom:12px">
+      <div>
+        <h2>Sessões e dispositivos</h2>
+        <p class="hint" style="margin:0">Cada app ou TV conectado tem uma sessão. Encerrar uma sessão faz o aparelho voltar à tela de login.</p>
+      </div>
+      <button class="btn danger" id="revokeAll">Encerrar todas</button>
+    </div>
+    <div id="sessions"></div>
+  </section>
+
   <section id="tab-settings" hidden>
+    <div class="card">
+      <h2>Servidor</h2>
+      <p class="hint">Valem na hora, sem reiniciar. Os valores salvos aqui têm prioridade sobre as variáveis de ambiente.</p>
+      <label for="srvName">Nome do servidor <span class="hint" style="display:inline">(aparece nos apps e na descoberta automática)</span></label>
+      <input id="srvName" maxlength="64" placeholder="Rustyfin">
+      <label for="srvScan">Scan automático a cada (segundos; 0 desliga)</label>
+      <input id="srvScan" type="number" min="0" max="86400" placeholder="300">
+      <label for="srvTx">Transcodificações simultâneas</label>
+      <input id="srvTx" type="number" min="1" max="16" placeholder="2">
+      <div class="row" style="margin-top:16px">
+        <button class="btn primary" id="saveServer">Salvar</button>
+      </div>
+    </div>
     <div class="card">
       <h2>Metadados online (TMDB)</h2>
       <p class="hint">Sinopse, nota, gêneros, posters e nomes de episódios. Chave v3 (32 caracteres) ou token v4 em themoviedb.org/settings/api.</p>
@@ -244,8 +269,9 @@ const act = async (fn, okMsg) => {
 // ---- abas
 document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => {
   document.querySelectorAll('nav button').forEach((x) => x.setAttribute('aria-selected', x === b));
-  ['libs', 'users', 'settings', 'status'].forEach((t) => ($('tab-' + t).hidden = t !== b.dataset.tab));
+  ['libs', 'users', 'sessions', 'settings', 'status'].forEach((t) => ($('tab-' + t).hidden = t !== b.dataset.tab));
   if (b.dataset.tab === 'users') loadUsers();
+  if (b.dataset.tab === 'sessions') loadSessions();
   if (b.dataset.tab === 'status') loadStatus();
   if (b.dataset.tab === 'settings') loadSettings();
 }));
@@ -331,6 +357,35 @@ $('pickOk').onclick = () => { const p = $('pickPath').value; $('pickDialog').clo
 
 // ---- usuários
 let allLibs = [];
+// ---- sessões
+function ago(ts) {
+  const s = Math.max(0, Math.floor(Date.now() / 1000) - ts);
+  if (s < 90) return 'agora há pouco';
+  if (s < 5400) return Math.round(s / 60) + ' min atrás';
+  if (s < 129600) return Math.round(s / 3600) + ' h atrás';
+  return Math.round(s / 86400) + ' dias atrás';
+}
+async function loadSessions() {
+  const list = await api('GET', '/admin/api/sessions');
+  const root = $('sessions');
+  root.replaceChildren();
+  if (!list.length) root.append(el('p', { className: 'empty', textContent: 'Nenhum dispositivo conectado.' }));
+  for (const s of list) {
+    const title = [s.device, s.client].filter(Boolean).join(' · ') || 'Dispositivo desconhecido';
+    root.append(el('div', { className: 'card' },
+      el('div', { className: 'row between' },
+        el('div', {},
+          el('div', { className: 'row' }, el('h2', { textContent: title, style: 'margin:0' }), el('span', { className: 'badge', textContent: s.userName })),
+          el('div', { className: 'hint', style: 'margin:4px 0 0', textContent: 'Último uso ' + ago(s.lastUsed) + ' · entrou ' + ago(s.createdAt) })),
+        el('button', { className: 'btn small danger', textContent: 'Encerrar', onclick: () => {
+          if (confirm('Encerrar a sessão de "' + title + '"?')) act(async () => { await api('DELETE', '/admin/api/sessions/' + s.id); await loadSessions(); }, 'Sessão encerrada.');
+        } }))));
+  }
+}
+$('revokeAll').onclick = () => {
+  if (confirm('Encerrar TODAS as sessões?\nTodos os apps e TVs voltarão à tela de login.')) act(async () => { const r = await api('DELETE', '/admin/api/sessions'); await loadSessions(); toast(r.revoked + ' sessões encerradas.'); });
+};
+
 async function loadUsers() {
   const [users, libs] = await Promise.all([api('GET', '/admin/api/users'), api('GET', '/admin/api/folders')]);
   allLibs = libs;
@@ -406,12 +461,23 @@ $('permSave').onclick = () => act(async () => {
 async function loadSettings() {
   const s = await api('GET', '/admin/api/settings');
   $('tmdbLang').value = s.tmdbLanguage || '';
+  $('srvName').value = s.serverName || '';
+  $('srvScan').value = s.scanIntervalSecs;
+  $('srvTx').value = s.maxTranscodes;
   $('tmdbKey').value = '';
   $('tmdbKey').placeholder = s.tmdbConfigured ? 'Chave atual: ' + s.tmdbKeyPreview + ' (deixe em branco para manter)' : 'Cole sua chave do TMDB';
   const st = $('tmdbState');
   st.textContent = s.tmdbConfigured ? 'configurada' : 'não configurada';
   st.className = 'badge ' + (s.tmdbConfigured ? 'ok' : 'warn');
 }
+$('saveServer').onclick = () => act(async () => {
+  await api('PUT', '/admin/api/settings', {
+    serverName: $('srvName').value.trim(),
+    scanIntervalSecs: Number($('srvScan').value),
+    maxTranscodes: Number($('srvTx').value),
+  });
+  await loadSettings();
+}, 'Servidor atualizado.');
 $('saveSettings').onclick = () => act(async () => {
   const body = { tmdbLanguage: $('tmdbLang').value.trim() };
   if ($('tmdbKey').value.trim()) body.tmdbApiKey = $('tmdbKey').value.trim();

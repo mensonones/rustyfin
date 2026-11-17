@@ -33,7 +33,7 @@ pub fn build_response(config: &AppConfig, address: &str) -> String {
     json!({
         "Address": address,
         "Id": config.server_id,
-        "Name": config.server_name,
+        "Name": crate::settings::server_name(),
         "EndpointAddress": null
     })
     .to_string()

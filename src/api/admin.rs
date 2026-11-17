@@ -59,6 +59,8 @@ pub fn router(config: Arc<AppConfig>, pool: DbPool, scan: ScanTrigger) -> Router
         .route("/admin/api/folders/paths", post(add_path).delete(remove_path))
         .route("/admin/api/folders/name", post(rename_folder))
         // Usuários
+        .route("/admin/api/sessions", get(sessions_list).delete(sessions_revoke_all))
+        .route("/admin/api/sessions/:id", axum::routing::delete(sessions_revoke))
         .route("/admin/api/users", get(users_list).post(users_create))
         .route("/admin/api/users/:id", axum::routing::delete(users_delete))
         .route("/admin/api/users/:id/password", post(users_password))
@@ -344,6 +346,44 @@ fn user_json(u: &users::User) -> Value {
     })
 }
 
+async fn sessions_list(State(st): State<AdminState>) -> Response {
+    match users::list_sessions(&st.pool).await {
+        Ok(rows) => Json(
+            rows.iter()
+                .map(|s| {
+                    json!({
+                        "id": s.id,
+                        "userId": s.user_id,
+                        "userName": s.user_name,
+                        "client": s.client,
+                        "device": s.device,
+                        "deviceId": s.device_id,
+                        "createdAt": s.created_at,
+                        "lastUsed": s.last_used,
+                    })
+                })
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(e) => db_error(e),
+    }
+}
+
+async fn sessions_revoke(State(st): State<AdminState>, axum::extract::Path(id): axum::extract::Path<i64>) -> Response {
+    match users::revoke_session(&st.pool, id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => db_error(e),
+    }
+}
+
+async fn sessions_revoke_all(State(st): State<AdminState>) -> Response {
+    match users::revoke_all_sessions(&st.pool).await {
+        Ok(n) => Json(json!({ "revoked": n })).into_response(),
+        Err(e) => db_error(e),
+    }
+}
+
 async fn users_list(State(st): State<AdminState>) -> Response {
     match users::list(&st.pool).await {
         Ok(list) => Json(list.iter().map(user_json).collect::<Vec<_>>()).into_response(),
@@ -447,7 +487,7 @@ async fn status(State(st): State<AdminState>) -> Response {
 
     Json(json!({
         "version": st.config.version,
-        "serverName": st.config.server_name,
+        "serverName": rt.server_name,
         "serverId": st.config.server_id,
         "port": st.config.port,
         "publicUrl": st.config.public_url,
@@ -458,7 +498,7 @@ async fn status(State(st): State<AdminState>) -> Response {
             "available": transcode::can_transcode(),
             "path": st.config.ffmpeg_path,
             "encoder": st.config.video_encoder,
-            "maxTranscodes": st.config.max_transcodes
+            "maxTranscodes": rt.max_transcodes
         },
         "tmdb": { "configured": rt.tmdb_api_key.is_some(), "language": rt.tmdb_language },
         "items": { "movies": count_of("Movie"), "episodes": count_of("Episode"), "series": series.0 },
@@ -473,7 +513,10 @@ fn settings_json() -> Value {
     json!({
         "tmdbConfigured": rt.tmdb_api_key.is_some(),
         "tmdbKeyPreview": rt.tmdb_api_key.as_deref().map(settings::mask_key),
-        "tmdbLanguage": rt.tmdb_language
+        "tmdbLanguage": rt.tmdb_language,
+        "serverName": rt.server_name,
+        "scanIntervalSecs": rt.scan_interval_secs,
+        "maxTranscodes": rt.max_transcodes
     })
 }
 
@@ -492,6 +535,14 @@ async fn put_settings(State(st): State<AdminState>, Json(body): Json<Value>) -> 
             return (StatusCode::BAD_REQUEST, Json(json!({ "Message": "Idioma inválido (ex.: pt-BR, en-US)." })))
                 .into_response();
         }
+    }
+    let name = body.get("serverName").and_then(|v| v.as_str());
+    let interval = body.get("scanIntervalSecs").and_then(|v| v.as_u64());
+    let max_tx = body.get("maxTranscodes").and_then(|v| v.as_u64()).map(|v| v as usize);
+    match settings::update_server(&st.pool, &st.config, name, interval, max_tx).await {
+        Ok(Ok(())) => {}
+        Ok(Err(msg)) => return (StatusCode::BAD_REQUEST, Json(json!({ "Message": msg }))).into_response(),
+        Err(e) => return db_error(e),
     }
     if let Err(e) = settings::update_tmdb(&st.pool, &st.config, key, lang).await {
         return db_error(e);

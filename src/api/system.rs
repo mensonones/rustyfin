@@ -8,7 +8,7 @@ use std::sync::Arc;
 pub async fn get_system_info_public(State(config): State<Arc<AppConfig>>) -> impl IntoResponse {
     Json(PublicSystemInfo {
         id: config.server_id.clone(),
-        server_name: config.server_name.clone(),
+        server_name: crate::settings::server_name(),
         version: config.version.clone(),
         product_name: "Rustyfin".to_string(),
         operating_system: std::env::consts::OS.to_string(),
@@ -19,7 +19,7 @@ pub async fn get_system_info_public(State(config): State<Arc<AppConfig>>) -> imp
 pub async fn get_system_info(State(config): State<Arc<AppConfig>>) -> impl IntoResponse {
     Json(SystemInfo {
         id: config.server_id.clone(),
-        server_name: config.server_name.clone(),
+        server_name: crate::settings::server_name(),
         version: config.version.clone(),
         product_name: "Rustyfin".to_string(),
         operating_system: std::env::consts::OS.to_string(),

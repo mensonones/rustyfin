@@ -507,7 +507,24 @@ pub async fn create_token(pool: &DbPool, user_id: &str, device: &DeviceInfo) -> 
 }
 
 /// Usuário dono do token (ativo), com suas bibliotecas permitidas.
+/// Validade de um token sem uso (`RUSTYFIN_TOKEN_TTL_DAYS`; 0 ou ausente = não expira).
+fn token_ttl_secs() -> i64 {
+    static TTL: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
+    *TTL.get_or_init(|| {
+        std::env::var("RUSTYFIN_TOKEN_TTL_DAYS")
+            .ok()
+            .and_then(|v| v.trim().parse::<i64>().ok())
+            .filter(|d| *d > 0)
+            .map(|d| d.saturating_mul(86_400))
+            .unwrap_or(0)
+    })
+}
+
 pub async fn lookup_token(pool: &DbPool, token: &str) -> Result<Option<AuthUser>, sqlx::Error> {
+    lookup_token_with_ttl(pool, token, token_ttl_secs()).await
+}
+
+async fn lookup_token_with_ttl(pool: &DbPool, token: &str, ttl_secs: i64) -> Result<Option<AuthUser>, sqlx::Error> {
     let row: Option<(String, String, bool, bool, i64)> = sqlx::query_as(
         "SELECT u.id, u.name, u.is_admin, u.all_libraries, t.last_used \
          FROM access_tokens t JOIN users u ON u.id = t.user_id \
@@ -519,6 +536,11 @@ pub async fn lookup_token(pool: &DbPool, token: &str) -> Result<Option<AuthUser>
     let Some((id, name, is_admin, all_libraries, last_used)) = row else {
         return Ok(None);
     };
+    // Token parado além da validade: some do banco e o app volta à tela de login.
+    if ttl_secs > 0 && now_secs() - last_used > ttl_secs {
+        revoke_token(pool, token).await?;
+        return Ok(None);
+    }
 
     // Atualiza o último uso no máximo uma vez por minuto (evita escrita a cada requisição).
     if now_secs() - last_used > 60 {
@@ -539,6 +561,39 @@ pub async fn lookup_token(pool: &DbPool, token: &str) -> Result<Option<AuthUser>
         Some(libs.into_iter().map(|l| l.0).collect())
     };
     Ok(Some(AuthUser { id, name, is_admin, allowed_libraries }))
+}
+
+/// Dispositivo conectado (um token). O token em si nunca sai do servidor.
+#[derive(Debug, sqlx::FromRow)]
+pub struct SessionRow {
+    pub id: i64,
+    pub user_id: String,
+    pub user_name: String,
+    pub client: Option<String>,
+    pub device: Option<String>,
+    pub device_id: Option<String>,
+    pub created_at: i64,
+    pub last_used: i64,
+}
+
+pub async fn list_sessions(pool: &DbPool) -> Result<Vec<SessionRow>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT t.rowid AS id, t.user_id, u.name AS user_name, t.client, t.device, t.device_id, \
+                t.created_at, t.last_used \
+         FROM access_tokens t JOIN users u ON u.id = t.user_id ORDER BY t.last_used DESC",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// Encerra uma sessão; `true` se ela existia.
+pub async fn revoke_session(pool: &DbPool, id: i64) -> Result<bool, sqlx::Error> {
+    let r = sqlx::query("DELETE FROM access_tokens WHERE rowid = ?").bind(id).execute(pool).await?;
+    Ok(r.rows_affected() > 0)
+}
+
+pub async fn revoke_all_sessions(pool: &DbPool) -> Result<u64, sqlx::Error> {
+    Ok(sqlx::query("DELETE FROM access_tokens").execute(pool).await?.rows_affected())
 }
 
 pub async fn revoke_token(pool: &DbPool, token: &str) -> Result<(), sqlx::Error> {
@@ -672,6 +727,25 @@ mod tests {
         assert_eq!(au.name, "Ana");
         assert!(!au.is_admin && au.allowed_libraries.is_none());
         assert!(lookup_token(&pool, "inexistente").await.unwrap().is_none());
+
+        // sessões: listagem sem o token, expiração por inatividade e encerramento
+        let sessions = list_sessions(&pool).await.unwrap();
+        let mine = sessions.iter().find(|s| s.user_id == ana.id).expect("sessão da Ana");
+        assert_eq!(mine.user_name, "Ana");
+        sqlx::query("UPDATE access_tokens SET last_used = ? WHERE token = ?")
+            .bind(now_secs() - 40 * 86_400)
+            .bind(&tok)
+            .execute(&pool)
+            .await
+            .unwrap();
+        // com TTL de 30 dias o token parado há 40 expira e é apagado (sem TTL nunca expira)
+        assert!(lookup_token_with_ttl(&pool, &tok, 30 * 86_400).await.unwrap().is_none());
+        assert!(lookup_token_with_ttl(&pool, &tok, 0).await.unwrap().is_none());
+        let t3 = create_token(&pool, &ana.id, &DeviceInfo::default()).await.unwrap();
+        let id3 = list_sessions(&pool).await.unwrap().into_iter().find(|s| s.user_id == ana.id).unwrap().id;
+        assert!(revoke_session(&pool, id3).await.unwrap());
+        assert!(!revoke_session(&pool, id3).await.unwrap());
+        assert!(lookup_token(&pool, &t3).await.unwrap().is_none());
 
         // senha nova revoga tokens antigos
         set_password(&pool, &ana.id, Some("nova"), None).await.unwrap();

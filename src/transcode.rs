@@ -54,6 +54,28 @@ static SETTINGS: OnceLock<Settings> = OnceLock::new();
 static SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
 static SESSIONS: OnceLock<Mutex<HashMap<String, HlsSession>>> = OnceLock::new();
 
+static MAX_SLOTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Muda o limite de transcodificações simultâneas sem reiniciar. Ao reduzir, as vagas sobressalentes
+/// são retiradas assim que ficam livres (transcodificações em andamento não são interrompidas).
+pub fn set_max_slots(new: usize) {
+    use std::sync::atomic::Ordering;
+    let Some(sem) = SLOTS.get() else { return };
+    let new = new.max(1);
+    let old = MAX_SLOTS.swap(new, Ordering::Relaxed);
+    if new > old {
+        sem.add_permits(new - old);
+    } else if new < old {
+        let sem = sem.clone();
+        let diff = (old - new) as u32;
+        tokio::spawn(async move {
+            if let Ok(permits) = sem.acquire_many_owned(diff).await {
+                permits.forget();
+            }
+        });
+    }
+}
+
 fn sessions() -> &'static Mutex<HashMap<String, HlsSession>> {
     SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
@@ -134,7 +156,9 @@ pub async fn init(config: &AppConfig) {
     let work_dir = config.cache_dir.join("transcodes");
     let _ = tokio::fs::remove_dir_all(&work_dir).await;
 
-    let _ = SLOTS.set(Arc::new(Semaphore::new(config.max_transcodes.max(1))));
+    let initial = config.max_transcodes.max(1);
+    MAX_SLOTS.store(initial, std::sync::atomic::Ordering::Relaxed);
+    let _ = SLOTS.set(Arc::new(Semaphore::new(initial)));
     let _ = SETTINGS.set(Settings {
         ffmpeg: config.ffmpeg_path.clone(),
         available,
