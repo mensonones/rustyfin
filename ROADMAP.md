@@ -1,0 +1,110 @@
+# 🗺️ Rustyfin - Roadmap de Desenvolvimento
+
+> **Objetivo:** Criar um servidor de mídia ultraleve em Rust (baixo consumo de RAM/CPU, zero GC) rodando em `localhost`, com **100% de compatibilidade** com clientes do ecossistema Jellyfin (foco inicial: **Moonfin**, **Swiftfin**, **Findroid** e **Jellyfin Media Player**).
+
+---
+
+## 🎯 Filosofia do Projeto
+- **Localhost First:** Sem complexidade desnecessária de certificados TLS, proxies reversos ou autenticação multi-tenant pesada no início.
+- **Direct Play Prioritário:** Quase todos os clientes modernos (especialmente Moonfin via MPV/AVPlayer) suportam Direct Play nativo de MKV, HEVC, AV1 e legendas ASS. O servidor deve focar em **HTTP Range Requests** de altíssima velocidade.
+- **Eficiência Extrema:** Consumo alvo de RAM em repouso < 30 MB e inicialização em milissegundos.
+- **Single Binary:** Um único executável com banco SQLite embutido (modo WAL).
+
+---
+
+## 📅 Fases do Desenvolvimento
+
+### Fase 1: Fundação & Handshake Jellyfin (Concluída / Em Andamento)
+- [x] Estruturação do projeto Cargo e arquitetura modular.
+- [x] Banco de dados SQLite com modo WAL (`sqlx` / `rusqlite`).
+- [x] Rotas de Descoberta e Info do Servidor:
+  - `GET /System/Info/Public`
+  - `GET /System/Info`
+  - `GET /System/Ping`
+- [x] Rotas de Autenticação para Localhost:
+  - `GET /Users/Public`
+  - `POST /Users/AuthenticateByName` (login automático / sem senha no modo local)
+  - `GET /Users/{id}`
+
+### Fase 2: Scanner de Mídia & Indexação (Em Andamento)
+- [x] Varredura de pastas configuradas (`walkdir` em `spawn_blocking`), incremental por tamanho/mtime e com remoção de arquivos ausentes.
+- [ ] Extração de metadados:
+  - [x] Duração, resolução e codecs principais via `ffprobe` (sem ffprobe: campos ficam vazios e o item é reinspecionado no próximo scan).
+  - [ ] Todas as trilhas de áudio/legenda, canais, idioma e flags default.
+  - [x] Limpeza de título, ano e tags de release; detecção de episódios (`S01E02`, `1x02`, pastas `Serie/Season 1`).
+- [ ] Indexação de bibliotecas no SQLite:
+  - [x] UUIDs determinísticos (v5 do caminho).
+  - Armazenamento de metadados (duração em ticks, resolução, canais de áudio, legendas).
+- [x] Rotas de navegação da biblioteca (paginação/ordenação/filtros em SQL, `Items/Resume`, `Items/Latest`):
+  - `GET /Users/{userId}/Views` (exposição de pastas: "Filmes", "Séries", "Animes")
+  - `GET /Users/{userId}/Items` (listagem com paginação e ordenação)
+  - `GET /Items/{id}` (detalhes de um item específico)
+
+### Fase 2b: Autoscan & Metadados Online
+- [x] Scan automático periódico (`RUSTYFIN_SCAN_INTERVAL_SECS`), por eventos de arquivo e sob demanda (`POST /Library/Refresh`, `/Items/{id}/Refresh`).
+- [x] Provider TMDB opcional (`TMDB_API_KEY`): sinopse, nota, gêneros, ano, título localizado e posters/backdrops com cache em disco; episódios usam nome/sinopse/still do episódio.
+- [x] **Hierarquia de séries**: itens virtuais `Series` e `Season` (IDs determinísticos), view "Séries" (`tvshows`), `ParentId` por série/temporada, `/Shows/{id}/Seasons`, `/Shows/{id}/Episodes` (`seasonId`/`season`), `/Shows/NextUp`, contagem de não assistidos e imagens da série/temporada.
+- [ ] Poster/backdrop locais de série (`poster.jpg` na pasta da série) e `folder.jpg` de temporada.
+- [ ] Elenco, estúdios, classificação indicativa e trailers do TMDB.
+- [x] Scan por eventos do sistema de arquivos (`notify`, com debounce de 3 s), mantendo o polling como reserva (`RUSTYFIN_WATCH=false` desativa o watcher).
+
+### Fase 2c: Compatibilidade com clientes 10.9+
+- [x] `UserViews`, `Items/Latest`, `QuickConnect/Enabled`, `Branding/Css`, `Library/MediaFolders`, `System/Endpoint`, `Sessions`, `Playback/BitrateTest`, `Items/{id}/Download`, `PlaybackInfo` via GET.
+- [x] Marcar assistido/não assistido e favoritos (filmes, episódios, séries e temporadas), `Filters=IsFavorite`.
+- [x] Nomes de episódio em várias formas: `S01E02`, `1x02`, `Temporada 1 Episódio 2`, `Season 1 Episode 2`, `T1 E2`.
+- [x] Respostas vazias válidas para `Genres`, `Studios`, `Persons`, `Similar`, `Intros`, `ThemeMedia`, `MediaSegments`, `Items/Filters`.
+- [x] Validado no **Moonfin 3.0.0 (Android)**: conexão, login, home com destaques, bibliotecas Filmes/Séries (série → temporada → episódio, NextUp), Direct Play com seek, transcode HLS por limite de bitrate, marcar assistido, WebSocket `/socket`.
+- [ ] Validar também no Swiftfin/Findroid e em TV; `Moonfin/*` e `Plugins/*` retornam 404 de propósito (plugin do servidor não instalado).
+- [x] Descoberta automática (UDP 7359, protocolo "who is JellyfinServer?"): validada no Moonfin. No Docker defina `RUSTYFIN_PUBLIC_URL` (IP do PC) no `.env`; o app esconde da lista "descobertos" os servidores já salvos.
+- [ ] `DeviceProfile` no `PlaybackInfo`, gêneros/estúdios/pessoas reais, `GenreIds` e filtros por ano.
+
+### Fase 2d: Administração (Implementada)
+- [x] Bibliotecas e configurações persistidas no banco (`libraries`, `library_paths`, `settings`), com migração e *seed* a partir do ambiente.
+- [x] Rotas `/Library/VirtualFolders` (criar, listar, excluir, adicionar/remover pasta, renomear) compatíveis com o Jellyfin; uma biblioteca por pasta e item atribuído à mais específica.
+- [x] Painel web `/admin` embutido no binário: bibliotecas, seletor de pastas, TMDB, status e scan.
+- [x] Acesso só de rede privada/loopback; senha opcional (`RUSTYFIN_ADMIN_PASSWORD`).
+- [x] **Usuários e senhas**: Argon2, tokens por dispositivo validados em toda rota (exceto imagens/HLS/login), limite de tentativas, progresso e favoritos por usuário, acesso por biblioteca, administradores, painel com login.
+- [ ] Sessões ativas/dispositivos no painel, expiração de tokens, perfil oculto na tela de login e imagem de perfil.
+- [ ] Mais configurações no painel (transcode, intervalo de scan, nome do servidor) e *reload* sem reiniciar.
+
+### Fase 3: Motor de Streaming Direto (Direct Play & Scrubbing) (Implementada, falta teste com cliente real)
+- [x] Implementação de **HTTP 206 Partial Content** com suporte completo a headers `Range` e `Content-Range`.
+- [x] Suporte a seeking instantâneo (inclui 416 para ranges inválidos) (avanço e retrocesso rápido no player).
+- [x] Rotas de streaming:
+  - `GET /Videos/{id}/stream`
+  - `GET /Videos/{id}/stream.{container}`
+  - `GET /Audio/{id}/stream`
+- [x] Endpoint de compatibilidade de reprodução (ainda sem DeviceProfile):
+  - `POST /Items/{id}/PlaybackInfo` (informa ao Moonfin que o arquivo suporta Direct Play)
+
+### Fase 4: Sincronização de Estado & Sessão (Scrobbling) (Implementada)
+- [x] Rastreamento de progresso de visualização:
+  - `POST /Sessions/Playing`
+  - `POST /Sessions/Playing/Progress`
+  - `POST /Sessions/Playing/Stopped`
+- [x] Persistência de "Continuar Assistindo" (*Resume playback*) e marcação de assistido (*Played status*).
+
+### Fase 5: Capas & Imagens (Artwork) (Implementada, falta teste com ffmpeg e cliente real)
+- [x] Suporte a posters/backdrops locais: `<nome>.jpg`, `<nome>-poster.jpg`, `<nome>-fanart.jpg` e, se o vídeo está sozinho na pasta, `poster/cover/folder` e `fanart/backdrop`.
+- [x] Extração de thumbnail sob demanda via ffmpeg (cache em `RUSTYFIN_CACHE_DIR`, máx. 2 processos simultâneos, timeout 30s)  do arquivo de vídeo caso não haja imagem local.
+- [x] Rotas de imagens (sem redimensionamento: `maxWidth` e afins são ignorados):
+  - `GET /Items/{id}/Images/Primary`
+  - `GET /Items/{id}/Images/Backdrop`
+
+### Fase 6: Transcodificação & Remuxing Sob Demanda (Implementada, falta teste com ffmpeg real e clientes)
+- [x] Decisão Direct Play / Remux / Transcode a partir do `DeviceProfile` (contêiner, codecs, `MaxStreamingBitrate`, `EnableDirectPlay/Transcoding`) e do bitrate médio do arquivo.
+- [x] Smart Remuxing: copia o vídeo (`-c:v copy`) e só recodifica o áudio (AAC estéreo) quando o vídeo é compatível.
+- [x] Saída HLS (`master.m3u8`/`main.m3u8`/segmentos `.ts`) e progressiva (mkv/mp4 fragmentado/ts); `StartTimeTicks` e faixa de áudio escolhida.
+- [x] Processos isolados via `tokio::process`: limite simultâneo (`RUSTYFIN_MAX_TRANSCODES`), `kill_on_drop`, sessões HLS ociosas encerradas e apagadas, limpeza na inicialização.
+- [x] Encoder configurável (`libx264` ou hardware via `RUSTYFIN_VIDEO_ENCODER`).
+- [x] Validado no Docker com `ffmpeg`/`ffprobe` reais: HLS H.264+AAC, remux HEVC preservado, `StartTimeTicks`, miniaturas, Direct Play com Range e sem processos órfãos.
+- [ ] Validar com clientes reais (Moonfin/Swiftfin/Findroid); *seek* em HLS só dentro do já transcodificado (playlist `EVENT`).
+- [ ] Legendas (extração para `/Videos/{id}/{src}/Subtitles` e *burn-in*), tone mapping HDR, múltiplas qualidades (ABR), fMP4 HLS.
+
+---
+
+## 🧪 Como Testar com o Moonfin
+1. Execute o servidor Rustyfin em `http://127.0.0.1:8096`.
+2. Abra o Moonfin no iOS / macOS ou navegador.
+3. No campo de endereço do servidor, digite: `http://localhost:8096` ou `http://<seu-ip-local>:8096`.
+4. Usuário padrão: `Admin` (sem senha).

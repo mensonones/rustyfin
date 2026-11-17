@@ -1,0 +1,26 @@
+[package]
+name = "rustyfin"
+version = "0.1.0"
+edition = "2021"
+description = "Lightweight localhost media server in Rust compatible with Jellyfin clients"
+
+[dependencies]
+axum = { version = "0.7", features = ["macros", "multipart", "ws"] }
+tokio = { version = "1.38", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tower-http = { version = "0.5", features = ["fs", "cors", "trace", "set-header"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "tls-none"] }
+uuid = { version = "1.8", features = ["v4", "v5", "serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+walkdir = "2.5"
+mime_guess = "2.0"
+dirs = "5.0"
+regex = "1"
+notify = "6"
+futures-core = "0.3"
+base64 = "0.22"
+argon2 = "0.5"
+serde_urlencoded = "0.7"

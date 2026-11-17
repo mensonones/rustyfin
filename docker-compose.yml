@@ -1,0 +1,37 @@
+services:
+  rustyfin:
+    build: .
+    container_name: rustyfin
+    restart: unless-stopped
+    ports:
+      - "8096:8096"
+      # Descoberta automática nos apps (broadcast UDP do Jellyfin)
+      - "7359:7359/udp"
+    environment:
+      - RUSTYFIN_HOST=0.0.0.0
+      - RUSTYFIN_PORT=8096
+      # IP/porta do PC na rede, anunciado aos apps na descoberta automática (o container não o conhece).
+      # Ex.: RUSTYFIN_PUBLIC_URL=http://192.168.1.71:8096 (no .env ao lado do compose)
+      - RUSTYFIN_PUBLIC_URL=${RUSTYFIN_PUBLIC_URL:-}
+      # Senha do painel /admin (HTTP Basic, qualquer usuário). Vazio = sem senha (só rede local).
+      - RUSTYFIN_ADMIN_PASSWORD=${RUSTYFIN_ADMIN_PASSWORD:-}
+      - DATABASE_URL=sqlite:///data/rustyfin.db?mode=rwc
+      - RUSTYFIN_MEDIA_DIRS=/media
+      - RUSTYFIN_CACHE_DIR=/data/cache
+      # Scan automático a cada N segundos (0 = só ao iniciar e via /Library/Refresh)
+      - RUSTYFIN_SCAN_INTERVAL_SECS=300
+      # Opcional: metadados online (sinopse, nota, gêneros, posters). Chave v3 ou token v4 do TMDB.
+      - TMDB_API_KEY=${TMDB_API_KEY:-}
+      - RUSTYFIN_TMDB_LANGUAGE=pt-BR
+      - RUST_LOG=rustyfin=info,tower_http=debug
+    volumes:
+      # Banco de dados persistente
+      - ./data:/data
+      # Pasta de mídia local do projeto
+      - ./media:/media
+      # Pastas do seu PC: monte aqui (somente leitura) e depois escolha o caminho do container
+      # (/mnt/...) em /admin -> Bibliotecas. O container só enxerga o que for montado.
+      # - "C:/Users/SEU_USUARIO/Downloads:/mnt/downloads:ro"
+      # (monte pastas pessoais em docker-compose.override.yml, que não vai para o git)
+      # Opcional: Montar pasta de vídeos do Windows (exemplo):
+      # - "C:/Users/SEU_USUARIO/Videos:/media/videos:ro"

@@ -1,0 +1,14 @@
+/target
+**/*.rs.bk
+*.pdb
+*.db
+*.db-shm
+*.db-wal
+.env
+media/
+cache/
+data/
+rustyfin.db*
+docker-compose.override.yml
+*.log
+.DS_Store

@@ -1,0 +1,12 @@
+# Rustyfin AI Agent Rules
+
+Always adhere strictly to the standards defined in `RUST_STANDARDS.md`.
+
+Key directives:
+1. Axum 0.7 routes must use `:param` (not `{param}`).
+2. All Jellyfin API DTOs must use `#[serde(rename_all = "PascalCase")]`.
+3. Never block the Tokio runtime with synchronous operations (use `spawn_blocking` if needed).
+4. Never buffer full video/audio streams into RAM; use zero-copy `tokio_util::io::ReaderStream` with HTTP 206 Partial Content range requests.
+5. SQLite must operate with `PRAGMA journal_mode = WAL;`.
+6. No `unwrap()` or `expect()` in API route handlers or long-running tasks.
+7. Run `cargo check` after any code modifications.
