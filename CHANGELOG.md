@@ -5,6 +5,12 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.10.0] - 2026-11-17
+
+### Adicionado
+- Foto de perfil: `GET/POST/DELETE /Users/{id}/Images/Primary` e `PrimaryImageTag` no usuário. Aceita JPEG, PNG, WebP e GIF (até 8 MB, imagem crua ou base64 como o Jellyfin Web), só o próprio usuário ou um administrador troca. A tela de login mostra as fotos, e o painel permite enviar e remover.
+- Perfil oculto (`IsHidden`): some da lista da tela de login, mas continua entrando ao digitar o nome. Configurável no painel e pela política do usuário.
+
 ## [0.9.0] - 2026-11-17
 
 ### Adicionado

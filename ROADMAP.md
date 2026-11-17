@@ -28,11 +28,11 @@
 
 ### Fase 2: Scanner de Mídia & Indexação (Em Andamento)
 - [x] Varredura de pastas configuradas (`walkdir` em `spawn_blocking`), incremental por tamanho/mtime e com remoção de arquivos ausentes.
-- [ ] Extração de metadados:
+- [x] Extração de metadados:
   - [x] Duração, resolução e codecs principais via `ffprobe` (sem ffprobe: campos ficam vazios e o item é reinspecionado no próximo scan).
   - [x] Todas as trilhas de áudio/legenda com canais, idioma, título e flags default/forçada (trilhas antigas são reinspecionadas uma vez).
   - [x] Limpeza de título, ano e tags de release; detecção de episódios (`S01E02`, `1x02`, pastas `Serie/Season 1`).
-- [ ] Indexação de bibliotecas no SQLite:
+- [x] Indexação de bibliotecas no SQLite:
   - [x] UUIDs determinísticos (v5 do caminho).
   - Armazenamento de metadados (duração em ticks, resolução, canais de áudio, legendas).
 - [x] Rotas de navegação da biblioteca (paginação/ordenação/filtros em SQL, `Items/Resume`, `Items/Latest`):
@@ -67,7 +67,7 @@
 - [x] Revisão de segurança/correção (Argus, v0.2.0): limpeza do scan, login sem senha só na LAN, logs sem token, trava do último admin e outros.
 - [ ] Pendências da revisão: exigir autenticação em imagens e segmentos HLS (hoje públicos para os apps carregarem), ler cada pasta uma vez por scan, e série dividida quando só parte dos episódios tem ano.
 - [x] Aba **Sessões** no painel: dispositivos conectados (aparelho, app, usuário, último uso), encerrar uma ou todas; expiração de tokens parados (`RUSTYFIN_TOKEN_TTL_DAYS`, desligada por padrão).
-- [ ] Perfil oculto na tela de login e imagem de perfil.
+- [x] Perfil oculto (fora da lista da tela de login; entra digitando o nome) e foto de perfil (`GET/POST/DELETE /Users/{id}/Images/Primary`, JPEG/PNG/WebP/GIF até 8 MB, enviada pelo app ou pelo painel).
 - [x] Painel: nome do servidor, intervalo do scan e limite de transcodificações simultâneas, aplicados na hora, sem reiniciar (têm prioridade sobre as variáveis de ambiente).
 
 ### Fase 3: Motor de Streaming Direto (Direct Play & Scrubbing) (Implementada, falta teste com cliente real)

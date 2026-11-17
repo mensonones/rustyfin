@@ -62,7 +62,7 @@ cargo build --release
 * Os apps (Moonfin, Swiftfin, Findroid) pedem usuário e senha; **imagens e segmentos HLS** não exigem token, o resto sim.
 * Com um **administrador com senha**, o painel `/admin` (e as rotas `/Library/VirtualFolders*`) passam a exigir login: HTTP Basic com usuário e senha de administrador, ou o token de um administrador logado no app. Sem senha de administrador, vale só a regra de rede local.
 * O log de requisições não grava `api_key`/tokens, e séries com o mesmo nome se separam pelo ano da pasta ou do arquivo (`Ghosts (2019)` × `Ghosts (2021)`).
-* Dois cuidados: sempre sobra ao menos um administrador ativo, e a lista de usuários aparece na tela de login dos apps (como no Jellyfin).
+* Dois cuidados: sempre sobra ao menos um administrador ativo, e a lista de usuários aparece na tela de login dos apps (como no Jellyfin), com a foto de cada um. Em `/admin` → Usuários dá para trocar a **foto** de perfil e marcar um perfil como **oculto**: ele some da lista, mas entra digitando o nome.
 * **Atualizando de versões antigas:** o app guardava um token fixo que deixou de valer; o primeiro acesso volta à tela "Quem está assistindo?" e basta escolher o usuário.
 
 ---
