@@ -45,7 +45,7 @@
 - [x] Provider TMDB opcional (`TMDB_API_KEY`): sinopse, nota, gêneros, ano, título localizado e posters/backdrops com cache em disco; episódios usam nome/sinopse/still do episódio.
 - [x] **Hierarquia de séries**: itens virtuais `Series` e `Season` (IDs determinísticos), view "Séries" (`tvshows`), `ParentId` por série/temporada, `/Shows/{id}/Seasons`, `/Shows/{id}/Episodes` (`seasonId`/`season`), `/Shows/NextUp`, contagem de não assistidos e imagens da série/temporada.
 - [x] Poster e backdrop locais da série (`poster.jpg`, `backdrop.jpg` ou `fanart.jpg`) e capa da temporada (`folder.jpg`), com fallback para TMDB.
-- [ ] Elenco, estúdios, classificação indicativa e trailers do TMDB.
+- [x] Elenco (20 atores), diretores e roteiristas, estúdios, classificação indicativa (do país do idioma configurado, depois US), slogan e trailers do YouTube, via TMDB (`append_to_response`). Itens e séries já enriquecidos são completados em segundo plano. Fotos de pessoas ainda não.
 - [x] Scan por eventos do sistema de arquivos (`notify`, com debounce de 3 s), mantendo o polling como reserva (`RUSTYFIN_WATCH=false` desativa o watcher).
 
 ### Fase 2c: Compatibilidade com clientes 10.9+
@@ -56,7 +56,7 @@
 - [x] Validado no **Moonfin 3.0.0 (Android)**: conexão, login, home com destaques, bibliotecas Filmes/Séries (série → temporada → episódio, NextUp), Direct Play com seek, transcode HLS por limite de bitrate, marcar assistido, WebSocket `/socket`.
 - [ ] Validar também no Swiftfin/Findroid e em TV; `Moonfin/*` e `Plugins/*` retornam 404 de propósito (plugin do servidor não instalado).
 - [x] Descoberta automática (UDP 7359, protocolo "who is JellyfinServer?"): validada no Moonfin. No Docker defina `RUSTYFIN_PUBLIC_URL` (IP do PC) no `.env`; o app esconde da lista "descobertos" os servidores já salvos.
-- [ ] `DeviceProfile` no `PlaybackInfo`, gêneros/estúdios/pessoas reais, `GenreIds` e filtros por ano.
+- [x] `GenreItems`, `Studios`, `People`, `OfficialRating`, `Taglines` e `RemoteTrailers` nos itens; listas `/Genres`, `/Studios`, `/Persons` (com `PersonTypes`, busca e paginação) e `/Items/Filters`; filtros `Genres`, `Years` e `OfficialRatings` em `/Items` (filmes, séries e episódios).
 
 ### Fase 2d: Administração (Implementada)
 - [x] Bibliotecas e configurações persistidas no banco (`libraries`, `library_paths`, `settings`), com migração e *seed* a partir do ambiente.

@@ -5,6 +5,12 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.7.0] - 2026-11-17
+
+### Adicionado
+- Elenco, diretores, roteiristas, estúdios, classificação indicativa, slogan e trailers do TMDB nos filmes, séries e episódios (herdam da série). Itens já enriquecidos são completados em segundo plano.
+- `/Genres`, `/Studios`, `/Persons` e `/Items/Filters` com dados reais, e os filtros `Genres`, `Years` e `OfficialRatings` em `/Items`.
+
 ## [0.6.0] - 2026-11-17
 
 ### Adicionado
