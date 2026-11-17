@@ -5,6 +5,11 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.8.0] - 2026-11-17
+
+### Adicionado
+- Fotos das pessoas do elenco e da equipe: `People[].PrimaryImageTag`, `ImageTags` em `/Persons` e `/Items/{id}/Images/Primary` para a pessoa (baixada do TMDB na primeira requisição, com cache, `maxWidth` e ETag). Itens enriquecidos antes são completados em segundo plano.
+
 ## [0.7.0] - 2026-11-17
 
 ### Adicionado

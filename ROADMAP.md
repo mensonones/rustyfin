@@ -45,7 +45,7 @@
 - [x] Provider TMDB opcional (`TMDB_API_KEY`): sinopse, nota, gêneros, ano, título localizado e posters/backdrops com cache em disco; episódios usam nome/sinopse/still do episódio.
 - [x] **Hierarquia de séries**: itens virtuais `Series` e `Season` (IDs determinísticos), view "Séries" (`tvshows`), `ParentId` por série/temporada, `/Shows/{id}/Seasons`, `/Shows/{id}/Episodes` (`seasonId`/`season`), `/Shows/NextUp`, contagem de não assistidos e imagens da série/temporada.
 - [x] Poster e backdrop locais da série (`poster.jpg`, `backdrop.jpg` ou `fanart.jpg`) e capa da temporada (`folder.jpg`), com fallback para TMDB.
-- [x] Elenco (20 atores), diretores e roteiristas, estúdios, classificação indicativa (do país do idioma configurado, depois US), slogan e trailers do YouTube, via TMDB (`append_to_response`). Itens e séries já enriquecidos são completados em segundo plano. Fotos de pessoas ainda não.
+- [x] Elenco (20 atores), diretores e roteiristas, estúdios, classificação indicativa (do país do idioma configurado, depois US), slogan e trailers do YouTube, via TMDB (`append_to_response`). Itens e séries já enriquecidos são completados em segundo plano. Fotos das pessoas (`PrimaryImageTag` e `/Items/{id}/Images/Primary`, baixadas do TMDB na primeira requisição e guardadas em cache, com `maxWidth` e ETag).
 - [x] Scan por eventos do sistema de arquivos (`notify`, com debounce de 3 s), mantendo o polling como reserva (`RUSTYFIN_WATCH=false` desativa o watcher).
 
 ### Fase 2c: Compatibilidade com clientes 10.9+
