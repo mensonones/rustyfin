@@ -51,6 +51,7 @@ pub fn apply_extra(dto: &mut BaseItemDto, extra_json: Option<&str>) {
             id: stable_id("person", &p.name),
             role: p.role.clone(),
             r#type: p.kind.clone(),
+            primary_image_tag: p.image.as_deref().map(|i| crate::api::images::image_tag(Some(i), 0)),
         })
         .collect();
     dto.official_rating = extra.official_rating;
@@ -101,7 +102,7 @@ pub fn parse_pipe_list(v: Option<&String>) -> Vec<String> {
 struct Facets {
     genres: BTreeSet<String>,
     studios: BTreeSet<String>,
-    people: BTreeMap<String, String>, // nome -> tipo
+    people: BTreeMap<String, (String, Option<String>)>, // nome -> (tipo, foto)
     ratings: BTreeSet<String>,
     years: BTreeSet<i32>,
 }
@@ -130,7 +131,10 @@ async fn collect(pool: &DbPool, user: &crate::users::AuthUser) -> Result<Facets,
         if let Some(e) = extra.and_then(|e| serde_json::from_str::<Extra>(&e).ok()) {
             out.studios.extend(e.studios);
             for p in e.people {
-                out.people.entry(p.name).or_insert(p.kind);
+                let entry = out.people.entry(p.name).or_insert((p.kind, None));
+                if entry.1.is_none() {
+                    entry.1 = p.image;
+                }
             }
             out.ratings.extend(e.official_rating);
         }
@@ -209,8 +213,14 @@ pub async fn persons(
     let items = f
         .people
         .iter()
-        .filter(|(_, kind)| wanted.is_empty() || wanted.iter().any(|w| w.eq_ignore_ascii_case(kind)))
-        .map(|(name, _)| named(&config, "person", "Person", name))
+        .filter(|(_, (kind, _))| wanted.is_empty() || wanted.iter().any(|w| w.eq_ignore_ascii_case(kind)))
+        .map(|(name, (_, image))| {
+            let mut dto = named(&config, "person", "Person", name);
+            if let Some(i) = image {
+                dto.image_tags.insert("Primary".into(), crate::api::images::image_tag(Some(i), 0));
+            }
+            dto
+        })
         .collect();
     Ok(paged(&config, items, &params))
 }
@@ -239,12 +249,13 @@ mod tests {
     #[test]
     fn extra_fills_dto() {
         let mut dto = BaseItemDto { genres: vec!["Ação".into()], ..Default::default() };
-        let json = r#"{"studios":["Lucasfilm"],"people":[{"name":"Pedro Pascal","role":"Din Djarin","kind":"Actor"}],
+        let json = r#"{"studios":["Lucasfilm"],"people":[{"name":"Pedro Pascal","role":"Din Djarin","kind":"Actor","image":"/pp.jpg"}],
             "official_rating":"14","tagline":"Esta é a missão","trailers":[{"name":"Trailer","url":"https://www.youtube.com/watch?v=abc"}]}"#;
         apply_extra(&mut dto, Some(json));
         assert_eq!(dto.genre_items.len(), 1);
         assert_eq!(dto.studios[0].name, "Lucasfilm");
         assert_eq!(dto.people[0].r#type, "Actor");
+        assert!(dto.people[0].primary_image_tag.is_some());
         assert_eq!(dto.people[0].role.as_deref(), Some("Din Djarin"));
         assert_eq!(dto.official_rating.as_deref(), Some("14"));
         assert_eq!(dto.taglines, vec!["Esta é a missão"]);

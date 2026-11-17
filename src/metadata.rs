@@ -20,6 +20,9 @@ const REQUEST_TIMEOUT_SECS: u32 = 20;
 /// Dados extras do TMDB guardados como JSON (`items.extra` / `series.extra`).
 #[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Extra {
+    /// Versão do formato: itens gravados com versão menor são buscados de novo.
+    #[serde(default)]
+    pub v: u8,
     #[serde(default)]
     pub studios: Vec<String>,
     #[serde(default)]
@@ -38,7 +41,12 @@ pub struct Person {
     pub role: Option<String>,
     /// "Actor", "Director" ou "Writer"
     pub kind: String,
+    /// Foto no TMDB (`/hash.jpg`).
+    #[serde(default)]
+    pub image: Option<String>,
 }
+
+const EXTRA_VERSION: u8 = 2;
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Trailer {
@@ -88,7 +96,12 @@ fn parse_extra(v: &Value, regions: &[String]) -> Extra {
     if let Some(cast) = v.pointer("/credits/cast").and_then(|c| c.as_array()) {
         for p in cast.iter().take(20) {
             if let Some(name) = non_empty(p.get("name")) {
-                people.push(Person { name, role: non_empty(p.get("character")), kind: "Actor".into() });
+                people.push(Person {
+                    name,
+                    role: non_empty(p.get("character")),
+                    kind: "Actor".into(),
+                    image: non_empty(p.get("profile_path")),
+                });
             }
         }
     }
@@ -105,7 +118,7 @@ fn parse_extra(v: &Value, regions: &[String]) -> Extra {
             if people.iter().any(|x| x.name == name && x.kind == kind) {
                 continue;
             }
-            people.push(Person { name, role: Some(job), kind: kind.into() });
+            people.push(Person { name, role: Some(job), kind: kind.into(), image: non_empty(p.get("profile_path")) });
             crew_count += 1;
             if crew_count >= 6 {
                 break;
@@ -164,7 +177,7 @@ fn parse_extra(v: &Value, regions: &[String]) -> Extra {
         })
         .unwrap_or_default();
 
-    Extra { studios, people, official_rating, tagline: non_empty(v.get("tagline")), trailers }
+    Extra { v: EXTRA_VERSION, studios, people, official_rating, tagline: non_empty(v.get("tagline")), trailers }
 }
 
 #[derive(Debug)]
@@ -334,7 +347,7 @@ fn safe_image_path(p: &str) -> Option<&str> {
     .then_some(name)
 }
 
-async fn download_image(config: &AppConfig, rel: &str, size: &str) -> Option<String> {
+pub async fn download_image(config: &AppConfig, rel: &str, size: &str) -> Option<String> {
     let name = safe_image_path(rel)?;
     let dir = config.cache_dir.join("tmdb");
     tokio::fs::create_dir_all(&dir).await.ok()?;
@@ -508,6 +521,18 @@ async fn process_batch(
     (found, false)
 }
 
+/// Guarda a foto de cada pessoa (ID = o exposto em `People[].Id`) para `/Items/{id}/Images/Primary`.
+async fn store_people(pool: &DbPool, extra: &Extra) {
+    for p in extra.people.iter().filter(|p| p.image.is_some()) {
+        let _ = sqlx::query("INSERT OR REPLACE INTO people (id, name, image) VALUES (?, ?, ?)")
+            .bind(crate::api::facets::stable_id("person", &p.name))
+            .bind(&p.name)
+            .bind(&p.image)
+            .execute(pool)
+            .await;
+    }
+}
+
 /// Preenche `extra` de filmes e séries já identificados no TMDB (sem refazer a busca por nome).
 async fn enrich_extras(pool: &DbPool, config: &AppConfig, key: &str) {
     let lang_owned = crate::settings::tmdb_language();
@@ -515,13 +540,17 @@ async fn enrich_extras(pool: &DbPool, config: &AppConfig, key: &str) {
     let regions = certification_regions();
 
     let movies: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT id, tmdb_id FROM items WHERE media_type = 'Movie' AND tmdb_id IS NOT NULL AND extra IS NULL",
+        "SELECT id, tmdb_id FROM items WHERE media_type = 'Movie' AND tmdb_id IS NOT NULL
+           AND (extra IS NULL OR IFNULL(json_extract(extra, '$.v'), 0) < 2)",
     )
     .fetch_all(pool)
     .await
     .unwrap_or_default();
     let shows: Vec<(String, i64)> =
-        sqlx::query_as("SELECT id, tmdb_id FROM series WHERE tmdb_id IS NOT NULL AND extra IS NULL")
+        sqlx::query_as(
+            "SELECT id, tmdb_id FROM series WHERE tmdb_id IS NOT NULL
+             AND (extra IS NULL OR IFNULL(json_extract(extra, '$.v'), 0) < 2)",
+        )
             .fetch_all(pool)
             .await
             .unwrap_or_default();
@@ -548,7 +577,9 @@ async fn enrich_extras(pool: &DbPool, config: &AppConfig, key: &str) {
                 Err(FetchError::Http(_)) => serde_json::json!({}),
                 Err(_) => return,
             };
-            let extra = serde_json::to_string(&parse_extra(&v, &regions)).unwrap_or_else(|_| "{}".into());
+            let parsed = parse_extra(&v, &regions);
+            store_people(pool, &parsed).await;
+            let extra = serde_json::to_string(&parsed).unwrap_or_else(|_| "{}".into());
             let sql = format!("UPDATE {table} SET extra = ? WHERE id = ?");
             let _ = sqlx::query(&sql).bind(extra).bind(&id).execute(pool).await;
         }
@@ -719,6 +750,7 @@ async fn store_series(pool: &DbPool, config: &AppConfig, id: &str, show: &Info) 
     .bind(serde_json::to_string(&show.extra).ok())
     .execute(pool)
     .await?;
+    store_people(pool, &show.extra).await;
     Ok(())
 }
 
@@ -755,6 +787,7 @@ async fn store(pool: &DbPool, config: &AppConfig, id: &str, info: &Info) -> Resu
     .bind(id)
     .execute(pool)
     .await?;
+    store_people(pool, &info.extra).await;
     Ok(())
 }
 
@@ -769,7 +802,7 @@ mod tests {
             "id": 1, "title": "Filme", "tagline": "Slogan",
             "production_companies": [{"name": "Lucasfilm"}, {"name": "Disney"}],
             "credits": {
-                "cast": [{"name": "Ator Um", "character": "Herói"}, {"name": "Atriz Dois", "character": ""}],
+                "cast": [{"name": "Ator Um", "character": "Herói", "profile_path": "/ator1.jpg"}, {"name": "Atriz Dois", "character": ""}],
                 "crew": [{"name": "Diretora", "job": "Director"}, {"name": "Cinegrafista", "job": "Camera"},
                          {"name": "Roteirista", "job": "Screenplay"}, {"name": "Diretora", "job": "Director"}]
             },
@@ -787,7 +820,10 @@ mod tests {
         let e = parse_extra(&v, &["BR".to_string(), "US".to_string()]);
         assert_eq!(e.studios, vec!["Lucasfilm", "Disney"]);
         assert_eq!(e.people.len(), 4); // 2 atores + diretora + roteirista (sem câmera, sem repetir)
-        assert_eq!(e.people[0], Person { name: "Ator Um".into(), role: Some("Herói".into()), kind: "Actor".into() });
+        assert_eq!(
+            e.people[0],
+            Person { name: "Ator Um".into(), role: Some("Herói".into()), kind: "Actor".into(), image: Some("/ator1.jpg".into()) }
+        );
         assert_eq!(e.people[1].role, None);
         assert!(e.people.iter().any(|p| p.kind == "Director" && p.name == "Diretora"));
         assert!(e.people.iter().any(|p| p.kind == "Writer" && p.name == "Roteirista"));
@@ -802,7 +838,7 @@ mod tests {
         let tv = json!({"id": 2, "name": "Série", "content_ratings": {"results": [
             {"iso_3166_1": "BR", "rating": "12"}]}});
         assert_eq!(parse_extra(&tv, &["BR".to_string()]).official_rating.as_deref(), Some("12"));
-        assert_eq!(parse_extra(&json!({}), &["BR".to_string()]), Extra::default());
+        assert_eq!(parse_extra(&json!({}), &["BR".to_string()]), Extra { v: EXTRA_VERSION, ..Default::default() });
     }
 
     #[test]

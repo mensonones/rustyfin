@@ -121,7 +121,18 @@ async fn serve_image(
             row = fetch_image_row(pool, &target).await?;
         }
     }
-    let (video_path, duration_ticks, poster, backdrop) = row.ok_or(StatusCode::NOT_FOUND)?;
+    let (video_path, duration_ticks, poster, backdrop) = match row {
+        Some(r) => r,
+        None => {
+            // Pessoa do elenco: foto do TMDB, baixada na primeira requisição e guardada em cache.
+            if kind == ImageKind::Primary {
+                if let Some(path) = person_photo(config, pool, &item_id).await {
+                    return respond_file(config, path, q, req_headers).await;
+                }
+            }
+            return Err(StatusCode::NOT_FOUND);
+        }
+    };
 
     candidates.extend(match kind {
         ImageKind::Primary => poster,
@@ -149,6 +160,27 @@ async fn serve_image(
         .ok_or(StatusCode::NOT_FOUND)?,
     };
 
+    respond_file(config, image_path, q, req_headers).await
+}
+
+async fn person_photo(config: &AppConfig, pool: &DbPool, id: &str) -> Option<PathBuf> {
+    let (image,): (Option<String>,) = sqlx::query_as("SELECT image FROM people WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .ok()??;
+    crate::metadata::download_image(config, image.as_deref()?, "w185")
+        .await
+        .map(PathBuf::from)
+}
+
+/// Redimensiona (se pedido), aplica ETag/304 e devolve o arquivo de imagem.
+async fn respond_file(
+    config: &AppConfig,
+    image_path: PathBuf,
+    q: &HashMap<String, String>,
+    req_headers: &HeaderMap,
+) -> Result<Response, StatusCode> {
     // Redimensionamento sob demanda (maxWidth/maxHeight/quality); falha → serve o original.
     let image_path = match ResizeOpts::from_query(q) {
         Some(o) => resized_for(config, &image_path, o).await.unwrap_or(image_path),

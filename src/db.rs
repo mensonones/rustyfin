@@ -130,6 +130,10 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
     .await?;
     // Poster específico de cada temporada (TMDB); `poster` nulo = sem arte própria (usa a da série).
     add_column_if_missing(&pool, "series", "extra", "TEXT").await?;
+    // Foto (caminho no TMDB) de cada pessoa do elenco; o ID é o mesmo exposto em `People[].Id`.
+    sqlx::query("CREATE TABLE IF NOT EXISTS people (id TEXT PRIMARY KEY, name TEXT NOT NULL, image TEXT)")
+        .execute(&pool)
+        .await?;
     sqlx::query("CREATE TABLE IF NOT EXISTS season_art (season_id TEXT PRIMARY KEY, poster TEXT)")
         .execute(&pool)
         .await?;

@@ -163,6 +163,8 @@ pub struct PersonDto {
     pub role: Option<String>,
     /// "Actor", "Director" ou "Writer"
     pub r#type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_image_tag: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
