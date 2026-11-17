@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod auth;
+pub mod avatars;
 pub mod compat;
 pub mod facets;
 pub mod images;
@@ -44,6 +45,14 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
         .route(
             "/Users/:user_id",
             get(auth::get_user_by_id).delete(auth::delete_user).with_state(app_state_tuple.clone()),
+        )
+        .route(
+            "/Users/:user_id/Images/:image_type",
+            get(avatars::get_avatar)
+                .post(avatars::post_avatar)
+                .delete(avatars::delete_avatar)
+                .layer(axum::extract::DefaultBodyLimit::max(avatars::MAX_BYTES))
+                .with_state(app_state_tuple.clone()),
         )
         .route("/Users/:user_id/Password", post(auth::change_password).with_state(app_state_tuple.clone()))
         .route("/Users/:user_id/Policy", post(auth::update_policy).with_state(app_state_tuple.clone()))

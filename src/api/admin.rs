@@ -63,6 +63,12 @@ pub fn router(config: Arc<AppConfig>, pool: DbPool, scan: ScanTrigger) -> Router
         .route("/admin/api/sessions/:id", axum::routing::delete(sessions_revoke))
         .route("/admin/api/users", get(users_list).post(users_create))
         .route("/admin/api/users/:id", axum::routing::delete(users_delete))
+        .route(
+            "/admin/api/users/:id/avatar",
+            post(users_avatar_set)
+                .delete(users_avatar_clear)
+                .layer(axum::extract::DefaultBodyLimit::max(crate::api::avatars::MAX_BYTES)),
+        )
         .route("/admin/api/users/:id/password", post(users_password))
         .route("/admin/api/users/:id/policy", post(users_policy))
         .route("/admin/api/users/:id/rename", post(users_rename))
@@ -342,7 +348,8 @@ async fn rename_folder(State(st): State<AdminState>, RawQuery(raw): RawQuery) ->
 fn user_json(u: &users::User) -> Value {
     json!({
         "id": u.id, "name": u.name, "hasPassword": u.has_password, "isAdmin": u.is_admin,
-        "isDisabled": u.is_disabled, "allLibraries": u.all_libraries, "libraries": u.libraries
+        "isDisabled": u.is_disabled, "isHidden": u.is_hidden, "allLibraries": u.all_libraries,
+        "libraries": u.libraries, "avatarTag": u.avatar.as_deref().map(crate::api::avatars::image_tag)
     })
 }
 
@@ -402,9 +409,33 @@ async fn users_create(State(st): State<AdminState>, Json(body): Json<Value>) -> 
 }
 
 async fn users_delete(State(st): State<AdminState>, axum::extract::Path(id): axum::extract::Path<String>) -> Response {
+    let avatar = users::get(&st.pool, &id).await.ok().flatten().and_then(|u| u.avatar);
     match users::delete(&st.pool, &id).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Ok(()) => {
+            if let Some(a) = avatar {
+                let _ = tokio::fs::remove_file(st.config.cache_dir.join("avatars").join(a)).await;
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(e) => crate::api::auth::user_error_response(e),
+    }
+}
+
+async fn users_avatar_set(
+    State(st): State<AdminState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    body: axum::body::Bytes,
+) -> Response {
+    match crate::api::avatars::save(&st.config, &st.pool, &id, &body).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(code) => code.into_response(),
+    }
+}
+
+async fn users_avatar_clear(State(st): State<AdminState>, axum::extract::Path(id): axum::extract::Path<String>) -> Response {
+    match crate::api::avatars::clear(&st.config, &st.pool, &id).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(code) => code.into_response(),
     }
 }
 
@@ -428,6 +459,7 @@ async fn users_policy(
     let upd = PolicyUpdate {
         is_admin: body.get("isAdmin").and_then(|v| v.as_bool()),
         is_disabled: body.get("isDisabled").and_then(|v| v.as_bool()),
+        is_hidden: body.get("isHidden").and_then(|v| v.as_bool()),
         all_libraries: body.get("allLibraries").and_then(|v| v.as_bool()),
         libraries: body
             .get("libraries")

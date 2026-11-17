@@ -205,6 +205,7 @@
     <h2 id="permTitle">Permissões</h2>
     <label style="display:flex;gap:8px;align-items:center;font-weight:500"><input id="permAdmin" type="checkbox" style="width:auto"> Administrador</label>
     <label style="display:flex;gap:8px;align-items:center;font-weight:500"><input id="permDisabled" type="checkbox" style="width:auto"> Conta desativada (não consegue entrar)</label>
+    <label style="display:flex;gap:8px;align-items:center;font-weight:500"><input id="permHidden" type="checkbox" style="width:auto"> Perfil oculto (não aparece na lista da tela de login; entra digitando o nome)</label>
     <label style="display:flex;gap:8px;align-items:center;font-weight:500"><input id="permAll" type="checkbox" style="width:auto"> Acesso a todas as bibliotecas</label>
     <div id="permLibs" style="margin-left:26px"></div>
   </div>
@@ -397,12 +398,19 @@ async function loadUsers() {
     const badges = el('span', { className: 'row' });
     if (u.isAdmin) badges.append(el('span', { className: 'badge', textContent: 'Administrador' }));
     if (u.isDisabled) badges.append(el('span', { className: 'badge bad', textContent: 'Desativado' }));
+    if (u.isHidden) badges.append(el('span', { className: 'badge', textContent: 'Oculto' }));
     badges.append(el('span', { className: 'badge', textContent: u.hasPassword ? 'com senha' : 'sem senha' }));
     const names = u.allLibraries ? 'todas as bibliotecas' : (u.libraries.map((id) => (libs.find((l) => l.Id === id) || {}).Name).filter(Boolean).join(', ') || 'nenhuma biblioteca');
     root.append(el('div', { className: 'card' },
       el('div', { className: 'row between' },
-        el('div', {}, el('div', { className: 'row' }, el('h2', { textContent: u.name, style: 'margin:0' }), badges), el('div', { className: 'hint', style: 'margin:4px 0 0', textContent: 'Acesso: ' + names })),
+        el('div', { className: 'row', style: 'gap:12px' },
+          u.avatarTag
+            ? el('img', { src: '/Users/' + u.id + '/Images/Primary?tag=' + u.avatarTag, alt: '', style: 'width:44px;height:44px;border-radius:50%;object-fit:cover;border:1px solid var(--line)' })
+            : el('div', { textContent: u.name.slice(0, 1).toUpperCase(), style: 'width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--line);color:var(--muted);font-weight:600' }),
+          el('div', {}, el('div', { className: 'row' }, el('h2', { textContent: u.name, style: 'margin:0' }), badges), el('div', { className: 'hint', style: 'margin:4px 0 0', textContent: 'Acesso: ' + names }))),
         el('div', { className: 'row' },
+          el('button', { className: 'btn small', textContent: 'Foto', onclick: () => pickAvatar(u) }),
+          u.avatarTag ? el('button', { className: 'btn small', textContent: 'Remover foto', onclick: () => act(async () => { await api('DELETE', '/admin/api/users/' + u.id + '/avatar'); await loadUsers(); }, 'Foto removida.') }) : '',
           el('button', { className: 'btn small', textContent: u.hasPassword ? 'Alterar senha' : 'Definir senha', onclick: () => askPassword(u) }),
           el('button', { className: 'btn small', textContent: 'Permissões', onclick: () => editPerms(u) }),
           el('button', { className: 'btn small', textContent: 'Renomear', onclick: () => {
@@ -413,6 +421,20 @@ async function loadUsers() {
             if (confirm('Excluir o usuário "' + u.name + '"?\nO progresso e os favoritos dele também serão apagados.')) act(async () => { await api('DELETE', '/admin/api/users/' + u.id); await loadUsers(); }, 'Usuário excluído.');
           } })))));
   }
+}
+function pickAvatar(u) {
+  const input = el('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp,image/gif' });
+  input.onchange = () => {
+    const f = input.files[0];
+    if (!f) return;
+    if (f.size > 8 * 1024 * 1024) return toast('A imagem passa de 8 MB.', true);
+    act(async () => {
+      const r = await fetch('/admin/api/users/' + u.id + '/avatar', { method: 'POST', headers: { 'Content-Type': f.type || 'application/octet-stream' }, body: f });
+      if (!r.ok) throw new Error(r.status === 400 ? 'Use uma imagem JPEG, PNG, WebP ou GIF.' : r.status + ' ' + r.statusText);
+      await loadUsers();
+    }, 'Foto atualizada.');
+  };
+  input.click();
 }
 $('newUser').onclick = () => { $('uName').value = ''; $('uPass').value = ''; $('uAdmin').checked = false; $('userDialog').showModal(); };
 $('userCancel').onclick = () => $('userDialog').close();
@@ -437,7 +459,7 @@ let permUser = null;
 function editPerms(u) {
   permUser = u;
   $('permTitle').textContent = 'Permissões de ' + u.name;
-  $('permAdmin').checked = u.isAdmin; $('permDisabled').checked = u.isDisabled; $('permAll').checked = u.allLibraries;
+  $('permAdmin').checked = u.isAdmin; $('permDisabled').checked = u.isDisabled; $('permHidden').checked = u.isHidden; $('permAll').checked = u.allLibraries;
   const box = $('permLibs'); box.replaceChildren();
   allLibs.forEach((l) => {
     const cb = el('input', { type: 'checkbox', value: l.Id, checked: u.libraries.includes(l.Id), style: 'width:auto' });
@@ -450,7 +472,7 @@ function editPerms(u) {
 $('permCancel').onclick = () => $('permDialog').close();
 $('permSave').onclick = () => act(async () => {
   await api('POST', '/admin/api/users/' + permUser.id + '/policy', {
-    isAdmin: $('permAdmin').checked, isDisabled: $('permDisabled').checked, allLibraries: $('permAll').checked,
+    isAdmin: $('permAdmin').checked, isDisabled: $('permDisabled').checked, isHidden: $('permHidden').checked, allLibraries: $('permAll').checked,
     libraries: [...$('permLibs').querySelectorAll('input:checked')].map((i) => i.value),
   });
   $('permDialog').close();

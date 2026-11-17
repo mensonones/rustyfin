@@ -206,7 +206,7 @@ pub fn user_dto(config: &AppConfig, u: &User) -> UserDto {
         },
         policy: UserPolicy {
             is_administrator: u.is_admin,
-            is_hidden: false,
+            is_hidden: u.is_hidden,
             is_disabled: u.is_disabled,
             enable_media_playback: true,
             enable_audio_playback_transcoding: true,
@@ -216,6 +216,7 @@ pub fn user_dto(config: &AppConfig, u: &User) -> UserDto {
             enable_all_folders: u.all_libraries,
             enabled_folders: u.libraries.clone(),
         },
+        primary_image_tag: u.avatar.as_deref().map(crate::api::avatars::image_tag),
     }
 }
 
@@ -244,7 +245,7 @@ pub async fn get_public_users(State((config, pool)): State<AppState>) -> Respons
     match users::list(&pool).await {
         Ok(list) => Json(
             list.iter()
-                .filter(|u| !u.is_disabled)
+                .filter(|u| !u.is_disabled && !u.is_hidden)
                 .map(|u| user_dto(&config, u))
                 .collect::<Vec<_>>(),
         )
@@ -366,15 +367,23 @@ pub async fn create_user(
 }
 
 pub async fn delete_user(
-    State((_, pool)): State<AppState>,
+    State((config, pool)): State<AppState>,
     CurrentUser(me): CurrentUser,
     Path(id): Path<String>,
 ) -> Response {
     if let Some(r) = require_admin(&me) {
         return r;
     }
-    match users::delete(&pool, &normalize(&id)).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+    let id = normalize(&id);
+    // Usuário excluído leva a foto junto (se a exclusão for recusada, a foto é só recolocada depois).
+    let avatar = users::get(&pool, &id).await.ok().flatten().and_then(|u| u.avatar);
+    match users::delete(&pool, &id).await {
+        Ok(()) => {
+            if let Some(a) = avatar {
+                let _ = tokio::fs::remove_file(config.cache_dir.join("avatars").join(a)).await;
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(e) => user_error_response(e),
     }
 }
@@ -384,6 +393,7 @@ pub fn policy_from_json(body: &Value) -> PolicyUpdate {
     PolicyUpdate {
         is_admin: body.get("IsAdministrator").and_then(|v| v.as_bool()),
         is_disabled: body.get("IsDisabled").and_then(|v| v.as_bool()),
+        is_hidden: body.get("IsHidden").and_then(|v| v.as_bool()),
         all_libraries: body.get("EnableAllFolders").and_then(|v| v.as_bool()),
         libraries: body.get("EnabledFolders").and_then(|v| v.as_array()).map(|a| {
             a.iter().filter_map(|v| v.as_str()).map(|s| s.replace('-', "").to_lowercase()).collect()

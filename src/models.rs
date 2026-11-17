@@ -40,6 +40,8 @@ pub struct UserDto {
     pub enable_auto_login: bool,
     pub configuration: UserConfiguration,
     pub policy: UserPolicy,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_image_tag: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

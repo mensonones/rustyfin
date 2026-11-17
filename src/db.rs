@@ -167,6 +167,9 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
     )
     .execute(&pool)
     .await?;
+    // Perfil oculto (fora da lista da tela de login) e foto de perfil (nome do arquivo em cache/avatars).
+    add_column_if_missing(&pool, "users", "is_hidden", "BOOLEAN NOT NULL DEFAULT 0").await?;
+    add_column_if_missing(&pool, "users", "avatar", "TEXT").await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_tokens_user ON access_tokens(user_id)")
         .execute(&pool)
         .await?;

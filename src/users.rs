@@ -67,6 +67,10 @@ pub struct User {
     pub is_admin: bool,
     pub is_disabled: bool,
     pub all_libraries: bool,
+    /// Fora da lista de perfis da tela de login (o login digitando o nome continua valendo).
+    pub is_hidden: bool,
+    /// Nome do arquivo da foto de perfil em `<cache>/avatars`.
+    pub avatar: Option<String>,
     /// IDs das bibliotecas permitidas (só relevante se `all_libraries` for falso).
     pub libraries: Vec<String>,
 }
@@ -186,16 +190,16 @@ pub fn limiter_ok(key: &str) {
 
 // ---------------------------------------------------------------- consultas
 
-type UserRow = (String, String, Option<String>, bool, bool, bool);
+type UserRow = (String, String, Option<String>, bool, bool, bool, bool, Option<String>);
 
-const USER_COLS: &str = "id, name, password_hash, is_admin, is_disabled, all_libraries";
+const USER_COLS: &str = "id, name, password_hash, is_admin, is_disabled, all_libraries, is_hidden, avatar";
 
 async fn build_users(pool: &DbPool, rows: Vec<UserRow>) -> Result<Vec<User>, sqlx::Error> {
     let access: Vec<(String, String)> =
         sqlx::query_as("SELECT user_id, library_id FROM user_libraries").fetch_all(pool).await?;
     Ok(rows
         .into_iter()
-        .map(|(id, name, hash, is_admin, is_disabled, all_libraries)| User {
+        .map(|(id, name, hash, is_admin, is_disabled, all_libraries, is_hidden, avatar)| User {
             libraries: access.iter().filter(|(u, _)| *u == id).map(|(_, l)| l.clone()).collect(),
             id,
             name,
@@ -203,6 +207,8 @@ async fn build_users(pool: &DbPool, rows: Vec<UserRow>) -> Result<Vec<User>, sql
             is_admin,
             is_disabled,
             all_libraries,
+            is_hidden,
+            avatar,
         })
         .collect())
 }
@@ -360,6 +366,7 @@ pub async fn set_password(
 pub struct PolicyUpdate {
     pub is_admin: Option<bool>,
     pub is_disabled: Option<bool>,
+    pub is_hidden: Option<bool>,
     pub all_libraries: Option<bool>,
     pub libraries: Option<Vec<String>>,
 }
@@ -377,9 +384,10 @@ pub async fn set_policy(pool: &DbPool, id: &str, upd: PolicyUpdate) -> Result<()
     }
 
     let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE users SET is_admin = ?, is_disabled = ?, all_libraries = ? WHERE id = ?")
+    sqlx::query("UPDATE users SET is_admin = ?, is_disabled = ?, is_hidden = ?, all_libraries = ? WHERE id = ?")
         .bind(is_admin)
         .bind(is_disabled)
+        .bind(upd.is_hidden.unwrap_or(user.is_hidden))
         .bind(upd.all_libraries.unwrap_or(user.all_libraries))
         .bind(id)
         .execute(&mut *tx)
@@ -460,7 +468,7 @@ pub async fn authenticate_from(
     let row = get_row_by_name(pool, name).await.map_err(|_| AuthError::Internal)?;
     let result = match row {
         Some((r,)) => {
-            let (id, _, hash, _, is_disabled, _) = &r;
+            let (id, _, hash, _, is_disabled, ..) = &r;
             let ok = match hash {
                 Some(h) => verify_blocking(h.clone(), password.to_string()).await,
                 None => from_lan, // sem senha: entra direto, mas só da rede local
@@ -594,6 +602,13 @@ pub async fn revoke_session(pool: &DbPool, id: i64) -> Result<bool, sqlx::Error>
 
 pub async fn revoke_all_sessions(pool: &DbPool) -> Result<u64, sqlx::Error> {
     Ok(sqlx::query("DELETE FROM access_tokens").execute(pool).await?.rows_affected())
+}
+
+/// Grava (ou, com `None`, remove) a foto de perfil. Devolve o arquivo anterior, para apagar do disco.
+pub async fn set_avatar(pool: &DbPool, id: &str, file: Option<&str>) -> Result<Option<String>, UserError> {
+    let user = get(pool, id).await?.ok_or(UserError::NotFound)?;
+    sqlx::query("UPDATE users SET avatar = ? WHERE id = ?").bind(file).bind(id).execute(pool).await?;
+    Ok(user.avatar)
 }
 
 pub async fn revoke_token(pool: &DbPool, token: &str) -> Result<(), sqlx::Error> {
