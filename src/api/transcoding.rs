@@ -35,20 +35,20 @@ fn spawn_status(e: SpawnError) -> StatusCode {
     }
 }
 
-async fn item_path(pool: &DbPool, user: &AuthUser, id: &str) -> Result<String, StatusCode> {
+async fn item_input(pool: &DbPool, user: &AuthUser, id: &str) -> Result<(String, Option<String>), StatusCode> {
     let id = normalize_id(id);
     if !users::item_allowed(pool, user, &id).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)? {
         return Err(StatusCode::NOT_FOUND);
     }
-    let row: Option<(String,)> = sqlx::query_as("SELECT path FROM items WHERE id = ?")
+    sqlx::query_as("SELECT path, streams_json FROM items WHERE id = ?")
         .bind(&id)
         .fetch_optional(pool)
         .await
         .map_err(|e| {
             error!("Erro de banco de dados: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    row.map(|r| r.0).ok_or(StatusCode::NOT_FOUND)
+        })?
+        .ok_or(StatusCode::NOT_FOUND)
 }
 
 /// Stream progressivo (`/Videos/{id}/stream.{ext}?transcode=...`).
@@ -72,8 +72,11 @@ pub async fn try_progressive(
                 .and_then(|(_, v)| Container::from_name(v))
         })
         .unwrap_or(Container::Mkv);
-    let params = TranscodeParams::from_query(query, container, false).ok_or(StatusCode::BAD_REQUEST)?;
-    let path = item_path(pool, user, id).await?;
+    let mut params = TranscodeParams::from_query(query, container, false).ok_or(StatusCode::BAD_REQUEST)?;
+    let (path, streams_json) = item_input(pool, user, id).await?;
+    if !params.video_copy {
+        params.tone_map_hdr = transcode::tone_map_hdr(streams_json.as_deref());
+    }
 
     let stream = transcode::spawn_progressive(std::path::Path::new(&path), &params).map_err(spawn_status)?;
     Response::builder()
@@ -102,11 +105,12 @@ pub async fn hls_master(
     RawQuery(raw): RawQuery,
 ) -> Result<Response, StatusCode> {
     let params = TranscodeParams::from_query(&q, Container::Ts, true).ok_or(StatusCode::BAD_REQUEST)?;
-    let bandwidth = params.video_bitrate.map(|b| b + 192_000).unwrap_or(8_000_000);
+    let bandwidth = params.video_bitrate.map(|b| b.saturating_add(192_000)).unwrap_or(8_000_000);
+    let version = if params.container == Container::Mp4 { "#EXT-X-VERSION:7\n" } else { "" };
     text_response(
         PLAYLIST_MIME,
         format!(
-            "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH={bandwidth}\nmain.m3u8?{}\n",
+            "#EXTM3U\n{version}#EXT-X-STREAM-INF:BANDWIDTH={bandwidth}\nmain.m3u8?{}\n",
             raw.unwrap_or_default()
         ),
     )
@@ -119,10 +123,13 @@ pub async fn hls_main(
     Path(id): Path<String>,
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Response, StatusCode> {
-    let params = TranscodeParams::from_query(&q, Container::Ts, true).ok_or(StatusCode::BAD_REQUEST)?;
+    let mut params = TranscodeParams::from_query(&q, Container::Ts, true).ok_or(StatusCode::BAD_REQUEST)?;
     let id = normalize_id(&id);
-    let path = item_path(&pool, &user, &id).await?;
-    let key = transcode::session_key(&id, &q);
+    let (path, streams_json) = item_input(&pool, &user, &id).await?;
+    if !params.video_copy {
+        params.tone_map_hdr = transcode::tone_map_hdr(streams_json.as_deref());
+    }
+    let key = transcode::session_key(&id, &q, params.tone_map_hdr);
 
     transcode::ensure_hls(&key, std::path::Path::new(&path), &params)
         .await
@@ -144,13 +151,14 @@ pub async fn hls_main(
     )
 }
 
-/// `/Videos/{id}/hls/{key}/seg_00001.ts`
+/// Segmento MPEG-TS ou fMP4, ou arquivo de inicialização fMP4.
 pub async fn hls_segment(
     Path((_id, key, file)): Path<(String, String, String)>,
 ) -> Result<Response, StatusCode> {
-    if !transcode::is_valid_key(&key) || !transcode::is_valid_hls_file(&file) {
+    if !transcode::is_valid_key(&key) {
         return Err(StatusCode::NOT_FOUND);
     }
+    let mime = transcode::hls_file_mime(&file).ok_or(StatusCode::NOT_FOUND)?;
     let path = transcode::wait_for_file(&key, &file, SEGMENT_TIMEOUT)
         .await
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -158,7 +166,7 @@ pub async fn hls_segment(
     let len = f.metadata().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.len();
     Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "video/mp2t")
+        .header(header::CONTENT_TYPE, mime)
         .header(header::CONTENT_LENGTH, len.to_string())
         .header(header::CACHE_CONTROL, "no-store")
         .body(Body::from_stream(ReaderStream::with_capacity(f, 256 * 1024)))

@@ -4,11 +4,14 @@
 //! - **Remux**: vídeo copiado (`-c:v copy`), só áudio/contêiner mudam.
 //! - **Transcode**: vídeo recodificado (H.264) quando o codec não é suportado ou a banda é menor.
 //!
-//! A saída é progressiva (mkv/mp4/ts via pipe) ou HLS (segmentos `.ts` em disco). Todo processo
+//! A saída é progressiva (mkv/mp4/ts via pipe) ou HLS (MPEG-TS ou fMP4 em disco). Todo processo
 //! ffmpeg é limitado por semáforo, morre junto com a conexão (`kill_on_drop`) e sessões HLS
 //! ociosas são encerradas e apagadas.
 
-use crate::{config::AppConfig, models::DeviceProfile};
+use crate::{
+    config::AppConfig,
+    models::{DeviceProfile, MediaStream},
+};
 use axum::body::Bytes;
 use futures_core::Stream;
 use std::{
@@ -33,6 +36,7 @@ use tracing::{info, warn};
 const HLS_IDLE: Duration = Duration::from_secs(90);
 const AUDIO_BITRATE: i64 = 192_000;
 const HLS_SEGMENT_SECS: u32 = 6;
+const HDR_TO_SDR: &str = "zscale=transfer=linear:npl=100,format=gbrpf32le,zscale=primaries=bt709,tonemap=tonemap=hable,zscale=transfer=bt709:matrix=bt709:range=limited,format=yuv420p";
 
 // ---------------------------------------------------------------- configuração global
 
@@ -41,6 +45,7 @@ pub struct Settings {
     pub available: bool,
     pub encoder: String,
     pub work_dir: PathBuf,
+    tone_mapping: bool,
 }
 
 static SETTINGS: OnceLock<Settings> = OnceLock::new();
@@ -59,6 +64,42 @@ pub fn can_transcode() -> bool {
     SETTINGS.get().map(|s| s.available).unwrap_or(false)
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct HdrToneMap {
+    missing_primaries: bool,
+    missing_matrix: bool,
+}
+
+impl HdrToneMap {
+    fn filter(self) -> String {
+        // BT.2020 é o padrão de HDR10 e HLG. Completa apenas as tags ausentes.
+        let defaults = match (self.missing_primaries, self.missing_matrix) {
+            (true, true) => "setparams=color_primaries=bt2020:colorspace=bt2020nc,",
+            (true, false) => "setparams=color_primaries=bt2020,",
+            (false, true) => "setparams=colorspace=bt2020nc,",
+            (false, false) => "",
+        };
+        format!("{defaults}{HDR_TO_SDR}")
+    }
+}
+
+/// Seleciona vídeo PQ ou HLG quando o FFmpeg oferece os filtros necessários.
+pub fn tone_map_hdr(streams_json: Option<&str>) -> Option<HdrToneMap> {
+    if !SETTINGS.get().is_some_and(|s| s.tone_mapping) {
+        return None;
+    }
+    let streams = serde_json::from_str::<Vec<MediaStream>>(streams_json?).ok()?;
+    let video = streams.iter().find(|stream| stream.r#type == "Video")?;
+    if !matches!(video.color_transfer.as_deref(), Some("smpte2084" | "arib-std-b67")) {
+        return None;
+    }
+    let missing = |tag: Option<&str>| matches!(tag, None | Some("unknown" | "unspecified"));
+    Some(HdrToneMap {
+        missing_primaries: missing(video.color_primaries.as_deref()),
+        missing_matrix: missing(video.color_space.as_deref()),
+    })
+}
+
 /// Verifica o ffmpeg, limpa restos de execuções anteriores e inicia o coletor de sessões ociosas.
 pub async fn init(config: &AppConfig) {
     let available = match Command::new(&config.ffmpeg_path)
@@ -73,6 +114,21 @@ pub async fn init(config: &AppConfig) {
         Err(_) => false,
     };
 
+    let tone_mapping = if available {
+        Command::new(&config.ffmpeg_path)
+            .args(["-hide_banner", "-filters"])
+            .stdin(Stdio::null())
+            .output()
+            .await
+            .is_ok_and(|out| {
+                let filters = String::from_utf8_lossy(&out.stdout);
+                let has_filter = |name| filters.lines().any(|line| line.split_whitespace().nth(1) == Some(name));
+                out.status.success() && has_filter("zscale") && has_filter("tonemap")
+            })
+    } else {
+        false
+    };
+
     let work_dir = config.cache_dir.join("transcodes");
     let _ = tokio::fs::remove_dir_all(&work_dir).await;
 
@@ -82,9 +138,13 @@ pub async fn init(config: &AppConfig) {
         available,
         encoder: config.video_encoder.clone(),
         work_dir,
+        tone_mapping,
     });
 
     if available {
+        if !tone_mapping {
+            warn!("FFmpeg sem os filtros zscale e tonemap; conversão HDR para SDR indisponível.");
+        }
         info!(
             "ffmpeg encontrado: transcodificação sob demanda ativa (máx. {} simultâneas, encoder {}).",
             config.max_transcodes.max(1),
@@ -199,7 +259,11 @@ fn pick_output(profile: &DeviceProfile) -> (Container, bool) {
         let proto = tp.protocol.as_deref().unwrap_or("").to_lowercase();
         let cont = tp.container.as_deref().unwrap_or("").to_lowercase();
         if proto == "hls" || cont == "m3u8" {
-            return (Container::Ts, true);
+            let container = match cont.trim() {
+                "mp4" | "fmp4" => Container::Mp4,
+                _ => Container::Ts,
+            };
+            return (container, true);
         }
         if let Some(c) = Container::from_name(&cont) {
             return (c, false);
@@ -257,8 +321,13 @@ pub fn decide(
         .map(|a| video_profiles.iter().any(|p| list_allows(&p.audio_codec, a, norm_codec)))
         .unwrap_or(true);
 
-    let video_copy = video_ok && bitrate_ok;
     let (container, hls) = pick_output(profile);
+    let fragmented = hls && container == Container::Mp4;
+    let video_copy = video_ok
+        && bitrate_ok
+        && (!fragmented || matches!(norm_codec(video).as_str(), "h264" | "hevc" | "av1"));
+    let audio_copy = audio_ok
+        && (!fragmented || audio.is_none_or(|a| matches!(norm_codec(a).as_str(), "aac" | "ac3" | "eac3")));
     let video_bitrate = if video_copy {
         None
     } else {
@@ -267,7 +336,7 @@ pub fn decide(
 
     Plan::Transcode(TranscodePlan {
         video_copy,
-        audio_copy: audio_ok,
+        audio_copy,
         container,
         hls,
         video_bitrate,
@@ -313,6 +382,9 @@ pub fn transcode_url(
         format!("audioCodec={}", if plan.audio_copy { "copy" } else { "aac" }),
         format!("PlaySessionId={play_session_id}"),
     ];
+    if plan.hls && plan.container == Container::Mp4 {
+        q.push("segmentContainer=mp4".to_string());
+    }
     if let Some(i) = audio_index.filter(|i| *i >= 0) {
         q.push(format!("audioStreamIndex={i}"));
     }
@@ -340,6 +412,7 @@ pub struct TranscodeParams {
     pub video_bitrate: Option<i64>,
     /// Legenda de imagem (índice absoluto da trilha) queimada no vídeo.
     pub burn_subtitle: Option<i32>,
+    pub tone_map_hdr: Option<HdrToneMap>,
 }
 
 impl TranscodeParams {
@@ -351,6 +424,14 @@ impl TranscodeParams {
                 .map(|(_, v)| v.as_str())
         };
         let mode = get("transcode")?;
+        let container = if hls {
+            match get("segmentContainer").map(str::to_ascii_lowercase).as_deref() {
+                Some("mp4" | "fmp4") => Container::Mp4,
+                _ => Container::Ts,
+            }
+        } else {
+            container
+        };
         Some(Self {
             video_copy: mode.eq_ignore_ascii_case("remux"),
             audio_copy: get("audioCodec").map(|a| a.eq_ignore_ascii_case("copy")).unwrap_or(false),
@@ -368,6 +449,7 @@ impl TranscodeParams {
             } else {
                 None
             },
+            tone_map_hdr: None,
         })
     }
 }
@@ -398,17 +480,27 @@ pub fn build_args(
     add(&mut a, input);
 
     // Trilhas: primeiro vídeo + áudio escolhido (ou o primeiro, se existir); sem legendas.
+    let hdr_filter = p.tone_map_hdr.filter(|_| !p.video_copy).map(HdrToneMap::filter);
     match p.burn_subtitle.filter(|_| !p.video_copy) {
         Some(i) => {
             // Legenda de imagem: sobrepõe a trilha escolhida ao vídeo antes de codificar.
             add(&mut a, "-filter_complex");
-            add(&mut a, format!("[0:v:0][0:{i}]overlay=eof_action=pass[v]"));
+            let overlay = format!("[0:{i}]overlay=eof_action=pass[v]");
+            let graph = match &hdr_filter {
+                Some(filter) => format!("[0:V:0]{filter}[sdr];[sdr]{overlay}"),
+                None => format!("[0:V:0]{overlay}"),
+            };
+            add(&mut a, graph);
             add(&mut a, "-map");
             add(&mut a, "[v]");
         }
         None => {
             add(&mut a, "-map");
-            add(&mut a, "0:v:0");
+            add(&mut a, "0:V:0");
+            if let Some(filter) = &hdr_filter {
+                add(&mut a, "-vf");
+                add(&mut a, filter);
+            }
         }
     }
     add(&mut a, "-map");
@@ -424,6 +516,11 @@ pub fn build_args(
     add(&mut a, "-1");
     add(&mut a, "-map_chapters");
     add(&mut a, "-1");
+    if hdr_filter.is_some() {
+        for s in ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv"] {
+            add(&mut a, s);
+        }
+    }
 
     if p.video_copy {
         add(&mut a, "-c:v");
@@ -438,7 +535,7 @@ pub fn build_args(
             add(&mut a, "-maxrate");
             add(&mut a, b.to_string());
             add(&mut a, "-bufsize");
-            add(&mut a, (b * 2).to_string());
+            add(&mut a, b.saturating_mul(2).to_string());
         }
     } else {
         // Encoders de hardware (h264_nvenc, h264_qsv, h264_videotoolbox...): controle por bitrate.
@@ -465,7 +562,14 @@ pub fn build_args(
     add(&mut a, "1024");
 
     match (hls_dir, p.container) {
-        (Some(dir), _) => {
+        (Some(dir), container) => {
+            let (segment_type, segment_pattern) = if container == Container::Mp4 {
+                add(&mut a, "-hls_fmp4_init_filename");
+                add(&mut a, "init.mp4");
+                ("fmp4", "seg_%05d.m4s")
+            } else {
+                ("mpegts", "seg_%05d.ts")
+            };
             for s in [
                 "-f",
                 "hls",
@@ -476,14 +580,14 @@ pub fn build_args(
                 "-hls_playlist_type",
                 "event",
                 "-hls_segment_type",
-                "mpegts",
+                segment_type,
                 "-hls_flags",
-                "independent_segments",
+                "independent_segments+temp_file",
                 "-hls_segment_filename",
             ] {
                 add(&mut a, s);
             }
-            add(&mut a, dir.join("seg_%05d.ts"));
+            add(&mut a, dir.join(segment_pattern));
             add(&mut a, dir.join("main.m3u8"));
         }
         (None, Container::Mkv) => {
@@ -576,11 +680,12 @@ struct HlsSession {
 }
 
 /// Chave estável da sessão: mesmo item + mesmos parâmetros → mesma sessão (mesmos segmentos).
-pub fn session_key(item_id: &str, q: &HashMap<String, String>) -> String {
+pub fn session_key(item_id: &str, q: &HashMap<String, String>, tone_map_hdr: Option<HdrToneMap>) -> String {
     let mut pairs: Vec<(String, &String)> = q.iter().map(|(k, v)| (k.to_lowercase(), v)).collect();
     pairs.sort();
     let mut h = DefaultHasher::new();
     item_id.hash(&mut h);
+    tone_map_hdr.hash(&mut h);
     for (k, v) in pairs {
         k.hash(&mut h);
         v.hash(&mut h);
@@ -592,22 +697,34 @@ pub fn is_valid_key(key: &str) -> bool {
     key.len() == 16 && key.chars().all(|c| c.is_ascii_hexdigit())
 }
 
-/// Aceita apenas `seg_00001.ts` e `main.m3u8` (impede travessia de diretórios).
-pub fn is_valid_hls_file(name: &str) -> bool {
+/// Reconhece os arquivos que podem ser servidos pela rota de segmentos.
+pub fn hls_file_mime(name: &str) -> Option<&'static str> {
     if name == "main.m3u8" {
-        return true;
+        return Some("application/vnd.apple.mpegurl");
     }
-    name.strip_prefix("seg_")
-        .and_then(|r| r.strip_suffix(".ts"))
-        .map(|d| !d.is_empty() && d.len() <= 9 && d.chars().all(|c| c.is_ascii_digit()))
-        .unwrap_or(false)
+    if name == "init.mp4" {
+        return Some(Container::Mp4.mime());
+    }
+    let (number, ext) = name.strip_prefix("seg_")?.split_once('.')?;
+    if number.is_empty() || number.len() > 9 || !number.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    match ext {
+        "ts" => Some(Container::Ts.mime()),
+        "m4s" => Some("video/iso.segment"),
+        _ => None,
+    }
 }
 
 /// Reescreve os segmentos da playlist para URLs absolutas da sessão.
 pub fn rewrite_playlist(content: &str, prefix: &str) -> String {
     let mut out = String::with_capacity(content.len() + 64);
     for line in content.lines() {
-        if !line.starts_with('#') && is_valid_hls_file(line.trim()) {
+        if line == "#EXT-X-MAP:URI=\"init.mp4\"" {
+            out.push_str("#EXT-X-MAP:URI=\"");
+            out.push_str(prefix);
+            out.push_str("init.mp4\"");
+        } else if hls_file_mime(line.trim()).is_some() {
             out.push_str(prefix);
             out.push_str(line.trim());
         } else {
@@ -853,7 +970,7 @@ mod tests {
     }
 
     fn params(video_copy: bool, audio_copy: bool, container: Container, hls: bool) -> TranscodeParams {
-        TranscodeParams { video_copy, audio_copy, container, hls, audio_index: None, start_secs: 0.0, video_bitrate: None, burn_subtitle: None }
+        TranscodeParams { video_copy, audio_copy, container, hls, audio_index: None, start_secs: 0.0, video_bitrate: None, burn_subtitle: None, tone_map_hdr: None }
     }
 
     #[test]
@@ -861,12 +978,12 @@ mod tests {
         let mut p = params(false, false, Container::Mkv, false);
         p.burn_subtitle = Some(4);
         let a = args_str(&p, None);
-        assert!(a.contains("-filter_complex [0:v:0][0:4]overlay=eof_action=pass[v]"), "{a}");
-        assert!(a.contains("-map [v]") && !a.contains("-map 0:v:0"));
+        assert!(a.contains("-filter_complex [0:V:0][0:4]overlay=eof_action=pass[v]"), "{a}");
+        assert!(a.contains("-map [v]") && !a.contains("-map 0:V:0"));
         // Com vídeo copiado não dá para queimar: segue o mapeamento normal.
         let mut r = params(true, false, Container::Mkv, false);
         r.burn_subtitle = Some(4);
-        assert!(args_str(&r, None).contains("-map 0:v:0"));
+        assert!(args_str(&r, None).contains("-map 0:V:0"));
 
         let q: HashMap<String, String> = [("transcode", "full"), ("subtitleStreamIndex", "4"), ("subtitleMethod", "encode")]
             .iter()
@@ -919,24 +1036,65 @@ mod tests {
 
     #[test]
     fn hls_names_and_playlist() {
-        assert!(is_valid_hls_file("main.m3u8") && is_valid_hls_file("seg_00012.ts"));
-        for bad in ["../x.ts", "seg_.ts", "seg_1a.ts", "seg_00001.ts/../x", "other.m3u8", ""] {
-            assert!(!is_valid_hls_file(bad), "{bad}");
+        assert_eq!(hls_file_mime("seg_00012.ts"), Some("video/mp2t"));
+        assert_eq!(hls_file_mime("init.mp4"), Some("video/mp4"));
+        assert_eq!(hls_file_mime("seg_00012.m4s"), Some("video/iso.segment"));
+        for bad in ["../init.mp4", "seg_.ts", "seg_1a.ts", "seg_00001.m4s/../x", "other.m3u8", "seg_1.m4s.tmp", ""] {
+            assert!(hls_file_mime(bad).is_none(), "{bad}");
         }
         assert!(is_valid_key("0123456789abcdef") && !is_valid_key("../..") && !is_valid_key("short"));
         let out = rewrite_playlist("#EXTM3U\n#EXTINF:6.0,\nseg_00000.ts\n#EXT-X-ENDLIST\n", "/Videos/i/hls/k/");
         assert_eq!(out, "#EXTM3U\n#EXTINF:6.0,\n/Videos/i/hls/k/seg_00000.ts\n#EXT-X-ENDLIST\n");
+        let out = rewrite_playlist(
+            "#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:6.0,\nseg_00000.m4s\n",
+            "/Videos/i/hls/k/",
+        );
+        assert_eq!(out, "#EXTM3U\n#EXT-X-MAP:URI=\"/Videos/i/hls/k/init.mp4\"\n#EXTINF:6.0,\n/Videos/i/hls/k/seg_00000.m4s\n");
+    }
+
+    #[test]
+    fn fmp4_hls_follows_the_client_profile() {
+        let p = DeviceProfile {
+            transcoding_profiles: vec![tp("mp4", "hls")],
+            ..profile()
+        };
+        let opts = RequestOptions { enable_direct_play: false, ..OPTS };
+        let Plan::Transcode(plan) = decide(&src("mkv", "h264", "aac"), Some(&p), &opts, true) else {
+            panic!("esperava HLS");
+        };
+        assert!(plan.hls && plan.container == Container::Mp4 && plan.video_copy);
+        let url = transcode_url("abc", &plan, "sess", None, None, None);
+        let query = serde_urlencoded::from_str(url.split_once('?').unwrap().1).unwrap();
+        let params = TranscodeParams::from_query(&query, Container::Ts, true).unwrap();
+        let args = args_str(&params, Some(Path::new("/w/k")));
+        assert!(args.contains("-hls_segment_type fmp4"));
+        assert!(args.contains("-hls_fmp4_init_filename init.mp4"));
+        assert!(args.contains("seg_%05d.m4s"));
+    }
+
+    #[test]
+    fn hdr_filter_applies_only_when_reencoding_and_before_subtitles() {
+        let mut p = params(false, false, Container::Mkv, false);
+        p.tone_map_hdr = Some(HdrToneMap::default());
+        let args = args_str(&p, None);
+        assert!(args.contains("-vf zscale=transfer=linear") && args.contains("-color_trc bt709"));
+        p.burn_subtitle = Some(4);
+        let args = args_str(&p, None);
+        assert!(args.contains("format=yuv420p[sdr];[sdr][0:4]overlay"));
+        p.video_copy = true;
+        assert!(!args_str(&p, None).contains("tonemap"));
     }
 
     #[test]
     fn session_key_is_stable_and_param_sensitive() {
         let mut q = HashMap::new();
         q.insert("transcode".to_string(), "remux".to_string());
-        let k = session_key("item", &q);
-        assert_eq!(k, session_key("item", &q));
+        let k = session_key("item", &q, None);
+        assert_eq!(k, session_key("item", &q, None));
+        assert_ne!(k, session_key("item", &q, Some(HdrToneMap::default())));
         assert!(is_valid_key(&k));
         q.insert("startTimeTicks".to_string(), "10".to_string());
-        assert_ne!(k, session_key("item", &q));
-        assert_ne!(k, session_key("other", &HashMap::new()));
+        assert_ne!(k, session_key("item", &q, None));
+        assert_ne!(k, session_key("other", &HashMap::new(), None));
     }
 }

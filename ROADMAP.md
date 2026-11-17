@@ -104,7 +104,9 @@
 - [ ] Validar com Swiftfin e outros clientes que suportam HLS. O *seek* em HLS fica limitado ao trecho já transcodificado (playlist `EVENT`).
 - [x] Legendas: as de texto (SRT, ASS, mov_text, WebVTT) são extraídas pelo ffmpeg para `/Videos/{id}/{src}/Subtitles/{n}/[{ticks}/]Stream.{srt|vtt|ass}` (com cache) e anunciadas como `External` no `PlaybackInfo`; as de imagem (PGS/DVD) são queimadas no vídeo (transcode com *overlay*, ainda sem teste com arquivo real).
 - [x] Legendas externas ao lado do vídeo (`Filme.srt` para `Filme.mkv`): detectadas na varredura e anunciadas como `External` nos detalhes do item e no `PlaybackInfo`.
-- [ ] Tone mapping HDR, múltiplas qualidades (ABR), fMP4 HLS.
+- [x] HLS em fMP4 quando o perfil do cliente solicita MP4 com protocolo HLS. Perfis HLS sem essa opção usam segmentos MPEG-TS.
+- [x] Conversão HDR PQ/HLG para SDR BT.709 ao recodificar vídeo com FFmpeg que inclui `zscale` e `tonemap`. Direct Play e remux conservam o HDR.
+- [ ] Múltiplas qualidades simultâneas para troca automática de bitrate (ABR).
 
 ---
 

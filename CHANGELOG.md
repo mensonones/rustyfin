@@ -5,10 +5,14 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.3.0] - 2026-11-17
+
 ### Adicionado
 - Legendas: trilhas de texto embutidas são extraídas (SRT/VTT/ASS) e entregues como `External` em `/Videos/{id}/{src}/Subtitles/{n}/Stream.{ext}`; legendas de imagem (PGS/DVD) são queimadas no transcode quando selecionadas.
 - Trilhas informam título e flag de legenda forçada.
 - Arquivos SRT com o mesmo nome do vídeo (ex.: `Filme.mkv` e `Filme.srt`) aparecem como trilhas externas após a varredura.
+- HLS em fMP4 para perfis de cliente que pedem MP4 com protocolo HLS.
+- Tone mapping de HDR PQ/HLG para SDR BT.709 na recodificação de vídeo, quando o FFmpeg oferece os filtros necessários.
 
 ## [0.2.0] - 2026-11-17
 

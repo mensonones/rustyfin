@@ -243,6 +243,12 @@ pub struct MediaStream {
     pub height: Option<i32>,
     pub channels: Option<i32>,
     pub sample_rate: Option<i32>,
+    #[serde(default)]
+    pub color_transfer: Option<String>,
+    #[serde(default)]
+    pub color_primaries: Option<String>,
+    #[serde(default)]
+    pub color_space: Option<String>,
     pub display_title: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
@@ -274,6 +280,9 @@ impl MediaStream {
             height: None,
             channels: None,
             sample_rate: None,
+            color_transfer: None,
+            color_primaries: None,
+            color_space: None,
             display_title: None,
             title: None,
             is_forced: false,

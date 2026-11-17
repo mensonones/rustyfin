@@ -117,9 +117,14 @@ Um arquivo pertence à biblioteca da pasta mais específica que o contém; ao ex
 
 **Reprodução:** o servidor lê o `DeviceProfile` que o cliente envia e escolhe: **Direct Play** (arquivo como está, com Range),
 **Remux** (vídeo copiado; só áudio/contêiner mudam, ex.: HEVC+DTS → HEVC+AAC) ou **Transcode** (H.264, quando o codec não é suportado
-ou `MaxStreamingBitrate` é menor que o bitrate do arquivo). A saída é HLS (`master.m3u8`) ou stream progressivo (mkv/mp4/ts), conforme
-o perfil do cliente. Sem `ffmpeg` o servidor continua em Direct Play. Sessões ociosas são encerradas após 90 s e todo processo morre
-quando o cliente desconecta. Legendas não são gravadas no vídeo (*burn-in* não suportado).
+ou `MaxStreamingBitrate` é menor que o bitrate do arquivo). A saída é HLS (`master.m3u8`) ou stream progressivo (MKV/MP4/TS),
+conforme o perfil do cliente. HLS usa MPEG-TS por padrão e fMP4 quando o perfil pede MP4 com protocolo HLS. Ao recodificar vídeo
+HDR PQ ou HLG, o FFmpeg com `zscale` e `tonemap` converte para SDR BT.709. Sem `ffmpeg`, o servidor continua em Direct Play.
+Sessões HLS ociosas são encerradas após 90 s. Processos de stream progressivo são encerrados quando o cliente desconecta.
+
+**Legendas:** arquivos SRT com o mesmo nome base do vídeo (`Filme.srt` ao lado de `Filme.mkv`) aparecem após a varredura.
+Trilhas de texto embutidas podem ser extraídas como SRT, VTT ou ASS. Legendas de imagem PGS e DVD são sobrepostas ao vídeo
+quando selecionadas para transcodificação.
 
 Séries aparecem na view **Séries** (Série → Temporada → Episódio), com "Próximo episódio" (`NextUp`) e contagem de não assistidos.
 
