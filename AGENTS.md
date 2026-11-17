@@ -27,6 +27,18 @@ tamanhos, DTOs do Jellyfin com várias flags, extratores do Axum recebidos por v
 `#[allow(...)]` para silenciar um aviso: corrija o código ou, se a exceção for justa, explique o motivo
 no `Cargo.toml`. O projeto deve terminar `cargo clippy --all-targets` **sem avisos**.
 
+## Estrutura do código
+
+- `src/lib.rs` expõe os módulos da biblioteca `rustyfin`; `src/main.rs` só inicializa logs, configuração e o servidor.
+- `src/api/` tem as rotas (uma por área: itens, séries, imagens, usuários, painel...), `src/transcode/` a
+  decisão Direct Play/Remux/Transcode, os argumentos do ffmpeg e as sessões HLS, e os demais módulos
+  (`scanner`, `metadata`, `users`, `db`...) ficam em `src/`.
+- Testes unitários ficam no próprio arquivo (`#[cfg(test)]`); testes de integração, que sobem o roteador
+  com um SQLite temporário e fazem requisições como um app, ficam em `tests/`.
+- Prefira módulos pequenos e coesos. Um arquivo que passa de ~700 linhas é candidato a virar um
+  diretório de módulo, como foi feito com `transcode`. Não crie *crates* extras sem necessidade real
+  (segundo binário, biblioteca reaproveitável ou compilação lenta).
+
 ## Estilo de código
 
 - `snake_case` para funções e variáveis, `PascalCase` para tipos e *traits*, `SCREAMING_SNAKE_CASE` para constantes.

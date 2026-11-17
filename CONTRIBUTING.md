@@ -49,6 +49,8 @@ incorporados com `git rebase --autosquash` antes de enviar o pull request.
 
 ## Testes
 
+Testes unitários ficam junto do código; os de integração (roteador completo, sem rede) ficam em `tests/`.
+
 O GitHub Actions roda a suíte Rust em pull requests e pushes para `main`.
 Ele também roda o Clippy com `-D warnings` (o projeto está sem avisos). Execute os mesmos comandos localmente:
 
