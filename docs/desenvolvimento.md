@@ -85,4 +85,5 @@ ferramenta de migração externa. Valores derivados (como o TMDB de itens antigo
 
 ## Imagens do projeto
 
-O logotipo e os ícones estão em `docs/assets/`. `src/assets/` guarda as versões embutidas no binário (ícone do painel).
+O logotipo (`logo.png`, com fundo transparente, e `logo-dark.png`, com o texto claro para temas escuros) e os ícones
+estão em `docs/assets/`. `src/assets/` guarda as versões embutidas no binário (ícone do painel, claro e escuro).

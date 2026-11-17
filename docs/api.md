@@ -85,7 +85,7 @@ Usada por `/admin`. Segue as mesmas regras de acesso do painel (rede local e, se
 
 | Rota | Descrição |
 |---|---|
-| `GET /admin` | Página do painel; `/admin/favicon.png` e `/admin/logo.png` são os ícones |
+| `GET /admin` | Página do painel; `/admin/favicon.png`, `/admin/logo.png` e `/admin/logo-dark.png` são os ícones |
 | `GET /admin/api/status` | Contagens, `ffmpeg`, TMDB, descoberta e último scan |
 | `POST /admin/api/scan` | Inicia uma varredura imediata |
 | `GET /admin/api/browse?path=...` | Lista as subpastas de um caminho (seletor de pastas) |

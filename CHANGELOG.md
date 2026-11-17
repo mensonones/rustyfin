@@ -6,7 +6,7 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 ## [Não lançado]
 
 ### Adicionado
-- Logotipo do projeto no `README`, no painel (cabeçalho e ícone da aba) e em `docs/assets/` (inclui uma imagem de pré-visualização social).
+- Logotipo do projeto, com fundo transparente e uma variante para temas escuros, no `README` (que troca sozinho conforme o tema), no painel (cabeçalho e ícone da aba) e em `docs/assets/`, com uma imagem de pré-visualização social.
 
 ### Alterado
 - Documentação reorganizada em `docs/`: configuração, usuários e segurança, reprodução, clientes, arquitetura, API, solução de problemas, desempenho (antes `BENCHMARK.md`) e desenvolvimento. O `README` virou uma apresentação com início rápido e índice.

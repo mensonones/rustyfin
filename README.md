@@ -1,6 +1,9 @@
 <div align="center">
 
-<img src="docs/assets/logo.png" alt="Rustyfin" width="240">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.png">
+  <img src="docs/assets/logo.png" alt="Rustyfin" width="240">
+</picture>
 
 ### Servidor de mídia ultraleve em Rust, compatível com os apps do Jellyfin
 
