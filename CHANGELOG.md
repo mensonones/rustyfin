@@ -5,6 +5,9 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+### Adicionado
+- Avanço livre em HLS: transcodificações completas oferecem uma playlist VOD com todos os segmentos e geram os segmentos sob demanda, reiniciando o ffmpeg no ponto pedido quando o usuário avança ou volta além do que já foi gerado. A sessão ociosa encerrada é recriada ao pedir um segmento. Com vídeo copiado (*remux*) a playlist continua crescendo.
+
 ## [0.5.1] - 2026-11-17
 
 ### Corrigido

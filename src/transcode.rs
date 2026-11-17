@@ -35,7 +35,7 @@ use tracing::{info, warn};
 /// Tempo sem requisições após o qual uma sessão HLS é encerrada.
 const HLS_IDLE: Duration = Duration::from_secs(90);
 pub const AUDIO_BITRATE: i64 = 192_000;
-const HLS_SEGMENT_SECS: u32 = 6;
+pub const HLS_SEGMENT_SECS: u32 = 6;
 const ABR_MIN_VIDEO_BITRATE: i64 = 2_000_000;
 const ABR_MAX_VIDEO_BITRATE: i64 = 8_000_000 - AUDIO_BITRATE;
 const HDR_TO_SDR: &str = "zscale=transfer=linear:npl=100,format=gbrpf32le,zscale=primaries=bt709,tonemap=tonemap=hable,zscale=transfer=bt709:matrix=bt709:range=limited,format=yuv420p";
@@ -448,6 +448,9 @@ pub struct TranscodeParams {
     pub tone_map_hdr: Option<HdrToneMap>,
     pub abr: Option<AbrLadder>,
     pub has_audio: bool,
+    /// HLS "VOD": playlist completa já na largada; o ffmpeg roda a partir deste segmento e é
+    /// reiniciado quando o cliente pede um ponto fora do que ele vai gerar.
+    pub vod_start: Option<u32>,
 }
 
 impl TranscodeParams {
@@ -494,6 +497,7 @@ impl TranscodeParams {
             tone_map_hdr: None,
             abr,
             has_audio: false,
+            vod_start: None,
         })
     }
 }
@@ -629,6 +633,13 @@ pub fn build_args(
     }
     add(&mut a, "-max_muxing_queue_size");
     add(&mut a, "1024");
+    if let Some(n) = p.vod_start.filter(|n| *n > 0 && hls_dir.is_some()) {
+        // Os segmentos mantêm a linha do tempo original: o segmento N começa em N × duração.
+        add(&mut a, "-output_ts_offset");
+        add(&mut a, format!("{}", n * HLS_SEGMENT_SECS));
+        add(&mut a, "-start_number");
+        add(&mut a, n.to_string());
+    }
 
     match (hls_dir, p.container) {
         (Some(dir), container) => {
@@ -752,6 +763,184 @@ struct HlsSession {
     last_access: Instant,
     child: Child,
     permit: Option<OwnedSemaphorePermit>,
+    /// Primeiro segmento que este ffmpeg gera (0 nas sessões que não são VOD).
+    start_seg: u32,
+}
+
+/// Como (re)criar uma sessão HLS VOD: guardada além da vida do ffmpeg, para que um segmento pedido
+/// depois de a sessão ociosa ser encerrada ainda possa ser gerado.
+#[derive(Clone)]
+struct Recipe {
+    input: PathBuf,
+    params: TranscodeParams,
+    created: Instant,
+}
+
+static RECIPES: OnceLock<Mutex<HashMap<String, Recipe>>> = OnceLock::new();
+const RECIPE_TTL: Duration = Duration::from_secs(6 * 3600);
+/// Quantos segmentos à frente do que o ffmpeg já gerou ainda valem a espera (senão, reinicia).
+const VOD_LOOKAHEAD: u32 = 4;
+
+fn recipes() -> &'static Mutex<HashMap<String, Recipe>> {
+    RECIPES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Registra a receita da sessão VOD e inicia o ffmpeg no segmento inicial, sem esperar por ele.
+pub async fn start_vod(key: &str, input: &Path, params: &TranscodeParams, start_seg: u32) -> Result<(), SpawnError> {
+    let s = settings()?;
+    {
+        let mut r = recipes().lock().await;
+        r.retain(|_, v| v.created.elapsed() < RECIPE_TTL);
+        r.insert(
+            key.to_string(),
+            Recipe { input: input.to_path_buf(), params: params.clone(), created: Instant::now() },
+        );
+    }
+    let recipe = recipes().lock().await.get(key).cloned();
+    let mut map = sessions().lock().await;
+    match (map.get_mut(key), recipe) {
+        (Some(sess), _) => sess.last_access = Instant::now(),
+        (None, Some(r)) => restart_vod(&mut map, key, &r, start_seg, s).await?,
+        (None, None) => {}
+    }
+    Ok(())
+}
+
+async fn restart_vod(
+    map: &mut HashMap<String, HlsSession>,
+    key: &str,
+    recipe: &Recipe,
+    seg: u32,
+    s: &Settings,
+) -> Result<(), SpawnError> {
+    let permit = match map.remove(key) {
+        Some(mut old) => {
+            let _ = old.child.start_kill();
+            old.permit.take()
+        }
+        None => None,
+    };
+    let permit = match permit {
+        Some(p) => p,
+        None => acquire_slot()?,
+    };
+    let dir = s.work_dir.join(key);
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| SpawnError::Io(e.to_string()))?;
+
+    let mut params = recipe.params.clone();
+    params.vod_start = Some(seg);
+    params.start_secs = f64::from(seg * HLS_SEGMENT_SECS);
+    let args = build_args(&s.encoder, &recipe.input, &params, Some(&dir));
+    let child = Command::new(&s.ffmpeg)
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| SpawnError::Io(e.to_string()))?;
+    info!("Sessão HLS {} (VOD) iniciada no segmento {} de {}", key, seg, recipe.input.display());
+    map.insert(
+        key.to_string(),
+        HlsSession { dir, last_access: Instant::now(), child, permit: Some(permit), start_seg: seg },
+    );
+    Ok(())
+}
+
+/// Divide `seg_high_00012.ts` em (`seg_high`, 12, `ts`).
+fn segment_parts(name: &str) -> Option<(&str, u32, &str)> {
+    if !name.starts_with("seg_") {
+        return None;
+    }
+    let (prefix, rest) = name.rsplit_once('_')?;
+    let (number, ext) = rest.split_once('.')?;
+    Some((prefix, number.parse().ok()?, ext))
+}
+
+/// Entrega o arquivo da sessão VOD, reiniciando o ffmpeg se o segmento pedido está fora do alcance
+/// do que ele vai gerar (avanço ou retrocesso do usuário, ffmpeg encerrado ou sessão ociosa).
+pub async fn ensure_segment(key: &str, file: &str, timeout: Duration) -> Result<Option<PathBuf>, SpawnError> {
+    let s = settings()?;
+    let path = s.work_dir.join(key).join(file);
+    if tokio::fs::metadata(&path).await.is_ok() {
+        if let Some(sess) = sessions().lock().await.get_mut(key) {
+            sess.last_access = Instant::now();
+        }
+        return Ok(Some(path));
+    }
+    let recipe = recipes().lock().await.get(key).cloned();
+    let Some(recipe) = recipe else {
+        return Ok(wait_for_file(key, file, timeout).await);
+    };
+
+    let parts = segment_parts(file);
+    let wanted = parts.map(|p| p.1);
+    let (running, start) = {
+        let mut map = sessions().lock().await;
+        match map.get_mut(key) {
+            Some(sess) => {
+                sess.last_access = Instant::now();
+                (matches!(sess.child.try_wait(), Ok(None)), Some(sess.start_seg))
+            }
+            None => (false, None),
+        }
+    };
+    let restart_at = match (start, wanted) {
+        // Sem sessão: começa onde foi pedido (ou no início, para o arquivo de inicialização).
+        (None, w) => Some(w.unwrap_or(0)),
+        (Some(_), None) => None,
+        (Some(start), Some(n)) => {
+            // Último segmento contíguo já gerado a partir do início desta execução.
+            let mut head = start;
+            if let Some((prefix, _, ext)) = parts {
+                while head < n.saturating_add(VOD_LOOKAHEAD + 1)
+                    && tokio::fs::metadata(s.work_dir.join(key).join(format!("{prefix}_{:05}.{ext}", head + 1)))
+                        .await
+                        .is_ok()
+                {
+                    head += 1;
+                }
+            }
+            (!running || n < start || n > head + VOD_LOOKAHEAD).then_some(n)
+        }
+    };
+    if let Some(seg) = restart_at {
+        let mut map = sessions().lock().await;
+        // Outra requisição pode ter reiniciado nesse meio tempo para um ponto próximo.
+        let reuse = map.get(key).is_some_and(|sess| {
+            Some(sess.start_seg) != start && sess.start_seg <= seg && seg <= sess.start_seg + VOD_LOOKAHEAD * 2
+        });
+        if !reuse {
+            restart_vod(&mut map, key, &recipe, seg, s).await?;
+        }
+    }
+    Ok(wait_for_file(key, file, timeout).await)
+}
+
+/// Playlist VOD completa: todos os segmentos de `HLS_SEGMENT_SECS`, para o cliente poder avançar
+/// para qualquer ponto. `rendition` é `high`/`low` no ABR.
+pub fn vod_playlist(duration_secs: f64, prefix: &str, rendition: Option<&str>, fmp4: bool) -> String {
+    let seg = f64::from(HLS_SEGMENT_SECS);
+    let count = (duration_secs / seg).ceil().max(1.0) as u32;
+    let (ext, seg_name, init) = match rendition {
+        Some(r) => (if fmp4 { "m4s" } else { "ts" }, format!("seg_{r}_"), format!("init_{r}.mp4")),
+        None => (if fmp4 { "m4s" } else { "ts" }, "seg_".to_string(), "init.mp4".to_string()),
+    };
+    let mut out = String::with_capacity(64 + count as usize * 48);
+    out.push_str("#EXTM3U\n");
+    out.push_str(if fmp4 { "#EXT-X-VERSION:7\n" } else { "#EXT-X-VERSION:3\n" });
+    out.push_str(&format!("#EXT-X-TARGETDURATION:{HLS_SEGMENT_SECS}\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n"));
+    if fmp4 {
+        out.push_str(&format!("#EXT-X-MAP:URI=\"{prefix}{init}\"\n"));
+    }
+    for i in 0..count {
+        let len = if i + 1 == count { (duration_secs - seg * f64::from(i)).clamp(0.001, seg) } else { seg };
+        out.push_str(&format!("#EXTINF:{len:.3},\n{prefix}{seg_name}{i:05}.{ext}\n"));
+    }
+    out.push_str("#EXT-X-ENDLIST\n");
+    out
 }
 
 /// Chave estável da sessão: mesmo item + mesmos parâmetros → mesma sessão (mesmos segmentos).
@@ -853,7 +1042,7 @@ pub async fn ensure_hls(key: &str, input: &Path, p: &TranscodeParams) -> Result<
     info!("Sessão HLS {} iniciada para {}", key, input.display());
     map.insert(
         key.to_string(),
-        HlsSession { dir, last_access: Instant::now(), child, permit: Some(permit) },
+        HlsSession { dir, last_access: Instant::now(), child, permit: Some(permit), start_seg: 0 },
     );
     Ok(())
 }
@@ -1059,7 +1248,7 @@ mod tests {
     }
 
     fn params(video_copy: bool, audio_copy: bool, container: Container, hls: bool) -> TranscodeParams {
-        TranscodeParams { video_copy, audio_copy, container, hls, audio_index: None, start_secs: 0.0, video_bitrate: None, burn_subtitle: None, tone_map_hdr: None, abr: None, has_audio: false }
+        TranscodeParams { video_copy, audio_copy, container, hls, audio_index: None, start_secs: 0.0, video_bitrate: None, burn_subtitle: None, tone_map_hdr: None, abr: None, has_audio: false, vod_start: None }
     }
 
     #[test]
@@ -1091,6 +1280,48 @@ mod tests {
         assert_eq!(subtitle_ext("ssa"), "ass");
         assert_eq!(subtitle_ext("webvtt"), "vtt");
         assert_eq!(subtitle_ext("mov_text"), "srt");
+    }
+
+    #[test]
+    fn vod_playlist_lists_every_segment() {
+        let p = vod_playlist(20.0, "/Videos/x/hls/k/", None, false);
+        assert!(p.starts_with("#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:6
+"));
+        assert!(p.contains("#EXT-X-PLAYLIST-TYPE:VOD") && p.trim_end().ends_with("#EXT-X-ENDLIST"));
+        // 20 s / 6 s = 4 segmentos; o último dura 2 s
+        assert_eq!(p.matches("#EXTINF").count(), 4);
+        assert!(p.contains("#EXTINF:6.000,
+/Videos/x/hls/k/seg_00000.ts
+"));
+        assert!(p.contains("#EXTINF:2.000,
+/Videos/x/hls/k/seg_00003.ts
+"));
+        let a = vod_playlist(6.0, "/p/", Some("low"), true);
+        assert!(a.contains("#EXT-X-MAP:URI=\"/p/init_low.mp4\"") && a.contains("/p/seg_low_00000.m4s"));
+        assert_eq!(a.matches("#EXTINF").count(), 1);
+    }
+
+    #[test]
+    fn segment_names() {
+        assert_eq!(segment_parts("seg_00012.ts"), Some(("seg", 12, "ts")));
+        assert_eq!(segment_parts("seg_high_00007.m4s"), Some(("seg_high", 7, "m4s")));
+        assert_eq!(segment_parts("init.mp4"), None);
+        assert_eq!(segment_parts("main.m3u8"), None);
+    }
+
+    #[test]
+    fn vod_run_keeps_original_timeline() {
+        let mut p = params(false, false, Container::Ts, true);
+        p.vod_start = Some(10);
+        p.start_secs = 60.0;
+        let a = args_str(&p, Some(Path::new("/w")));
+        assert!(a.contains("-ss 60.000"), "{a}");
+        assert!(a.contains("-output_ts_offset 60 -start_number 10"), "{a}");
+        // sem VOD (ou no segmento 0) nada disso aparece
+        let b = args_str(&params(false, false, Container::Ts, true), Some(Path::new("/w")));
+        assert!(!b.contains("-output_ts_offset") && !b.contains("-start_number"));
     }
 
     #[test]

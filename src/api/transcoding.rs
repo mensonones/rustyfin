@@ -40,6 +40,7 @@ struct ItemInput {
     path: String,
     streams_json: Option<String>,
     has_audio: bool,
+    duration_ticks: Option<i64>,
 }
 
 async fn item_input(pool: &DbPool, user: &AuthUser, id: &str) -> Result<ItemInput, StatusCode> {
@@ -47,7 +48,7 @@ async fn item_input(pool: &DbPool, user: &AuthUser, id: &str) -> Result<ItemInpu
     if !users::item_allowed(pool, user, &id).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)? {
         return Err(StatusCode::NOT_FOUND);
     }
-    sqlx::query_as("SELECT path, streams_json, audio_codec IS NOT NULL AS has_audio FROM items WHERE id = ?")
+    sqlx::query_as("SELECT path, streams_json, audio_codec IS NOT NULL AS has_audio, duration_ticks FROM items WHERE id = ?")
         .bind(&id)
         .fetch_optional(pool)
         .await
@@ -164,6 +165,32 @@ async fn hls_playlist(
     params.has_audio = input.has_audio;
     let key = transcode::session_key(&id, &q, params.tone_map_hdr);
 
+    // Transcodificação completa: playlist VOD com todos os segmentos (o cliente pode avançar para
+    // qualquer ponto) e segmentos gerados sob demanda. Com vídeo copiado os cortes dependem dos
+    // quadros-chave do arquivo e não dá para prever; esses seguem com a playlist que cresce.
+    let duration_secs = input.duration_ticks.unwrap_or(0) as f64 / 10_000_000.0;
+    if !params.video_copy && duration_secs > 0.0 {
+        let count = (duration_secs / f64::from(transcode::HLS_SEGMENT_SECS)).ceil().max(1.0) as u32;
+        let start_seg = ((params.start_secs / f64::from(transcode::HLS_SEGMENT_SECS)) as u32).min(count - 1);
+        transcode::start_vod(&key, std::path::Path::new(&input.path), &params, start_seg)
+            .await
+            .map_err(spawn_status)?;
+        let rendition = match (params.abr, low) {
+            (Some(_), true) => Some("low"),
+            (Some(_), false) => Some("high"),
+            (None, _) => None,
+        };
+        return text_response(
+            PLAYLIST_MIME,
+            transcode::vod_playlist(
+                duration_secs,
+                &format!("/Videos/{id}/hls/{key}/"),
+                rendition,
+                params.container == Container::Mp4,
+            ),
+        );
+    }
+
     transcode::ensure_hls(&key, std::path::Path::new(&input.path), &params)
         .await
         .map_err(spawn_status)?;
@@ -192,8 +219,9 @@ pub async fn hls_segment(
         return Err(StatusCode::NOT_FOUND);
     }
     let mime = transcode::hls_file_mime(&file).ok_or(StatusCode::NOT_FOUND)?;
-    let path = transcode::wait_for_file(&key, &file, SEGMENT_TIMEOUT)
+    let path = transcode::ensure_segment(&key, &file, SEGMENT_TIMEOUT)
         .await
+        .map_err(spawn_status)?
         .ok_or(StatusCode::NOT_FOUND)?;
     let f = tokio::fs::File::open(&path).await.map_err(|_| StatusCode::NOT_FOUND)?;
     let len = f.metadata().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.len();

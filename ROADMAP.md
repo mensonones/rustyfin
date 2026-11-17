@@ -101,7 +101,8 @@
 - [x] Encoder configurável (`libx264` ou hardware via `RUSTYFIN_VIDEO_ENCODER`).
 - [x] Validado no Docker com `ffmpeg`/`ffprobe` reais: HLS H.264+AAC, remux HEVC preservado, `StartTimeTicks`, miniaturas, Direct Play com Range e sem processos órfãos.
 - [x] Validado no Moonfin 3.0.0 em um aparelho Android físico: seleção e exibição de SRT embutido e externo em Direct Play, e SRT externo durante transcode HLS ao limitar a taxa a 2 Mbps.
-- [ ] Validar com Swiftfin e outros clientes que suportam HLS. O *seek* em HLS fica limitado ao trecho já transcodificado (playlist `EVENT`).
+- [x] *Seek* livre em HLS: na transcodificação completa a playlist é VOD (todos os segmentos de 6 s, com `ENDLIST`) e os segmentos são gerados sob demanda; ao avançar ou voltar além do que o ffmpeg vai gerar, ele é reiniciado no segmento pedido (`-ss`, `-start_number` e `-output_ts_offset` mantêm a linha do tempo). Validado no Docker com TS e fMP4, com e sem ABR. Com vídeo copiado (*remux*) os cortes dependem dos quadros-chave e a playlist continua `EVENT`.
+- [ ] Validar com Swiftfin e outros clientes que suportam HLS, e o avanço em HLS na TV Samsung.
 - [x] Legendas: as de texto (SRT, ASS, mov_text, WebVTT) são extraídas pelo ffmpeg para `/Videos/{id}/{src}/Subtitles/{n}/[{ticks}/]Stream.{srt|vtt|ass}` (com cache) e anunciadas como `External` no `PlaybackInfo`; as de imagem (PGS/DVD) são queimadas no vídeo (transcode com *overlay*, ainda sem teste com arquivo real).
 - [x] Legendas externas ao lado do vídeo (`Filme.srt` para `Filme.mkv`): detectadas na varredura e anunciadas como `External` nos detalhes do item e no `PlaybackInfo`.
 - [x] HLS em fMP4 quando o perfil do cliente solicita MP4 com protocolo HLS. Perfis HLS sem essa opção usam segmentos MPEG-TS.
