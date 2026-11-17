@@ -56,11 +56,12 @@ cargo build --release
 
 ## 👤 Usuários e senhas
 
-* O usuário **`Admin`** é criado na primeira execução **sem senha** (e mantém o progresso de versões anteriores). Defina uma senha para ele em `/admin` → **Usuários**.
+* O usuário **`Admin`** é criado na primeira execução **sem senha** (e mantém o progresso de versões anteriores). Contas sem senha **só entram a partir da rede local**; de IP público o login é recusado. Defina uma senha antes de expor o servidor à internet. Defina uma senha para ele em `/admin` → **Usuários**.
 * Cada usuário tem **progresso, favoritos e "continuar assistindo" próprios**, e pode ter acesso só a **algumas bibliotecas** (ex.: perfil infantil só com Filmes).
 * Senhas guardadas com **Argon2**; cada login gera um **token por dispositivo** (revogado ao trocar a senha, desativar ou sair). 5 senhas erradas bloqueiam novas tentativas por 5 minutos.
 * Os apps (Moonfin, Swiftfin, Findroid) pedem usuário e senha; **imagens e segmentos HLS** não exigem token, o resto sim.
 * Com um **administrador com senha**, o painel `/admin` (e as rotas `/Library/VirtualFolders*`) passam a exigir login: HTTP Basic com usuário e senha de administrador, ou o token de um administrador logado no app. Sem senha de administrador, vale só a regra de rede local.
+* O log de requisições não grava `api_key`/tokens, e séries com o mesmo nome se separam pelo ano da pasta ou do arquivo (`Ghosts (2019)` × `Ghosts (2021)`).
 * Dois cuidados: sempre sobra ao menos um administrador ativo, e a lista de usuários aparece na tela de login dos apps (como no Jellyfin).
 * **Atualizando de versões antigas:** o app guardava um token fixo que deixou de valer; o primeiro acesso volta à tela "Quem está assistindo?" e basta escolher o usuário.
 

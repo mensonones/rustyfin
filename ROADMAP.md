@@ -64,6 +64,8 @@
 - [x] Painel web `/admin` embutido no binário: bibliotecas, seletor de pastas, TMDB, status e scan.
 - [x] Acesso só de rede privada/loopback; senha opcional (`RUSTYFIN_ADMIN_PASSWORD`).
 - [x] **Usuários e senhas**: Argon2, tokens por dispositivo validados em toda rota (exceto imagens/HLS/login), limite de tentativas, progresso e favoritos por usuário, acesso por biblioteca, administradores, painel com login.
+- [x] Revisão de segurança/correção (Argus, v0.2.0): limpeza do scan, login sem senha só na LAN, logs sem token, trava do último admin e outros.
+- [ ] Pendências da revisão: exigir autenticação em imagens e segmentos HLS (hoje públicos para os apps carregarem), ler cada pasta uma vez por scan, e série dividida quando só parte dos episódios tem ano.
 - [ ] Sessões ativas/dispositivos no painel, expiração de tokens, perfil oculto na tela de login e imagem de perfil.
 - [ ] Mais configurações no painel (transcode, intervalo de scan, nome do servidor) e *reload* sem reiniciar.
 
