@@ -376,6 +376,10 @@ pub async fn get_next_up(
     if raw.is_some() {
         sql.push_str(" AND i.series_id = ?");
     }
+    // Só séries em que o usuário já assistiu algo: não carrega os episódios do resto da biblioteca.
+    sql.push_str(
+        " AND i.series_id IN (SELECT i2.series_id FROM items i2           JOIN playback_state p2 ON p2.item_id = i2.id AND p2.user_id = ? AND p2.is_played = 1           WHERE i2.series_id IS NOT NULL)",
+    );
     let lib_clause = user.library_clause("i.library_id");
     if let Some((c, _)) = &lib_clause {
         sql.push_str(" AND ");
@@ -386,6 +390,7 @@ pub async fn get_next_up(
     if let Some(ref s) = raw {
         query = query.bind(s);
     }
+    query = query.bind(&user.id);
     if let Some((_, vals)) = &lib_clause {
         for v in vals {
             query = query.bind(v);

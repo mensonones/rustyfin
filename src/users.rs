@@ -301,7 +301,11 @@ async fn active_admin_count(pool: &DbPool, excluding: Option<&str>) -> Result<i6
     Ok(n)
 }
 
+/// Serializa as mudanças que podem tirar o poder de administrador (verificação + escrita atômicas).
+static ADMIN_GUARD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 pub async fn delete(pool: &DbPool, id: &str) -> Result<(), UserError> {
+    let _guard = ADMIN_GUARD.lock().await;
     let user = get(pool, id).await?.ok_or(UserError::NotFound)?;
     if user.is_admin && !user.is_disabled && active_admin_count(pool, Some(id)).await? == 0 {
         return Err(UserError::LastAdmin);
@@ -361,6 +365,7 @@ pub struct PolicyUpdate {
 }
 
 pub async fn set_policy(pool: &DbPool, id: &str, upd: PolicyUpdate) -> Result<(), UserError> {
+    let _guard = ADMIN_GUARD.lock().await;
     let user = get(pool, id).await?.ok_or(UserError::NotFound)?;
     let is_admin = upd.is_admin.unwrap_or(user.is_admin);
     let is_disabled = upd.is_disabled.unwrap_or(user.is_disabled);
@@ -438,6 +443,18 @@ pub async fn authenticate(
     password: &str,
     limiter_key: &str,
 ) -> Result<User, AuthError> {
+    authenticate_from(pool, name, password, limiter_key, true).await
+}
+
+/// `from_lan = false` (origem fora de rede privada) recusa contas sem senha: o acesso sem senha
+/// existe só para a rede local, e o `Admin` inicial nunca vira token para a internet.
+pub async fn authenticate_from(
+    pool: &DbPool,
+    name: &str,
+    password: &str,
+    limiter_key: &str,
+    from_lan: bool,
+) -> Result<User, AuthError> {
     limiter_check(limiter_key).map_err(AuthError::Locked)?;
 
     let row = get_row_by_name(pool, name).await.map_err(|_| AuthError::Internal)?;
@@ -446,7 +463,7 @@ pub async fn authenticate(
             let (id, _, hash, _, is_disabled, _) = &r;
             let ok = match hash {
                 Some(h) => verify_blocking(h.clone(), password.to_string()).await,
-                None => true, // sem senha: entra direto
+                None => from_lan, // sem senha: entra direto, mas só da rede local
             };
             if !ok {
                 Err(AuthError::BadCredentials)
@@ -635,6 +652,12 @@ mod tests {
         assert!(matches!(authenticate(&pool, "fantasma", "x", "k3").await, Err(AuthError::BadCredentials)));
         // Admin sem senha entra direto
         assert!(authenticate(&pool, "Admin", "", "k4").await.is_ok());
+        // Conta sem senha não entra por origem fora da rede local.
+        assert!(matches!(
+            authenticate_from(&pool, "Admin", "", "k4b", false).await,
+            Err(AuthError::BadCredentials)
+        ));
+        assert!(authenticate_from(&pool, "Admin", "", "k4c", true).await.is_ok());
 
         // bloqueio por tentativas
         for _ in 0..MAX_FAILURES {

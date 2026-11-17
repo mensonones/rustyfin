@@ -269,7 +269,7 @@ pub async fn authenticate_by_name(
     }
 
     let key = format!("{}|{}", addr.ip(), name.trim().to_lowercase());
-    match users::authenticate(&pool, &name, &password, &key).await {
+    match users::authenticate_from(&pool, &name, &password, &key, super::admin::is_private(addr.ip())).await {
         Ok(user) => match users::create_token(&pool, &user.id, &creds.device).await {
             Ok(token) => Json(AuthenticationResult {
                 user: user_dto(&config, &user),

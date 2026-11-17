@@ -131,5 +131,8 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
         // Allow permissive CORS for web clients and cross-origin mobile apps
         .layer(CorsLayer::permissive())
         // Log por requisição (nível DEBUG): RUST_LOG=tower_http=debug
-        .layer(TraceLayer::new_for_http())
+        // Só método e caminho: a URL completa pode conter `api_key=` (credencial) e iria para os logs.
+        .layer(TraceLayer::new_for_http().make_span_with(|req: &axum::http::Request<axum::body::Body>| {
+            tracing::debug_span!("request", method = %req.method(), path = %req.uri().path())
+        }))
 }

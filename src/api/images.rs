@@ -282,7 +282,7 @@ pub async fn pregenerate(pool: DbPool, config: Arc<AppConfig>) {
         }
     };
 
-    let mut tasks = tokio::task::JoinSet::new();
+    // Um por vez: pedidos de clientes que caem no mesmo semáforo nunca esperam atrás de uma fila longa.
     for (id, path, dur, poster, backdrop) in rows {
         for (art, is_backdrop) in [(poster, false), (backdrop, true)] {
             let has_art = match art {
@@ -292,14 +292,9 @@ pub async fn pregenerate(pool: DbPool, config: Arc<AppConfig>) {
             if has_art {
                 continue;
             }
-            let (config, id, path) = (config.clone(), id.clone(), path.clone());
-            // O semáforo interno (FFMPEG_SLOTS) limita os ffmpeg simultâneos.
-            tasks.spawn(async move {
-                let _ = thumbnail_for(&config, &id, FsPath::new(&path), dur.unwrap_or(0), is_backdrop).await;
-            });
+            let _ = thumbnail_for(&config, &id, FsPath::new(&path), dur.unwrap_or(0), is_backdrop).await;
         }
     }
-    while tasks.join_next().await.is_some() {}
 }
 
 /// Miniatura em cache (`<cache_dir>/thumbs/<id>.jpg`), gerada com ffmpeg sob demanda.
@@ -316,7 +311,15 @@ async fn thumbnail_for(
     }
     let dir = config.cache_dir.join("thumbs");
     let suffix = if backdrop { "_bd" } else { "" };
-    let out = dir.join(format!("{item_id}{suffix}.jpg"));
+    // A data do vídeo entra no nome: arquivo substituído no mesmo caminho gera miniatura nova.
+    let rev = tokio::fs::metadata(video)
+        .await
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let out = dir.join(format!("{item_id}{suffix}-{rev}.jpg"));
     if tokio::fs::metadata(&out).await.is_ok() {
         return Some(out);
     }
@@ -333,7 +336,7 @@ async fn thumbnail_for(
     } else {
         (thumbnail_seek_seconds(duration_ticks), "scale=-2:720")
     };
-    let tmp = dir.join(format!("{item_id}{suffix}.tmp.jpg"));
+    let tmp = dir.join(format!("{item_id}{suffix}-{rev}.tmp.jpg"));
     let run = Command::new(crate::transcode::ffmpeg_path())
         .args(["-v", "error", "-y", "-ss", &format!("{seek:.1}"), "-i"])
         .arg(video)

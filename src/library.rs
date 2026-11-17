@@ -125,8 +125,10 @@ pub fn spawn_autoscan(pool: DbPool, config: Arc<AppConfig>, trigger: ScanTrigger
             let libs = match libraries::list(&pool).await {
                 Ok(l) => l,
                 Err(e) => {
-                    warn!("Falha ao ler as bibliotecas: {}", e);
-                    Vec::new()
+                    // Uma lista vazia por erro faria o scan apagar o catálogo: pula e tenta de novo.
+                    warn!("Falha ao ler as bibliotecas; scan adiado: {}", e);
+                    tokio::time::sleep(Duration::from_secs(30)).await;
+                    continue;
                 }
             };
             PENDING.store(false, Ordering::Relaxed);

@@ -79,6 +79,9 @@ pub async fn update_tmdb(
     key: Option<&str>,
     language: Option<&str>,
 ) -> Result<(), sqlx::Error> {
+    // Gravação e publicação do cache como uma operação só: duas requisições não se invertem.
+    static UPDATE_GUARD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = UPDATE_GUARD.lock().await;
     if let Some(k) = key {
         let k = k.trim();
         write(pool, "tmdb_api_key", if k.is_empty() { None } else { Some(k) }).await?;

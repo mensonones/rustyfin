@@ -355,7 +355,8 @@ pub async fn fetch_scoped(
     match &scope {
         Scope::Unknown => return Ok(empty_result()),
         Scope::Library { id, tv: true } => {
-            if !(want_episode && !want_series && !want_season) {
+            // "Continuar assistindo" é sempre de episódios, nunca das séries agrupadas.
+            if !resume_only && !(want_episode && !want_series && !want_season) {
                 let kind = if want_season && !want_series { VKind::Season } else { VKind::Series };
                 return shows::list_virtual(config, pool, user, kind, None, Some(id.clone()), &query).await;
             }

@@ -126,20 +126,31 @@ pub fn season_id_for(series_name: &str, season: i32) -> String {
 }
 
 /// Lista arquivos de vídeo (bloqueante: rode dentro de `spawn_blocking`).
-fn collect_video_files(dir: &Path) -> Vec<PathBuf> {
-    WalkDir::new(dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .and_then(|s| s.to_str())
-                .map(|ext| VIDEO_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
-                .unwrap_or(false)
-        })
-        .map(|e| e.into_path())
-        .collect()
+/// O `bool` indica se a varredura foi completa: com qualquer erro de leitura (permissão, E/S,
+/// montagem instável) ele é `false`, e arquivos não visitados não podem ser tratados como removidos.
+fn collect_video_files(dir: &Path) -> (Vec<PathBuf>, bool) {
+    let mut complete = true;
+    let mut files = Vec::new();
+    for entry in WalkDir::new(dir) {
+        match entry {
+            Ok(e) => {
+                let is_video = e.file_type().is_file()
+                    && e.path()
+                        .extension()
+                        .and_then(|s| s.to_str())
+                        .map(|ext| VIDEO_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
+                        .unwrap_or(false);
+                if is_video {
+                    files.push(e.into_path());
+                }
+            }
+            Err(err) => {
+                warn!("Erro ao ler {}: {}", err.path().unwrap_or(dir).display(), err);
+                complete = false;
+            }
+        }
+    }
+    (files, complete)
 }
 
 /// Arquivos processados em paralelo (`RUSTYFIN_SCAN_CONCURRENCY`; padrão: núcleos, entre 2 e 8).
@@ -175,7 +186,13 @@ pub async fn run_scan(pool: &DbPool, libraries: &[Library]) -> usize {
 
         let dir_owned = dir.clone();
         let files = match tokio::task::spawn_blocking(move || collect_video_files(&dir_owned)).await {
-            Ok(f) => f,
+            Ok((f, complete)) => {
+                if !complete {
+                    warn!("Varredura incompleta de {}: nada será removido neste ciclo.", dir.display());
+                    all_dirs_ok = false;
+                }
+                f
+            }
             Err(e) => {
                 error!("Falha na varredura de {}: {}", dir.display(), e);
                 all_dirs_ok = false;

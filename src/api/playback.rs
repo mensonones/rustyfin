@@ -49,6 +49,14 @@ pub async fn get_playback_info(
     };
 
     let req = payload.map(|Json(r)| r).unwrap_or_default();
+    // O codec de áudio do plano é o da faixa que o ffmpeg vai mapear (não necessariamente a primeira).
+    let selected_audio = req.audio_stream_index.and_then(|i| {
+        streams
+            .iter()
+            .find(|s| s.index == i && s.r#type == "Audio")
+            .map(|s| s.codec.clone())
+    });
+    let audio_codec = selected_audio.or(audio_codec);
     let plan = transcode::decide(
         &transcode::SourceInfo {
             container: container.as_deref(),
@@ -130,6 +138,7 @@ pub async fn report_progress(
     Json(payload): Json<PlaybackProgressReport>,
 ) -> impl IntoResponse {
     if let (Some(item_id), Some(position_ticks)) = (payload.item_id, payload.position_ticks) {
+        let item_id = crate::api::shows::normalize_id(&item_id);
         if let Err(e) = save_position(&pool, &user.id, &item_id, position_ticks, false).await {
             tracing::warn!("Falha ao salvar progresso de {}: {}", item_id, e);
         }
@@ -143,6 +152,7 @@ pub async fn report_stopped(
     Json(payload): Json<PlaybackProgressReport>,
 ) -> impl IntoResponse {
     if let (Some(item_id), Some(position_ticks)) = (payload.item_id, payload.position_ticks) {
+        let item_id = crate::api::shows::normalize_id(&item_id);
         if let Err(e) = save_position(&pool, &user.id, &item_id, position_ticks, true).await {
             tracing::warn!("Falha ao salvar fim de reprodução de {}: {}", item_id, e);
         }
