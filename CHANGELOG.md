@@ -5,6 +5,13 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.17.0] - 2026-11-17
+
+### Adicionado
+- Sugestão de retomada por assinatura de áudio, com confirmação manual e fallback.
+- Recomendações e preparo local de MP4 para conversões progressivas recorrentes.
+- Busca autenticada de falas SRT com prévias filtradas pelo progresso do perfil.
+
 ## [0.16.0] - 2026-11-17
 
 ### Adicionado

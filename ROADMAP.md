@@ -140,11 +140,11 @@ ou convites pela internet.
 
 ### Pesquisa de produto
 
-- [ ] **Alinhamento automático entre edições.** Alinhar cenas com trechos de áudio em comum.
+- [x] **Alinhamento automático entre edições.** Comparar assinaturas de áudio indexadas antes da troca.
   Usar a posição equivalente só quando houver confiança suficiente na correspondência.
-- [ ] **Preparar versões a partir das sessões.** Recomendar conversões que se repetem nos
+- [x] **Preparar versões a partir das sessões.** Recomendar conversões MP4 progressivas que se repetem nos
   dispositivos locais, com orçamento de disco, pausa durante reprodução e originais preservados.
-- [ ] **Busca local de cenas com proteção contra spoilers.** Indexar legendas com timestamps e
+- [x] **Busca local de cenas com proteção contra spoilers.** Indexar SRT com timestamps e
   permitir que cada perfil filtre falas e prévias pelo ponto que já assistiu.
 
 ## 🧪 Como Testar com o Moonfin

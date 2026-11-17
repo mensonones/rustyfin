@@ -62,6 +62,10 @@ pub fn router(config: Arc<AppConfig>, pool: DbPool, scan: ScanTrigger) -> Router
         .route("/admin/api/acervo/revisoes", get(listar_revisoes))
         .route("/admin/api/acervo/revisoes/:id/previa", post(prever_retomada))
         .route("/admin/api/acervo/revisoes/:id", post(resolver_revisao))
+        .route("/admin/api/cenas/:id", post(super::cenas::indexar))
+        .route("/admin/api/acervo/audio/:id", post(indexar_audio))
+        .route("/admin/api/preparos", get(super::preparos::listar))
+        .route("/admin/api/preparos/:chave", post(super::preparos::iniciar))
         .route("/admin/api/settings", get(get_settings).put(put_settings))
         .route("/admin/api/browse", get(browse))
         .route("/admin/api/scan", post(scan_now))
@@ -581,13 +585,15 @@ fn status_revisao(erro: Resolucao) -> StatusCode {
 struct ConsultaRetomada {
     item_id: String,
     mapa: Option<MapaRetomada>,
+    #[serde(default)]
+    automatico: bool,
 }
 
 async fn prever_retomada(
     State(st): State<AdminState>, axum::extract::Path(id): axum::extract::Path<String>,
     Json(consulta): Json<ConsultaRetomada>,
 ) -> Result<Json<Previa>, StatusCode> {
-    revisao_acervo::previa(&st.pool, &id, &consulta.item_id, consulta.mapa.as_ref())
+    revisao_acervo::previa(&st.pool, &id, &consulta.item_id, consulta.mapa.as_ref(), consulta.automatico)
         .await
         .map_err(|erro| {
             tracing::error!("Falha ao calcular a retomada: {erro}");
@@ -595,6 +601,20 @@ async fn prever_retomada(
         })?
         .map(Json)
         .map_err(status_revisao)
+}
+
+async fn indexar_audio(
+    State(st): State<AdminState>, axum::extract::Path(id): axum::extract::Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    let id = crate::api::shows::normalize_id(&id);
+    match crate::audio_edicoes::indexar(&st.pool, &id).await {
+        Ok(true) => Ok(StatusCode::NO_CONTENT),
+        Ok(false) => Err(StatusCode::UNPROCESSABLE_ENTITY),
+        Err(erro) => {
+            tracing::error!("Falha ao indexar áudio: {erro}");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 async fn scan_now(State(st): State<AdminState>) -> StatusCode {

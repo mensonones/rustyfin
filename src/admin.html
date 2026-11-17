@@ -190,6 +190,26 @@
       <p id="mensagemRevisoes" class="hint" role="status"></p>
       <div id="listaRevisoes"></div>
     </details>
+    <details class="card revisoes" id="catalogoIndices">
+      <summary><strong>Indexar áudio e cenas</strong></summary>
+      <p class="hint">Indexe o áudio antes de substituir uma edição. Indexe as faixas SRT para
+        encontrar falas na busca de cenas.</p>
+      <form id="buscarIndices" class="row">
+        <label for="termoIndices">Título</label>
+        <input id="termoIndices" maxlength="128" required>
+        <button class="btn" type="submit">Buscar</button>
+      </form>
+      <div id="opcoesIndices" hidden>
+        <label for="tituloIndices">Arquivo do título</label>
+        <select id="tituloIndices"></select>
+        <div class="row">
+          <button id="indexarAudio" class="btn" type="button">Indexar áudio</button>
+          <button id="indexarCenas" class="btn" type="button">Indexar cenas SRT</button>
+        </div>
+      </div>
+      <p id="mensagemIndices" role="status" class="hint"></p>
+      <a href="/cenas">Abrir busca de cenas</a>
+    </details>
     <div id="libs" class="records"></div>
   </section>
 
@@ -250,6 +270,14 @@
   <section id="tab-status" role="tabpanel" aria-label="Diagnóstico" hidden>
     <h2 class="page-heading">Diagnóstico</h2>
     <div id="statusGrid"></div>
+    <details class="card preflight" id="painelPreparos">
+      <summary><strong>Versões recomendadas</strong></summary>
+      <p class="hint">Conversões MP4 que apareceram em pelo menos duas sessões.
+        O preparo aguarda a reprodução terminar.</p>
+      <button id="listarPreparos" class="btn" type="button">Atualizar recomendações</button>
+      <p id="mensagemPreparos" role="status" class="hint"></p>
+      <div id="listaPreparos"></div>
+    </details>
     <section class="card preflight" aria-labelledby="preflightTitle">
       <h3 id="preflightTitle">Diagnóstico antes do Play</h3>
       <p class="hint">Compare o plano de reprodução em até dois dispositivos deste servidor.</p>
@@ -575,6 +603,9 @@ function montarRetomada(revisao, selecionar) {
     caixa.append(label);
     return [chave, campo];
   });
+  const automatico = el('input', { type: 'checkbox' });
+  caixa.append(el('label', { className: 'destino-revisao' },
+    automatico, 'Sugerir pela trilha de áudio'));
   let escolhas = [];
   let geracao = 0;
   const limpar = () => {
@@ -584,6 +615,10 @@ function montarRetomada(revisao, selecionar) {
     mensagem.textContent = '';
   };
   for (const [, campo] of referencias) campo.oninput = limpar;
+  automatico.onchange = () => {
+    for (const [, campo] of referencias) campo.disabled = automatico.checked;
+    limpar();
+  };
   const prever = el('button', {
     type: 'button', className: 'btn small', textContent: 'Gerar prévia de retomada',
     onclick: async () => {
@@ -594,7 +629,7 @@ function montarRetomada(revisao, selecionar) {
         mensagem.textContent = 'Escolha um destino.';
         return;
       }
-      const temPontos = referencias.some(([, campo]) => campo.value.trim());
+      const temPontos = !automatico.checked && referencias.some(([, campo]) => campo.value.trim());
       const mapa = temPontos
         ? Object.fromEntries(referencias.map(([chave, campo]) => [chave, lerTempoRevisao(campo.value)]))
         : null;
@@ -605,7 +640,7 @@ function montarRetomada(revisao, selecionar) {
       mensagem.textContent = 'Calculando posições…';
       try {
         const previa = await api('POST', rotaRevisoes + '/' + encodeURIComponent(revisao.id) + '/previa',
-          { itemId, mapa });
+          { itemId, mapa, automatico: automatico.checked });
         if (pedido !== geracao) return;
         mensagem.textContent = previa.duracaoDestino > 0
           ? 'Escolha quais posições transferir. Para cenas cortadas, informe o tempo manualmente.'
@@ -622,7 +657,9 @@ function montarRetomada(revisao, selecionar) {
               textContent: 'Anterior: ' + tempoRevisao(p.anterior) + ' / Destino atual: '
                 + (p.atual ? tempoRevisao(p.atual) : 'sem posição') }),
             p.sugerida === null && previa.duracaoDestino > 0
-              ? el('p', { className: 'hint', textContent: 'Sem sugestão entre os pontos. Informe uma posição manual.' })
+              ? el('p', { className: 'hint', textContent: automatico.checked
+                  ? 'Sem correspondência de áudio confiável. Informe uma posição manual.'
+                  : 'Sem sugestão entre os pontos. Informe uma posição manual.' })
               : '',
             el('label', { className: 'destino-revisao' }, marcar, 'Transferir posição deste perfil'),
             el('label', {}, 'Posição na nova edição', tempo)));
@@ -745,6 +782,60 @@ async function carregarRevisoes() {
 }
 $('recarregarRevisoes').onclick = carregarRevisoes;
 $('revisoesAcervo').ontoggle = () => { if ($('revisoesAcervo').open) carregarRevisoes(); };
+
+$('buscarIndices').onsubmit = async (e) => {
+  e.preventDefault();
+  $('opcoesIndices').hidden = true;
+  e.submitter.disabled = true;
+  try {
+    const termo = $('termoIndices').value.trim();
+    const titulos = await api('GET', '/admin/api/reproducao/titulos?busca=' + encodeURIComponent(termo));
+    $('tituloIndices').replaceChildren(...titulos.map((t) => opcao(t.id, rotuloTitulo(t))));
+    $('opcoesIndices').hidden = !titulos.length;
+    $('mensagemIndices').textContent = titulos.length ? '' : 'Nenhum título encontrado.';
+  } catch (erro) { $('mensagemIndices').textContent = mensagemErro(erro); }
+  finally { e.submitter.disabled = false; }
+};
+for (const [botao, rota] of [
+  ['indexarAudio', '/admin/api/acervo/audio/'], ['indexarCenas', '/admin/api/cenas/'],
+]) {
+  $(botao).onclick = async () => {
+    const id = $('tituloIndices').value;
+    $('indexarAudio').disabled = $('indexarCenas').disabled = true;
+    $('mensagemIndices').textContent = 'Indexando…';
+    try {
+      const dados = await api('POST', rota + encodeURIComponent(id));
+      $('mensagemIndices').textContent = dados ? dados.trechos + ' trechos indexados.' : 'Áudio indexado.';
+    } catch (erro) {
+      $('mensagemIndices').textContent = erro.status === 422
+        ? 'Áudio indisponível ou indexação ocupada.' : mensagemErro(erro);
+    } finally { $('indexarAudio').disabled = $('indexarCenas').disabled = false; }
+  };
+}
+async function listarPreparos() {
+  try {
+    const dados = await api('GET', '/admin/api/preparos');
+    const estado = dados.trabalho?.[1];
+    const status = { aguardando: 'Aguardando sessões ativas.', preparando: 'Preparando MP4…',
+      pronta: 'Versão pronta.', falhou: 'O preparo falhou. Confira a mídia e o espaço disponível.' };
+    $('mensagemPreparos').textContent = status[estado] || (dados.sugestoes.length
+      ? '' : 'Nenhuma conversão recorrente observada.');
+    $('listaPreparos').replaceChildren(...dados.sugestoes.map((s) => {
+      const botao = el('button', { type: 'button', className: 'btn small',
+        textContent: s.pronta ? 'Já preparada' : 'Preparar MP4',
+        disabled: s.pronta || estado === 'aguardando' || estado === 'preparando',
+        onclick: () => act(async () => {
+          await api('POST', '/admin/api/preparos/' + encodeURIComponent(s.chave));
+          await listarPreparos();
+        }),
+      });
+      return el('div', { className: 'row' }, el('strong', { textContent: s.titulo }),
+        s.sessoes + ' sessões', botao);
+    }));
+  } catch (erro) { $('mensagemPreparos').textContent = mensagemErro(erro); }
+}
+$('listarPreparos').onclick = listarPreparos;
+$('painelPreparos').ontoggle = () => { if ($('painelPreparos').open) listarPreparos(); };
 
 async function loadLibs() {
   if ($('revisoesAcervo').open) carregarRevisoes();

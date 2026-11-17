@@ -87,6 +87,10 @@ Usada por `/admin`. O painel abre em Bibliotecas, onde mostra a última varredur
 |---|---|
 | `GET /admin` | Página do painel; `/admin/favicon[-dark].png` e `/admin/logo[-dark].png` são os ícones (claro e escuro) |
 | `GET /admin/api/status` | Contagens, `ffmpeg`, TMDB, descoberta e último scan |
+| `POST /admin/api/acervo/audio/{id}` | Indexa a primeira faixa de áudio para futuras revisões |
+| `POST /admin/api/cenas/{id}` | Indexa trechos das faixas SRT de um título |
+| `GET /admin/api/preparos` | Lista conversões MP4 sugeridas e estado do preparo |
+| `POST /admin/api/preparos/{chave}` | Solicita o preparo de uma versão recomendada |
 | `GET /admin/api/acervo/revisoes` | Até 30 revisões pendentes e seus destinos catalogados |
 | `POST /admin/api/acervo/revisoes/{id}/previa` | Recebe `itemId` e `mapa` opcional com `anteriorA`, `novoA`, `anteriorB` e `novoB` em ticks. Retorna as posições anterior, atual e sugerida por perfil |
 | `POST /admin/api/acervo/revisoes/{id}` | `{"acao":"manterSeparados"}` ou `{"acao":"transferir","itemId":"..."}`. A transferência aceita `retomadas` com `perfilId`, `posicaoTicks` e `posicaoEsperadaTicks`. Retorna 409 se o destino mudou no catálogo ou se a posição mudou desde a prévia |
@@ -123,3 +127,8 @@ uma previsão baseada nas capacidades declaradas pelo cliente.
 A unidade dos ajustes é milissegundos. Envie `{"modo":"atraso","ms":1500}` para atraso fixo.
 Para desvio progressivo, use `modo: "doisPontos"` e os campos `originalAMs`, `corrigidoAMs`,
 `originalBMs` e `corrigidoBMs`. Se a origem mudar desde a consulta, a escrita retorna HTTP 409.
+
+
+`GET /api/cenas?q=termo` exige token e respeita as bibliotecas do perfil. Por padrão só retorna
+trechos concluídos no histórico do perfil. `spoilers=true` desativa apenas esse filtro.
+A prévia de retomada aceita `automatico: true` quando nenhum mapa manual é informado.

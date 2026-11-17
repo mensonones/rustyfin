@@ -85,7 +85,7 @@ impl Mapa {
         .unwrap_or(0)
     }
 
-    fn trecho(self, trecho: &Trecho) -> Option<(i64, i64)> {
+    pub(in crate::api) fn trecho(self, trecho: &Trecho) -> Option<(i64, i64)> {
         let inicio = self.instante(trecho.inicio_ms).max(0);
         let fim = self.instante(trecho.fim_ms).min(MAX_MS);
         (fim > inicio).then_some((inicio, fim))
@@ -96,8 +96,8 @@ impl Mapa {
 #[serde(rename_all = "camelCase")]
 pub(in crate::api) struct Trecho {
     pub(in crate::api) inicio_ms: i64,
-    fim_ms: i64,
-    texto: String,
+    pub(in crate::api) fim_ms: i64,
+    pub(in crate::api) texto: String,
 }
 
 #[derive(Serialize)]

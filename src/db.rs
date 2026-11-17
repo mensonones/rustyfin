@@ -67,6 +67,36 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
             PRIMARY KEY (review_id, user_id)
         );
 
+        CREATE TABLE IF NOT EXISTS audio_assinaturas (
+            hash BLOB PRIMARY KEY,
+            quadros BLOB NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS cenas_legenda (
+            item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+            faixa INTEGER NOT NULL,
+            inicio INTEGER NOT NULL,
+            fim INTEGER NOT NULL,
+            texto TEXT NOT NULL,
+            texto_busca TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_cenas_item ON cenas_legenda(item_id, faixa);
+
+        CREATE TABLE IF NOT EXISTS cenas_fontes (
+            item_id TEXT PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+            hash BLOB NOT NULL,
+            caminho TEXT NOT NULL,
+            alterada INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS versoes_preparadas (
+            chave TEXT PRIMARY KEY,
+            item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+            hash BLOB NOT NULL,
+            tamanho INTEGER NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS playback_state (
             user_id TEXT NOT NULL,
             item_id TEXT NOT NULL,
@@ -81,6 +111,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
     .await?;
 
     // Migrações incrementais (bancos criados por versões anteriores).
+    add_column_if_missing(&pool, "media_reviews", "audio_hash", "BLOB").await?;
     add_column_if_missing(&pool, "media_review_state", "position_ticks",
         "INTEGER NOT NULL DEFAULT 0").await?;
     add_column_if_missing(&pool, "items", "modified_at", "INTEGER NOT NULL DEFAULT 0").await?;

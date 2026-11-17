@@ -117,11 +117,15 @@ pub(super) async fn salvar(
     let (id, versao, _, _, _) = aplicar(&st, &id, indice, &pedido).await?;
     let ajuste =
         serde_json::to_string(&pedido.ajuste).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut tx = st.pool.begin().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     sqlx::query(
         "INSERT INTO subtitle_adjustments (item_id, track_index, source_hash, adjustment)          VALUES (?, ?, ?, ?) ON CONFLICT(item_id, track_index) DO UPDATE SET          source_hash = excluded.source_hash, adjustment = excluded.adjustment",
     )
-    .bind(id).bind(indice).bind(versao).bind(ajuste)
-    .execute(&st.pool).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .bind(&id).bind(indice).bind(versao).bind(ajuste)
+    .execute(&mut *tx).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    sqlx::query("DELETE FROM cenas_fontes WHERE item_id = ?")
+        .bind(&id).execute(&mut *tx).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    tx.commit().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -129,12 +133,17 @@ pub(super) async fn excluir(
     State(st): State<AdminState>,
     Path((id, indice)): Path<(String, i32)>,
 ) -> Result<StatusCode, StatusCode> {
+    let id = normalize_id(&id);
+    let mut tx = st.pool.begin().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     sqlx::query("DELETE FROM subtitle_adjustments WHERE item_id = ? AND track_index = ?")
-        .bind(normalize_id(&id))
+        .bind(&id)
         .bind(indice)
-        .execute(&st.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    sqlx::query("DELETE FROM cenas_fontes WHERE item_id = ?")
+        .bind(&id).execute(&mut *tx).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    tx.commit().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
 }
 

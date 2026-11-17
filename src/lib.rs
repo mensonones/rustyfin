@@ -4,6 +4,7 @@
 //! (`src/main.rs`) só inicializa o registro de logs, carrega a configuração e sobe o servidor.
 //! Isso permite testes de integração em `tests/` e `cargo doc`.
 
+mod audio_edicoes;
 mod linha_do_tempo;
 mod revisao_acervo;
 pub mod api;

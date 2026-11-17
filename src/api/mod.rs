@@ -2,6 +2,8 @@ pub mod admin;
 pub mod auth;
 pub mod avatars;
 pub mod compat;
+mod cenas;
+mod preparos;
 pub mod facets;
 pub mod images;
 pub mod items;
@@ -28,6 +30,8 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
     let app_state_tuple = (config.clone(), pool.clone());
 
     Router::new()
+        .route("/cenas", get(cenas::pagina))
+        .route("/api/cenas", get(cenas::buscar).with_state(pool.clone()))
         // 1. System & Discovery
         .route("/System/Info/Public", get(system::get_system_info_public).with_state(config.clone()))
         .route("/System/Info", get(system::get_system_info).with_state(config.clone()))
@@ -79,7 +83,7 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
         .route("/Items/:id/Images/Backdrop", get(images::get_backdrop_image).with_state(app_state_tuple.clone()))
         .route("/Items/:id/Images/Backdrop/:index", get(images::get_backdrop_image_indexed).with_state(app_state_tuple.clone()))
         // 5. Playback Handshake & Scrobbling
-        .route("/Items/:id/PlaybackInfo", get(playback::get_playback_info).post(playback::get_playback_info).with_state(pool.clone()))
+        .route("/Items/:id/PlaybackInfo", get(playback::get_playback_info).post(playback::get_playback_info).with_state(app_state_tuple.clone()))
         .route("/Sessions/Capabilities", post(playback::post_capabilities))
         .route("/Sessions/Capabilities/Full", post(playback::post_capabilities))
         .route("/Sessions/Playing", post(playback::report_playing))
@@ -129,6 +133,7 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
             "/Users/:user_id/FavoriteItems/:id",
             post(compat::mark_favorite_user).delete(compat::unmark_favorite_user).with_state(pool.clone()),
         )
+        .route("/Videos/:id/preparado/:chave", get(preparos::servir).with_state(app_state_tuple.clone()))
         .route("/Videos/:id/master.m3u8", get(transcoding::hls_master).with_state(pool.clone()))
         .route("/Videos/:id/main.m3u8", get(transcoding::hls_main).with_state(pool.clone()))
         .route("/Videos/:id/low.m3u8", get(transcoding::hls_low).with_state(pool.clone()))
@@ -143,6 +148,7 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
         // Administração (painel /admin e /Library/VirtualFolders*): só rede local
         .merge(admin::router(config.clone(), pool.clone(), scan))
         .layer(axum::Extension(reproducao_admin::Perfis::default()))
+        .layer(axum::Extension(preparos::Preparos::default()))
         // Toda rota (exceto as públicas) exige token válido; o CORS fica por fora para o preflight passar
         .layer(from_fn_with_state(pool.clone(), auth::require_user))
         // Allow permissive CORS for web clients and cross-origin mobile apps

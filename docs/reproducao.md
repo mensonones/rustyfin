@@ -78,3 +78,23 @@ copiado, o HDR é mantido.
 
 Progresso, "assistido", favoritos e contagem de reproduções são gravados **por usuário** por
 `Sessions/Playing`, `.../Progress` e `.../Stopped`. Um item é dado como assistido ao passar de 90% da duração.
+
+
+## Áudio, cenas e versões preparadas
+
+Em **Bibliotecas → Indexar áudio e cenas**, selecione um título. Indexe a primeira faixa de áudio
+**antes de substituir a edição**. Na revisão, escolha **Sugerir pela trilha de áudio**. A comparação
+é local, usa até três horas de áudio por edição e devolve somente correspondências distintas
+com baixa distância entre as assinaturas. Permanece disponível a confirmação por perfil.
+
+**Indexar cenas SRT** registra falas e tempos de um título. Em `/cenas`, entre com o seu perfil.
+A busca limita as prévias às bibliotecas permitidas e aos trechos que terminam até a posição
+assistida. Títulos marcados como assistidos têm todas as falas disponíveis. É possível liberar
+spoilers explicitamente. Reindexe depois de trocar a legenda ou seu ajuste.
+
+Em **Diagnóstico → Versões recomendadas**, o servidor recomenda MP4 progressivo após duas
+sessões relatadas com a mesma configuração elegível. O preparo usa a faixa de áudio padrão,
+H.264 e AAC. O cache padrão é de 2 GiB, ajustável com `RUSTYFIN_PREPARO_MAX_BYTES`.
+Se uma sessão relatar atividade, o preparo interrompe a conversão e recomeça quando o servidor
+estiver ocioso. O arquivo original é preservado. Recomendações e trabalhos em andamento ficam
+em memória. A versão pronta é usada em novas reproduções compatíveis a partir do início.

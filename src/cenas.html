@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Busca de cenas · Rustyfin</title>
+<style>
+:root { color-scheme: light dark; --fonte: system-ui, sans-serif; --foco: #bc704c; }
+html, body { overflow-x: clip; }
+body { font: 1rem/1.5 var(--fonte); margin: 0; }
+main { max-width: 48rem; margin: auto; padding: 1.5rem; }
+form, article { border-block-start: 1px solid; padding-block: 1rem; }
+label { display: block; margin-block: .5rem; }
+input, button { font: inherit; padding: .5rem; }
+input:not([type=checkbox]) { width: min(100%, 28rem); box-sizing: border-box; }
+:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+article p { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+</head>
+<body><main>
+<h1>Busca de cenas</h1>
+<form id="entrada">
+  <label>Usuário <input name="usuario" autocomplete="username" required></label>
+  <label>Senha <input name="senha" type="password" autocomplete="current-password"></label>
+  <button>Entrar</button>
+</form>
+<form id="busca" hidden>
+  <label>Trecho da fala <input name="termo" required minlength="2" maxlength="128"></label>
+  <label><input name="spoilers" type="checkbox"> Incluir cenas além do meu progresso</label>
+  <button>Buscar</button>
+  <button id="sair" type="button">Sair</button>
+</form>
+<p id="estado" role="status"></p>
+<div id="resultados"></div>
+</main>
+<script>
+const entrada = document.getElementById('entrada');
+const busca = document.getElementById('busca');
+const estado = document.getElementById('estado');
+const resultados = document.getElementById('resultados');
+let token, geracao = 0;
+const el = (tag, texto) => Object.assign(document.createElement(tag), {textContent: texto});
+entrada.onsubmit = async (evento) => {
+  evento.preventDefault();
+  evento.submitter.disabled = true;
+  try {
+    const r = await fetch('/Users/AuthenticateByName', {method: 'POST', headers: {
+      'Content-Type': 'application/json', 'X-Emby-Authorization': 'MediaBrowser Client="Rustyfin Cenas"',
+    }, body: JSON.stringify({Username: entrada.usuario.value, Pw: entrada.senha.value})});
+    if (!r.ok) throw new Error('Confira o usuário e a senha.');
+    token = (await r.json()).AccessToken;
+    estado.textContent = '';
+    entrada.hidden = true;
+    busca.hidden = false;
+    busca.termo.focus();
+  } catch (e) { estado.textContent = e.message; }
+  finally { entrada.senha.value = ''; evento.submitter.disabled = false; }
+};
+busca.onsubmit = async (evento) => {
+  evento.preventDefault();
+  const atual = ++geracao;
+  resultados.replaceChildren();
+  estado.textContent = 'Buscando…';
+  try {
+    const query = new URLSearchParams({q: busca.termo.value, spoilers: busca.spoilers.checked});
+    const r = await fetch('/api/cenas?' + query, {headers: {'X-Emby-Token': token}});
+    if (!r.ok) throw new Error('Não foi possível buscar as cenas.');
+    const cenas = await r.json();
+    if (atual !== geracao) return;
+    for (const c of cenas) {
+      const sec = Math.floor(c.inicioTicks / 10000000);
+      const art = document.createElement('article');
+      art.append(el('strong', c.titulo + ' / ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2,'0')),
+        el('p', c.previa));
+      resultados.append(art);
+    }
+    estado.textContent = cenas.length ? '' : 'Nenhuma fala encontrada para este perfil.';
+  } catch (e) { if (atual === geracao) estado.textContent = e.message; }
+};
+busca.spoilers.onchange = () => { geracao++; resultados.replaceChildren(); estado.textContent = ''; };
+document.getElementById('sair').onclick = () => {
+  const anterior = token;
+  token = undefined;
+  geracao++;
+  resultados.replaceChildren();
+  busca.reset();
+  busca.hidden = true;
+  entrada.hidden = false;
+  estado.textContent = '';
+  if (anterior) fetch('/Sessions/Logout', {method: 'POST', headers: {'X-Emby-Token': anterior}}).catch(() => {});
+};
+</script>
+</body></html>

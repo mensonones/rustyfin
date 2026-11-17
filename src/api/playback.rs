@@ -2,6 +2,7 @@ use crate::{
     api::{
         auth::{CurrentCreds, CurrentUser},
         items::build_streams,
+        preparos::{self, Preparos},
         reproducao_admin::Perfis,
         shows::normalize_id,
     },
@@ -122,7 +123,8 @@ impl FonteReproducao {
 }
 
 pub(super) async fn get_playback_info(
-    State(pool): State<DbPool>,
+    State((config, pool)): State<(std::sync::Arc<crate::config::AppConfig>, DbPool)>,
+    Extension(preparos): Extension<Preparos>,
     CurrentUser(user): CurrentUser,
     CurrentCreds(creds): CurrentCreds,
     Extension(perfis): Extension<Perfis>,
@@ -170,6 +172,15 @@ pub(super) async fn get_playback_info(
         transcoding_sub_protocol: None,
         transcoding_container: None,
     };
+    let favorita = if let transcode::Plan::Transcode(t) = &plano {
+        if !t.hls && t.container == transcode::Container::Mp4 && !t.video_copy && !t.audio_copy
+            && legenda_queimada.is_none() && req.audio_stream_index.is_none()
+            && transcode::tone_map_hdr(fonte.streams_json.as_deref()).is_none()
+        {
+            let taxa = t.video_bitrate.unwrap_or(4_000_000).clamp(500_000, 30_000_000);
+            preparos.observar(&pool, &play_session_id, &user.id, &fonte.id, &source.name, taxa).await
+        } else { None }
+    } else { None };
     if let transcode::Plan::Transcode(t) = plano {
         source.supports_direct_play = false;
         source.supports_direct_stream = false;
@@ -181,13 +192,27 @@ pub(super) async fn get_playback_info(
         source.transcoding_sub_protocol = Some(if t.hls { "hls" } else { "http" }.to_string());
         source.transcoding_container = Some(t.container.ext().to_string());
     }
+    if req.start_time_ticks.unwrap_or(0) == 0 {
+        if let Some(chave) = favorita {
+            if preparos::pronta(&pool, &config, &fonte.id, &chave).await {
+                source.transcoding_url = Some(format!("/Videos/{}/preparado/{chave}", fonte.id));
+            }
+        }
+    }
     Ok(Json(PlaybackInfoResponse {
         media_sources: vec![source],
         play_session_id,
     }))
 }
 
-pub async fn report_playing() -> impl IntoResponse {
+pub(super) async fn report_playing(
+    CurrentUser(user): CurrentUser,
+    Extension(preparos): Extension<Preparos>,
+    payload: Option<Json<PlaybackProgressReport>>,
+) -> impl IntoResponse {
+    if let Some(Json(p)) = payload {
+        preparos.relatar(&user.id, &p, false).await;
+    }
     StatusCode::NO_CONTENT
 }
 
@@ -200,11 +225,13 @@ pub async fn post_capabilities() -> impl IntoResponse {
     StatusCode::NO_CONTENT
 }
 
-pub async fn report_progress(
+pub(super) async fn report_progress(
     State(pool): State<DbPool>,
     CurrentUser(user): CurrentUser,
+    Extension(preparos): Extension<Preparos>,
     Json(payload): Json<PlaybackProgressReport>,
 ) -> impl IntoResponse {
+    preparos.relatar(&user.id, &payload, false).await;
     if let (Some(item_id), Some(position_ticks)) = (payload.item_id, payload.position_ticks) {
         let item_id = crate::api::shows::normalize_id(&item_id);
         if let Err(e) = save_position(&pool, &user.id, &item_id, position_ticks, false).await {
@@ -214,11 +241,13 @@ pub async fn report_progress(
     StatusCode::NO_CONTENT
 }
 
-pub async fn report_stopped(
+pub(super) async fn report_stopped(
     State(pool): State<DbPool>,
     CurrentUser(user): CurrentUser,
+    Extension(preparos): Extension<Preparos>,
     Json(payload): Json<PlaybackProgressReport>,
 ) -> impl IntoResponse {
+    preparos.relatar(&user.id, &payload, true).await;
     if let (Some(item_id), Some(position_ticks)) = (payload.item_id, payload.position_ticks) {
         let item_id = crate::api::shows::normalize_id(&item_id);
         if let Err(e) = save_position(&pool, &user.id, &item_id, position_ticks, true).await {

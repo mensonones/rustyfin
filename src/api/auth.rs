@@ -124,6 +124,7 @@ pub fn is_public(path: &str) -> bool {
     matches!(
         path,
         "/System/Info/Public"
+            | "/cenas"
             | "/System/Ping"
             | "/Users/Public"
             | "/Users/AuthenticateByName"

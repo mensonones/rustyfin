@@ -15,8 +15,8 @@ pub(crate) async fn arquivar(
     sugestao: &Sugestao,
 ) -> Result<(), sqlx::Error> {
     let inserido = sqlx::query(
-        "INSERT OR IGNORE INTO media_reviews (id, title, path, duration_ticks, reason)
-         SELECT id, name, path, duration_ticks, ? FROM items WHERE id = ? AND path = ?",
+        "INSERT OR IGNORE INTO media_reviews (id, title, path, duration_ticks, reason, audio_hash)
+         SELECT id, name, path, duration_ticks, ?, content_sha256 FROM items WHERE id = ? AND path = ?",
     )
     .bind(sugestao.motivo)
     .bind(&sugestao.id)
@@ -200,6 +200,7 @@ pub(crate) async fn previa(
     id: &str,
     destino: &str,
     mapa: Option<&MapaRetomada>,
+    automatico: bool,
 ) -> Result<Result<Previa, Resolucao>, sqlx::Error> {
     let mut tx = pool.begin().await?;
     let Some((anterior, nova)) = duracoes(&mut tx, id, destino).await? else {
@@ -223,6 +224,18 @@ pub(crate) async fn previa(
         p.sugerida = mapa.and_then(|m| m.sugerir(p.anterior, nova));
     }
     tx.commit().await?;
+    if automatico && mapa.is_none() && nova > 0 {
+        let _ = crate::audio_edicoes::indexar(pool, destino).await?;
+        if let Some((antiga, atual)) = crate::audio_edicoes::carregar(pool, id, destino).await? {
+            posicoes = tokio::task::spawn_blocking(move || {
+                for p in posicoes.iter_mut().take(24) {
+                    p.sugerida = crate::audio_edicoes::alinhar(&antiga, &atual, p.anterior)
+                        .filter(|ticks| *ticks < nova);
+                }
+                posicoes
+            }).await.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+        }
+    }
     Ok(Ok(Previa {
         duracao_destino: nova,
         posicoes,

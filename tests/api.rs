@@ -397,7 +397,7 @@ async fn retomada_mapeia_3210_para_3255_e_protege_posicao_atualizada() {
     sqlx::query(
         "INSERT INTO items (id, name, path, media_type, duration_ticks, content_sha256)
          VALUES ('nova', 'Edição nova', '/media/nova.mp4', 'Movie', 25000000000, X'01');
-         INSERT INTO media_reviews VALUES ('antiga', 'Edição antiga', '/media/antiga.mp4',
+         INSERT INTO media_reviews (id, title, path, duration_ticks, reason) VALUES ('antiga', 'Edição antiga', '/media/antiga.mp4',
                                           24000000000, 'possivel_edicao');
          INSERT INTO media_review_targets VALUES ('antiga', '/media/nova.mp4', X'01');
          INSERT INTO media_review_state
@@ -433,4 +433,45 @@ async fn retomada_mapeia_3210_para_3255_e_protege_posicao_atualizada() {
     let (_, item) = call(&s.app, Method::GET, "/Items/nova", Some(&token), None).await;
     assert_eq!(item["UserData"]["PlaybackPositionTicks"], 19_750_000_000_i64);
     assert_eq!(item["UserData"]["IsFavorite"], true);
+}
+
+
+#[tokio::test]
+async fn busca_de_cenas_respeita_progresso_e_biblioteca() {
+    let s = server("cenas").await;
+    let pool = db::init_db(&test_config(&s.dir).database_url).await.unwrap();
+    sqlx::query(
+        "INSERT INTO items (id, name, path, media_type, content_sha256, library_id)
+         VALUES ('abc', 'Filme', '/media/filme.mkv', 'Movie', X'01', 'privada');
+         INSERT INTO cenas_fontes VALUES ('abc', X'01', '', 0);
+         INSERT INTO cenas_legenda VALUES ('abc', 1, 10000000, 20000000, 'Fala inicial', 'fala inicial'),
+                                        ('abc', 1, 30000000, 40000000, 'Fala final', 'fala final');",
+    ).execute(&pool).await.unwrap();
+    let rota = "/api/cenas?q=FALA";
+    let (status, _) = call(&s.app, Method::GET, rota, None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let token = login(&s.app, "Admin").await;
+    let (_, antes) = call(&s.app, Method::GET, rota, Some(&token), None).await;
+    assert_eq!(antes, json!([]));
+    call(
+        &s.app, Method::POST, "/Sessions/Playing/Progress", Some(&token),
+        Some(json!({"ItemId": "abc", "PositionTicks": 35_000_000_i64})),
+    ).await;
+    let (_, cenas) = call(&s.app, Method::GET, rota, Some(&token), None).await;
+    assert_eq!(cenas.as_array().unwrap().len(), 1);
+    assert_eq!(cenas[0]["previa"], "Fala inicial");
+
+    let (_, usuario) = call(
+        &s.app, Method::POST, "/Users/New", Some(&token), Some(json!({"Name": "Visitante"})),
+    ).await;
+    let id = usuario["Id"].as_str().unwrap();
+    let (status, _) = call(
+        &s.app, Method::POST, &format!("/Users/{id}/Policy"), Some(&token),
+        Some(json!({"EnableAllFolders": false, "EnabledFolders": []})),
+    ).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let visitante = login(&s.app, "Visitante").await;
+    let sem_filtro = format!("{rota}&spoilers=true");
+    let (_, cenas) = call(&s.app, Method::GET, &sem_filtro, Some(&visitante), None).await;
+    assert_eq!(cenas, json!([]));
 }

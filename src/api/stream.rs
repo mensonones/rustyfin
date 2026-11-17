@@ -111,7 +111,13 @@ pub(super) async fn servir_catalogado(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .ok_or(StatusCode::NOT_FOUND)?;
 
-    let mut file = tokio::fs::File::open(&file_path)
+    servir_arquivo(&file_path, container.as_deref(), headers).await
+}
+
+pub(super) async fn servir_arquivo(
+    file_path: &str, container: Option<&str>, headers: HeaderMap,
+) -> Result<Response, StatusCode> {
+    let mut file = tokio::fs::File::open(file_path)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
@@ -125,7 +131,7 @@ pub(super) async fn servir_catalogado(
     let last_modified = http_date(mtime_secs);
     let etag = format!("\"{total_size:x}-{mtime_secs:x}\"");
 
-    let mime_type = match container.as_deref() {
+    let mime_type = match container {
         Some("mp4" | "m4v") => "video/mp4",
         Some("mov") => "video/quicktime",
         Some("webm") => "video/webm",
