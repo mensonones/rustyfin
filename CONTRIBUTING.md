@@ -31,7 +31,7 @@ chore(release): prepara a versão 0.3.1
 
 Para uma mudança incompatível, use `!` antes dos dois-pontos ou um rodapé `BREAKING CHANGE:`.
 Explique o impacto e como migrar no corpo da mensagem.
-O título de pull request segue as mesmas regras de cabeçalho e pode ser usado no squash merge.
+Use o mesmo formato no título do pull request se ele for usado no squash merge.
 
 ## Ativar a validação local
 
@@ -42,18 +42,18 @@ Execute uma vez por clone:
 git config --local core.hooksPath .githooks
 ```
 
-O hook `commit-msg` valida o título e a separação do corpo.
-O GitHub Actions valida o título do pull request e os commits novos em pull requests e pushes para `main`.
-O histórico até a versão `v0.3.0` fica fora da validação de adoção.
+O hook local `commit-msg` valida o título e a separação do corpo ao criar o commit.
 Merges e reverts gerados pelo Git são aceitos.
 Commits de trabalho `fixup!`, `squash!` e `amend!` passam pelo hook local e precisam ser
 incorporados com `git rebase --autosquash` antes de enviar o pull request.
 
-Para rodar o validador manualmente:
+## Testes
+
+O GitHub Actions roda a suíte Rust em pull requests e pushes para `main`.
+Execute o mesmo comando localmente:
 
 ```sh
-python tools/commitlint.py title "feat(hls): adiciona segmentos fMP4"
-python tools/commitlint.py range origin/main HEAD --exclude v0.3.0
+cargo test --locked
 ```
 
 ## Versões
