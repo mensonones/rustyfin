@@ -52,6 +52,18 @@ a conexão do cliente.
 A rota de legendas é `/Videos/{id}/{fonte}/Subtitles/{n}/Stream.{srt|vtt|ass}`.
 Faixas forçadas e o título de cada faixa são informados aos apps.
 
+### Corrigir uma faixa SRT
+
+Em **Diagnóstico → Ajustar legenda SRT**, busque o título e selecione uma faixa SRT externa ou
+embutida. Em **Atraso fixo**, use um valor positivo para atrasar e negativo para adiantar a faixa.
+Em **Desvio progressivo**, informe quando duas falas começam na legenda original e no vídeo.
+Confira a prévia nos dois pontos e salve.
+
+O ajuste fica no SQLite por item e faixa, e vale para todos os usuários. Reabra a reprodução no app
+para buscar a faixa atualizada. **Remover ajuste** volta a servir a temporização original. O Rustyfin
+preserva o arquivo e ignora o ajuste se a assinatura da origem mudar. O editor aceita SRT UTF-8 de até
+2 MiB. A prévia de vídeo depende do suporte do navegador ao arquivo original.
+
 ## HDR
 
 Ao recodificar vídeo HDR PQ ou HLG, o `ffmpeg` (com os filtros `zscale` e `tonemap`) converte para SDR BT.709. Com vídeo

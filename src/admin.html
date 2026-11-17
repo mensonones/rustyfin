@@ -116,6 +116,12 @@
   .preflight output ul { margin-block: 4px 8px; padding-inline-start: 20px; }
   .preflight .resultado { padding-block: 12px; border-top: 1px solid var(--line);
     overflow-wrap: anywhere; }
+  .legendas { margin-top: 24px; }
+  .legendas fieldset { min-width: 0; padding: 0; border: 0; margin: 0; }
+  .legendas video { display: block; max-width: 100%; width: 640px; margin-block: 16px; }
+  .legendas .amostra { margin-top: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .legendas .amostra p { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .legendas .hint { margin-top: 8px; }
   .mobile-nav { display: none; }
   @media (max-width: 600px) {
     header, main, .mobile-nav { padding-inline: 16px; }
@@ -256,6 +262,59 @@
         <div id="preflightHistorico"></div>
       </details>
     </section>
+    <details class="card legendas" id="legPainel">
+      <summary><strong>Ajustar legenda SRT</strong></summary>
+      <p class="hint">A correção é aplicada à faixa servida aos apps. O arquivo original é preservado.</p>
+      <fieldset id="legBox">
+        <form id="legBusca">
+          <label for="legTermo">Buscar título para ajustar legenda</label>
+          <div class="row">
+            <input id="legTermo" maxlength="128" required>
+            <button class="btn" type="submit">Buscar</button>
+          </div>
+        </form>
+        <div id="legSelecao" hidden>
+          <label for="legTitulo">Título da legenda</label><select id="legTitulo"></select>
+          <label for="legFaixa">Faixa SRT</label><select id="legFaixa"></select>
+        </div>
+        <form id="legForm" hidden>
+          <label for="legModo">Tipo de correção</label>
+          <select id="legModo">
+            <option value="atraso">Atraso fixo</option>
+            <option value="doisPontos">Desvio progressivo</option>
+          </select>
+          <div id="legFixo">
+            <label for="legAtraso">Deslocamento em segundos</label>
+            <input id="legAtraso" type="number" min="-600" max="600" step="0.001" value="0"
+              aria-describedby="legNotaAtraso">
+            <p id="legNotaAtraso" class="hint">Valores positivos atrasam a legenda. Negativos adiantam.</p>
+          </div>
+          <div id="legPontos" hidden>
+            <p class="hint">Use dois inícios de fala. Informe o tempo da legenda original e
+              quando a fala começa no vídeo, em segundos.</p>
+            <label for="legOrigemA">Primeiro ponto na legenda</label>
+            <input id="legOrigemA" type="number" min="0" max="3600000" step="0.001">
+            <label for="legDestinoA">Primeira fala no vídeo</label>
+            <input id="legDestinoA" type="number" min="0" max="3600000" step="0.001">
+            <button class="btn small" id="legMarcarA" type="button">Usar posição atual no primeiro ponto</button>
+            <label for="legOrigemB">Segundo ponto na legenda</label>
+            <input id="legOrigemB" type="number" min="0" max="3600000" step="0.001">
+            <label for="legDestinoB">Segunda fala no vídeo</label>
+            <input id="legDestinoB" type="number" min="0" max="3600000" step="0.001">
+            <button class="btn small" id="legMarcarB" type="button">Usar posição atual no segundo ponto</button>
+          </div>
+          <video id="legVideo" aria-label="Prévia da legenda ajustada" controls preload="metadata"></video>
+          <p id="legVideoErro" class="hint" hidden>O navegador não reproduz este arquivo. Confira os tempos nos trechos abaixo.</p>
+          <div class="row">
+            <button class="btn" type="submit">Gerar prévia</button>
+            <button class="btn primary" id="legSalvar" type="button" disabled>Salvar ajuste</button>
+            <button class="btn danger" id="legExcluir" type="button" hidden>Remover ajuste</button>
+          </div>
+        </form>
+      </fieldset>
+      <p id="legMensagem" role="status" class="hint"></p>
+      <div id="legAmostras"></div>
+    </details>
   </section>
   <noscript><p>Ative o JavaScript para administrar o servidor.</p></noscript>
 </main>
@@ -367,7 +426,7 @@ async function api(method, url, body) {
   if (!r.ok) {
     let msg = r.status + ' ' + r.statusText;
     try { const j = await r.json(); msg = j.Message || msg; } catch (_) {}
-    throw new Error(msg);
+    throw Object.assign(new Error(msg), { status: r.status });
   }
   const text = await r.text();
   return text ? JSON.parse(text) : null;
@@ -422,6 +481,7 @@ function abrirAba() {
   const atual = abas.find((aba) => aba.dataset.tab === id) || abas[0];
   if (abaAtual === atual) return;
   abaAtual = atual;
+  if (atual.dataset.tab !== 'status') $('legVideo').pause();
   $('sectionSelect').value = atual.dataset.tab;
   for (const aba of abas) {
     const ativa = aba === atual;
@@ -740,6 +800,12 @@ const modoReproducao = {
   direct_play: 'Reprodução direta', remux: 'Remux', transcode: 'Transcodificação',
 };
 const opcao = (valor, rotulo) => el('option', { value: valor, textContent: rotulo });
+function rotuloTitulo(item) {
+  if (item.serie && item.temporada !== null && item.episodio !== null) {
+    return item.serie + ' S' + item.temporada + 'E' + item.episodio + ' / ' + item.nome;
+  }
+  return item.nome + (item.ano ? ' (' + item.ano + ')' : '');
+}
 function mostrarPlano(titulo, plano) {
   const detalhes = [plano.audioOrigem && 'Áudio: ' + plano.audioOrigem,
     plano.container && plano.container.toUpperCase(), plano.protocolo,
@@ -787,13 +853,7 @@ $('preflightBusca').onsubmit = async (evento) => {
       saida.textContent = 'Nenhum título encontrado.';
       return;
     }
-    $('preflightItem').replaceChildren(...itens.map((item) => {
-      const episodio = item.serie && item.temporada !== null && item.episodio !== null;
-      const rotulo = episodio
-        ? item.serie + ' S' + item.temporada + 'E' + item.episodio + ' / ' + item.nome
-        : item.nome + (item.ano ? ' (' + item.ano + ')' : '');
-      return opcao(item.id, rotulo);
-    }));
+    $('preflightItem').replaceChildren(...itens.map((item) => opcao(item.id, rotuloTitulo(item))));
     const dispositivos = () => perfis.map((p) =>
       opcao(p.id, p.cliente ? p.dispositivo + ' / ' + p.cliente : p.dispositivo));
     $('preflightA').replaceChildren(...dispositivos());
@@ -843,6 +903,180 @@ $('preflightForm').onsubmit = async (evento) => {
     for (const campo of elementos) campo.disabled = false;
   }
 };
+
+// ---- ajuste de legenda
+let legendaAtual;
+let previaLegenda;
+let urlFaixa;
+const tempoLegenda = (ms) => (ms / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 3 }) + ' s';
+const rotaLegenda = () => '/admin/api/legendas/' + encodeURIComponent($('legTitulo').value);
+const rotaFaixa = () => rotaLegenda() + '/' + $('legFaixa').value;
+async function operarLegenda(operacao) {
+  $('legBox').disabled = true;
+  $('legMensagem').textContent = 'Carregando…';
+  try {
+    $('legMensagem').textContent = (await operacao()) || '';
+  } catch (erro) {
+    $('legMensagem').textContent = ({
+      409: 'A faixa mudou. Atualize a busca e escolha a faixa novamente.',
+      422: 'Não foi possível gerar uma legenda. Confira o SRT e os tempos informados.',
+      413: 'O SRT ultrapassa o limite de 2 MiB.',
+      400: 'Confira a ordem dos pontos e o intervalo entre eles.',
+    })[erro.status] || mensagemErro(erro);
+  } finally {
+    $('legBox').disabled = false;
+  }
+}
+function limparPreviaLegenda() {
+  previaLegenda = undefined;
+  $('legSalvar').disabled = true;
+  $('legAmostras').replaceChildren();
+  $('legVideo').pause();
+  $('legVideo').querySelector('track')?.remove();
+  if (urlFaixa) {
+    URL.revokeObjectURL(urlFaixa);
+    urlFaixa = undefined;
+  }
+}
+function mostrarAmostrasLegenda(amostras, corrigidas) {
+  const video = $('legVideo');
+  $('legAmostras').replaceChildren(...amostras.map(({ trecho, inicioCorrigidoMs }) => {
+    const posicao = corrigidas ? inicioCorrigidoMs : trecho.inicioMs;
+    const original = 'Original: ' + tempoLegenda(trecho.inicioMs);
+    const tempo = corrigidas ? original + ' / Ajustado: '
+      + (posicao === null ? 'fora do vídeo' : tempoLegenda(posicao)) : original;
+    const botao = el('button', {
+      className: 'btn small', type: 'button', textContent: 'Reproduzir trecho',
+      disabled: posicao === null || Boolean(video.error),
+      onclick: () => {
+        video.currentTime = Math.max(0, posicao / 1000 - 0.75);
+        video.play().catch(() => { $('legVideoErro').hidden = false; });
+      },
+    });
+    return el('div', { className: 'amostra' },
+      el('strong', { textContent: tempo }),
+      el('p', { textContent: trecho.texto }), botao);
+  }));
+}
+function modoLegenda() {
+  const fixo = $('legModo').value === 'atraso';
+  $('legFixo').hidden = !fixo;
+  $('legPontos').hidden = fixo;
+  $('legAtraso').disabled = !fixo;
+  for (const campo of $('legPontos').querySelectorAll('input')) campo.disabled = fixo;
+}
+function editarLegenda() {
+  limparPreviaLegenda();
+  modoLegenda();
+  if (legendaAtual) mostrarAmostrasLegenda(legendaAtual.amostras, false);
+  $('legMensagem').textContent = '';
+}
+async function carregarLegenda() {
+  limparPreviaLegenda();
+  $('legForm').hidden = true;
+  legendaAtual = undefined;
+  if (!$('legFaixa').value) return 'Este título não tem faixa SRT.';
+  const dados = await api('GET', rotaFaixa());
+  legendaAtual = dados;
+  const ajuste = dados.ajuste;
+  const [primeiro, segundo] = dados.amostras.map((a) => a.trecho.inicioMs);
+  $('legModo').value = ajuste?.modo || 'atraso';
+  $('legAtraso').value = (ajuste?.ms ?? 0) / 1000;
+  $('legOrigemA').value = (ajuste?.originalAMs ?? primeiro ?? 0) / 1000;
+  $('legDestinoA').value = (ajuste?.corrigidoAMs ?? primeiro ?? 0) / 1000;
+  $('legOrigemB').value = (ajuste?.originalBMs ?? segundo ?? 0) / 1000;
+  $('legDestinoB').value = (ajuste?.corrigidoBMs ?? segundo ?? 0) / 1000;
+  $('legExcluir').hidden = !ajuste && !dados.obsoleto;
+  modoLegenda();
+  const video = $('legVideo');
+  const origem = rotaLegenda() + '/video';
+  if (video.getAttribute('src') !== origem) {
+    $('legVideoErro').hidden = true;
+    video.src = origem;
+  }
+  $('legForm').hidden = false;
+  mostrarAmostrasLegenda(dados.amostras, false);
+  if (dados.obsoleto) return 'O arquivo foi alterado. O ajuste anterior está inativo.';
+  if (ajuste) return 'Ajuste salvo para esta faixa.';
+}
+async function carregarFaixasLegenda() {
+  limparPreviaLegenda();
+  $('legForm').hidden = true;
+  const faixas = await api('GET', rotaLegenda());
+  $('legFaixa').replaceChildren(...faixas.map((f) => opcao(f.indice,
+    [f.externa ? 'SRT externo' : 'SRT embutido', f.idioma, '#' + f.indice]
+      .filter(Boolean).join(' / '))));
+  return carregarLegenda();
+}
+$('legBusca').onsubmit = (evento) => {
+  evento.preventDefault();
+  operarLegenda(async () => {
+    $('legSelecao').hidden = true;
+    $('legForm').hidden = true;
+    limparPreviaLegenda();
+    const termo = $('legTermo').value.trim();
+    if (!termo) return 'Informe parte do título.';
+    const itens = await api('GET', '/admin/api/reproducao/titulos?busca=' + encodeURIComponent(termo));
+    if (!itens.length) return 'Nenhum título encontrado.';
+    $('legTitulo').replaceChildren(...itens.map((item) => opcao(item.id, rotuloTitulo(item))));
+    $('legSelecao').hidden = false;
+    return carregarFaixasLegenda();
+  });
+};
+$('legTitulo').onchange = () => operarLegenda(carregarFaixasLegenda);
+$('legFaixa').onchange = () => operarLegenda(carregarLegenda);
+$('legVideo').onerror = () => { $('legVideoErro').hidden = false; };
+$('legPainel').ontoggle = () => { if (!$('legPainel').open) $('legVideo').pause(); };
+$('legForm').oninput = (evento) => {
+  if (evento.target.matches('input, select')) editarLegenda();
+};
+for (const ponto of ['A', 'B']) {
+  $('legMarcar' + ponto).onclick = () => {
+    $('legDestino' + ponto).value = $('legVideo').currentTime.toFixed(3);
+    editarLegenda();
+  };
+}
+function pedidoLegenda() {
+  const modo = $('legModo').value;
+  const ms = (id) => Math.round($(id).valueAsNumber * 1000);
+  const ajuste = modo === 'atraso' ? { modo, ms: ms('legAtraso') } : {
+    modo, originalAMs: ms('legOrigemA'), corrigidoAMs: ms('legDestinoA'),
+    originalBMs: ms('legOrigemB'), corrigidoBMs: ms('legDestinoB'),
+  };
+  if (Object.values(ajuste).some(Number.isNaN)) return undefined;
+  return { versao: legendaAtual.versao, ajuste };
+}
+$('legForm').onsubmit = (evento) => {
+  evento.preventDefault();
+  operarLegenda(async () => {
+    limparPreviaLegenda();
+    const pedido = pedidoLegenda();
+    if (!pedido) return 'Preencha os tempos da correção.';
+    const dados = await api('POST', rotaFaixa() + '/previa', pedido);
+    urlFaixa = URL.createObjectURL(new Blob([dados.vtt], { type: 'text/vtt' }));
+    const faixa = el('track', { kind: 'subtitles', label: 'Prévia do ajuste', src: urlFaixa });
+    $('legVideo').append(faixa);
+    faixa.track.mode = 'showing';
+    mostrarAmostrasLegenda(dados.amostras, true);
+    previaLegenda = pedido;
+    $('legSalvar').disabled = false;
+    return 'Confira os trechos antes de salvar.';
+  });
+};
+$('legSalvar').onclick = () => {
+  if (!previaLegenda) return;
+  operarLegenda(async () => {
+    await api('PUT', rotaFaixa(), previaLegenda);
+    limparPreviaLegenda();
+    await carregarLegenda();
+    return 'Ajuste salvo. Reabra a reprodução no app para carregar a faixa corrigida.';
+  });
+};
+$('legExcluir').onclick = () => operarLegenda(async () => {
+  await api('DELETE', rotaFaixa());
+  await carregarLegenda();
+  return 'Ajuste removido. A faixa original voltou a ser servida.';
+});
 
 // ---- diagnóstico e varredura
 const metrica = (nome, valor) => el('div', {}, el('dt', { textContent: nome }),

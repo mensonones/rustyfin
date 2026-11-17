@@ -49,6 +49,15 @@ pub fn router(config: Arc<AppConfig>, pool: DbPool, scan: ScanTrigger) -> Router
         .route("/admin/api/reproducao/perfis", get(super::reproducao_admin::listar_perfis))
         .route("/admin/api/reproducao/titulos", get(super::reproducao_admin::buscar_titulos))
         .route("/admin/api/reproducao/simular", post(super::reproducao_admin::simular))
+        .route("/admin/api/legendas/:id", get(super::legendas_admin::faixas))
+        .route("/admin/api/legendas/:id/video", get(super::legendas_admin::video))
+        .route("/admin/api/legendas/:id/:indice/previa", post(super::legendas_admin::previa))
+        .route(
+            "/admin/api/legendas/:id/:indice",
+            get(super::legendas_admin::detalhe)
+                .put(super::legendas_admin::salvar)
+                .delete(super::legendas_admin::excluir),
+        )
         .route("/admin/api/settings", get(get_settings).put(put_settings))
         .route("/admin/api/browse", get(browse))
         .route("/admin/api/scan", post(scan_now))

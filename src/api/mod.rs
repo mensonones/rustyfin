@@ -5,6 +5,7 @@ pub mod compat;
 pub mod facets;
 pub mod images;
 pub mod items;
+mod legendas_admin;
 pub mod playback;
 mod reproducao_admin;
 pub mod shows;

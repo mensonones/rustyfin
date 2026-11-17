@@ -50,6 +50,7 @@ sobe em segundos e usa **poucas dezenas de megabytes de memória**.
   `DeviceProfile` que o app envia.
 - **HLS** (MPEG-TS e fMP4) com avanço livre, duas qualidades (ABR) e conversão de HDR para SDR.
 - Legendas SRT/ASS/VTT, externas ou embutidas; legendas de imagem (PGS/DVD) são queimadas no vídeo.
+- [Ajuste de legendas SRT](docs/reproducao.md#corrigir-uma-faixa-srt) no painel, com atraso fixo e desvio progressivo por dois pontos.
 
 **Administração**
 - Painel web em `/admin`: bibliotecas, usuários e permissões, dispositivos conectados e configurações, sem reiniciar.

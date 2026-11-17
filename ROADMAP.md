@@ -132,8 +132,8 @@ ou convites pela internet.
   mantêm identidades separadas.
 - [ ] **Revisão de alterações do acervo.** Mostrar substituições de arquivo e associações
   ambíguas para revisão no painel.
-- [ ] **Correção de legendas.** Salvar ajustes reversíveis por arquivo e faixa. Começar com
-  atraso e desvio de tempo em SRT e oferecer prévia em dois pontos antes de aplicar.
+- [x] **Correção de legendas SRT.** Salvar atraso e desvio de tempo por arquivo e faixa,
+  com prévia em dois pontos e opção de restaurar o original.
 
 ### Pesquisa de produto
 

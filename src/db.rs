@@ -35,6 +35,14 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS subtitle_adjustments (
+            item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+            track_index INTEGER NOT NULL,
+            source_hash TEXT NOT NULL,
+            adjustment TEXT NOT NULL,
+            PRIMARY KEY (item_id, track_index)
+        );
+
         CREATE TABLE IF NOT EXISTS playback_state (
             user_id TEXT NOT NULL,
             item_id TEXT NOT NULL,

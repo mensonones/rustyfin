@@ -87,6 +87,10 @@ Usada por `/admin`. O painel abre em Bibliotecas, onde mostra a última varredur
 |---|---|
 | `GET /admin` | Página do painel; `/admin/favicon[-dark].png` e `/admin/logo[-dark].png` são os ícones (claro e escuro) |
 | `GET /admin/api/status` | Contagens, `ffmpeg`, TMDB, descoberta e último scan |
+| `GET /admin/api/legendas/{id}` | Lista faixas SRT ajustáveis do título |
+| `GET/PUT/DELETE /admin/api/legendas/{id}/{índice}` | Consulta, salva ou remove o ajuste da faixa. `PUT` recebe a `versao` do GET e o objeto `ajuste` |
+| `POST /admin/api/legendas/{id}/{índice}/previa` | Recebe o mesmo corpo do PUT e devolve amostras sincronizadas e WebVTT |
+| `GET /admin/api/legendas/{id}/video` | Vídeo original para prévia no admin, com suporte a Range |
 | `GET /admin/api/reproducao/titulos?busca=...` | Até 20 filmes e episódios que correspondem ao título |
 | `GET /admin/api/reproducao/perfis` | Perfis locais observados no `PlaybackInfo`, com a última decisão por dispositivo |
 | `POST /admin/api/reproducao/simular` | Recebe `itemId`, até dois IDs em `perfis`, `audioIndex` e `legendaIndex` opcionais. Devolve o plano por perfil e as faixas do título |
@@ -111,3 +115,8 @@ O diagnóstico usa os perfis enviados pelos clientes ao consultar `PlaybackInfo`
 Retém até 32 perfis em memória, cada um com a decisão mais recente. Reiniciar o servidor limpa
 esses dados. A simulação usa o mesmo cálculo de `PlaybackInfo` e não inicia o FFmpeg. O plano é
 uma previsão baseada nas capacidades declaradas pelo cliente.
+
+
+A unidade dos ajustes é milissegundos. Envie `{"modo":"atraso","ms":1500}` para atraso fixo.
+Para desvio progressivo, use `modo: "doisPontos"` e os campos `originalAMs`, `corrigidoAMs`,
+`originalBMs` e `corrigidoBMs`. Se a origem mudar desde a consulta, a escrita retorna HTTP 409.

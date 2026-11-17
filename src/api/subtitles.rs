@@ -2,11 +2,13 @@
 //! `/Videos/{id}/{mediaSourceId}/Subtitles/{index}/[{startTicks}/]Stream.{srt|vtt|ass}`.
 //! O ffmpeg extrai ou converte trilhas sob demanda, com cache em `<cache>/subs`.
 
+pub(super) mod srt;
+
 use crate::{
     api::{auth::CurrentUser, items::build_streams, shows::normalize_id},
     config::AppConfig,
     db::DbPool,
-    transcode, users,
+    models::MediaStream, transcode, users,
 };
 use axum::{
     body::Body,
@@ -19,7 +21,8 @@ use std::{
     sync::Arc,
     time::{Duration, UNIX_EPOCH},
 };
-use tokio::{process::Command, sync::Semaphore};
+use sha2::{Digest, Sha256};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, process::Command, sync::Semaphore};
 use tokio_util::io::ReaderStream;
 use tracing::warn;
 use uuid::Uuid;
@@ -66,52 +69,25 @@ async fn serve(
     if !users::item_allowed(&pool, &user, &id).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)? {
         return Err(StatusCode::NOT_FOUND);
     }
-    type Row = (String, Option<String>, Option<String>, Option<String>, Option<String>);
-    let row: Option<Row> =
-        sqlx::query_as("SELECT path, streams_json, video_codec, audio_codec, subtitle_path FROM items WHERE id = ?")
-            .bind(&id)
-            .fetch_optional(&pool)
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let (path, streams_json, vc, ac, subtitle_path) = row.ok_or(StatusCode::NOT_FOUND)?;
-
-    let streams = build_streams(
-        streams_json.as_deref(),
-        vc.as_deref(),
-        ac.as_deref(),
-        None,
-        None,
-        subtitle_path.is_some(),
-    );
-    let stream = streams
-        .iter()
+    let fonte = FonteLegenda::buscar(&pool, &id).await?;
+    let faixas = fonte.faixas();
+    let faixa = faixas.iter()
         .find(|s| s.index == index && s.r#type == "Subtitle" && transcode::is_text_subtitle(&s.codec))
         .ok_or(StatusCode::NOT_FOUND)?;
-
     let (file_ext, fmt, mime) = format_for(&ext);
-    let out = if stream.is_external {
-        let subtitle = FsPath::new(subtitle_path.as_deref().ok_or(StatusCode::NOT_FOUND)?);
-        let metadata = tokio::fs::symlink_metadata(subtitle)
-            .await
-            .map_err(|_| StatusCode::NOT_FOUND)?;
-        if !metadata.is_file() {
-            return Err(StatusCode::NOT_FOUND);
+    if srt_aceita(faixa) {
+        if let Some(corpo) = legenda_corrigida(&config, &pool, &fonte, faixa, file_ext).await? {
+            return Response::builder()
+                .header(header::CONTENT_TYPE, mime)
+                .header(header::CACHE_CONTROL, "private, no-store")
+                .body(Body::from(corpo))
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR);
         }
-        if file_ext == "srt" {
-            subtitle.to_path_buf()
-        } else {
-            render(&config, &id, subtitle, None, file_ext, fmt)
-                .await
-                .ok_or(StatusCode::NOT_FOUND)?
-        }
-    } else {
-        render(&config, &id, FsPath::new(&path), Some(index), file_ext, fmt)
-            .await
-            .ok_or(StatusCode::NOT_FOUND)?
-    };
+    }
+    let out = fonte.arquivo(&config, faixa, file_ext, fmt).await?;
     let file = tokio::fs::File::open(&out).await.map_err(|_| StatusCode::NOT_FOUND)?;
     let len = file.metadata().await.map_err(|_| StatusCode::NOT_FOUND)?.len();
-    let cache_control = if stream.is_external {
+    let cache_control = if faixa.is_external || srt_aceita(faixa) {
         "private, no-store"
     } else {
         "private, max-age=3600"
@@ -123,6 +99,157 @@ async fn serve(
         .header(header::CACHE_CONTROL, cache_control)
         .body(Body::from_stream(ReaderStream::new(file)))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+const MAX_SRT_BYTES: u64 = 2 * 1024 * 1024;
+
+#[derive(sqlx::FromRow)]
+pub(super) struct FonteLegenda {
+    pub(super) id: String,
+    path: String,
+    streams_json: Option<String>,
+    video_codec: Option<String>,
+    audio_codec: Option<String>,
+    subtitle_path: Option<String>,
+    content_sha256: Option<Vec<u8>>,
+}
+
+pub(super) struct OriginalSrt {
+    pub(super) assinatura: String,
+    texto: String,
+}
+
+impl OriginalSrt {
+    pub(super) async fn trechos(self) -> Result<Vec<srt::Trecho>, StatusCode> {
+        tokio::task::spawn_blocking(move || srt::ler(&self.texto))
+            .await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::UNPROCESSABLE_ENTITY)
+    }
+}
+
+pub(super) fn srt_aceita(faixa: &MediaStream) -> bool {
+    faixa.r#type == "Subtitle"
+        && (faixa.codec.eq_ignore_ascii_case("srt") || faixa.codec.eq_ignore_ascii_case("subrip"))
+}
+
+impl FonteLegenda {
+    pub(super) async fn buscar(pool: &DbPool, id: &str) -> Result<Self, StatusCode> {
+        sqlx::query_as(
+            "SELECT id, path, streams_json, video_codec, audio_codec, subtitle_path, content_sha256 \
+             FROM items WHERE id = ?",
+        )
+        .bind(normalize_id(id))
+        .fetch_optional(pool)
+        .await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)
+    }
+
+    pub(super) fn faixas(&self) -> Vec<MediaStream> {
+        build_streams(
+            self.streams_json.as_deref(), self.video_codec.as_deref(), self.audio_codec.as_deref(),
+            None, None, self.subtitle_path.is_some(),
+        )
+    }
+
+    async fn arquivo(
+        &self, config: &AppConfig, faixa: &MediaStream, ext: &str, fmt: &str,
+    ) -> Result<PathBuf, StatusCode> {
+        let (origem, indice) = if faixa.is_external {
+            let path = FsPath::new(self.subtitle_path.as_deref().ok_or(StatusCode::NOT_FOUND)?);
+            let metadata = tokio::fs::symlink_metadata(path)
+                .await.map_err(|_| StatusCode::NOT_FOUND)?;
+            if !metadata.is_file() {
+                return Err(StatusCode::NOT_FOUND);
+            }
+            if ext == "srt" {
+                return Ok(path.to_path_buf());
+            }
+            (path, None)
+        } else {
+            (FsPath::new(&self.path), Some(faixa.index))
+        };
+        render(config, &self.id, origem, indice, ext, fmt).await.ok_or(StatusCode::NOT_FOUND)
+    }
+
+    pub(super) async fn original(
+        &self, config: &AppConfig, faixa: &MediaStream,
+    ) -> Result<OriginalSrt, StatusCode> {
+        let path = self.arquivo(config, faixa, "srt", "srt").await?;
+        let arquivo = tokio::fs::File::open(path).await.map_err(|_| StatusCode::NOT_FOUND)?;
+        let mut bytes = Vec::new();
+        arquivo.take(MAX_SRT_BYTES + 1).read_to_end(&mut bytes)
+            .await.map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+        if bytes.len() as u64 > MAX_SRT_BYTES {
+            return Err(StatusCode::PAYLOAD_TOO_LARGE);
+        }
+        let mut hash = Sha256::new();
+        if let Some(video) = &self.content_sha256 {
+            hash.update(video);
+        }
+        hash.update([0]);
+        hash.update(&bytes);
+        let assinatura = format!("{:x}", hash.finalize());
+        let texto = String::from_utf8(bytes).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+        Ok(OriginalSrt { assinatura, texto })
+    }
+}
+
+pub(super) async fn ajuste_salvo(
+    pool: &DbPool, id: &str, indice: i32,
+) -> Result<Option<(String, srt::Ajuste)>, StatusCode> {
+    let linha: Option<(String, String)> = sqlx::query_as(
+        "SELECT source_hash, adjustment FROM subtitle_adjustments \
+         WHERE item_id = ? AND track_index = ?",
+    )
+    .bind(id).bind(indice)
+    .fetch_optional(pool).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    linha.map(|(hash, json)| {
+        serde_json::from_str(&json)
+            .map(|ajuste| (hash, ajuste)).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    }).transpose()
+}
+
+async fn legenda_corrigida(
+    config: &AppConfig, pool: &DbPool, fonte: &FonteLegenda, faixa: &MediaStream, ext: &str,
+) -> Result<Option<Vec<u8>>, StatusCode> {
+    let Some((hash, ajuste)) = ajuste_salvo(pool, &fonte.id, faixa.index).await? else {
+        return Ok(None);
+    };
+    let original = match fonte.original(config, faixa).await {
+        Ok(original) if original.assinatura == hash => original,
+        _ => return Ok(None),
+    };
+    let Some(mapa) = ajuste.mapa() else {
+        return Ok(None);
+    };
+    let vtt = ext == "vtt";
+    let corrigida = tokio::task::spawn_blocking(move || {
+        srt::renderizar(&srt::ler(&original.texto)?, mapa, vtt)
+    }).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let Some(corrigida) = corrigida else {
+        return Ok(None);
+    };
+    if ext == "ass" {
+        let ass = converter_ass(corrigida).await.ok_or(StatusCode::UNPROCESSABLE_ENTITY)?;
+        return Ok(Some(ass));
+    }
+    Ok(Some(corrigida.into_bytes()))
+}
+
+async fn converter_ass(srt: String) -> Option<Vec<u8>> {
+    let _permit = SLOTS.acquire().await.ok()?;
+    let mut filho = Command::new(transcode::ffmpeg_path())
+        .args(["-nostdin", "-v", "error", "-f", "srt", "-i", "pipe:0", "-f", "ass", "pipe:1"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true).spawn().ok()?;
+    let mut entrada = filho.stdin.take()?;
+    let enviar = async move { entrada.write_all(srt.as_bytes()).await };
+    let ((), saida) = tokio::time::timeout(TIMEOUT, async {
+        tokio::try_join!(enviar, filho.wait_with_output())
+    }).await.ok()?.ok()?;
+    saida.status.success().then_some(saida.stdout)
 }
 
 async fn render(

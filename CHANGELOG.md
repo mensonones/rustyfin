@@ -5,6 +5,12 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.14.0] - 2026-11-17
+
+### Adicionado
+- Ajuste reversível de legendas SRT externas e embutidas por título e faixa: atraso fixo,
+  desvio progressivo por dois pontos e prévia no painel.
+
 ## [0.13.0] - 2026-11-17
 
 ### Alterado

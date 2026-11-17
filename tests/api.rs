@@ -2,7 +2,7 @@
 //! requisições como um app Jellyfin (sem rede, via `tower::ServiceExt::oneshot`).
 
 use axum::{
-    body::{Body, to_bytes},
+    body::{Body, Bytes, to_bytes},
     extract::ConnectInfo,
     http::{Method, Request, StatusCode, header},
 };
@@ -53,6 +53,13 @@ async fn server(name: &str) -> Server {
 }
 
 async fn call(app: &axum::Router, method: Method, uri: &str, token: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {
+    let (status, bytes) = corpo(app, method, uri, token, body).await;
+    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+async fn corpo(
+    app: &axum::Router, method: Method, uri: &str, token: Option<&str>, body: Option<Value>,
+) -> (StatusCode, Bytes) {
     let mut req = Request::builder().method(method).uri(uri);
     let mut auth = String::from(r#"MediaBrowser Client="teste", Device="it", DeviceId="it1", Version="1""#);
     if let Some(t) = token {
@@ -72,7 +79,7 @@ async fn call(app: &axum::Router, method: Method, uri: &str, token: Option<&str>
     let res = app.clone().oneshot(req).await.unwrap();
     let status = res.status();
     let bytes = to_bytes(res.into_body(), 1 << 20).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    (status, bytes)
 }
 
 async fn login(app: &axum::Router, name: &str) -> String {
@@ -262,4 +269,63 @@ async fn mover_arquivo_preserva_id_posicao_e_favorito_sem_mesclar_copia() {
         .fetch_all(&pool).await.unwrap();
     assert!(rows.iter().any(|(i, p)| *i == id && std::path::Path::new(p) == destino));
     assert!(rows.iter().any(|(i, p)| *i != id && std::path::Path::new(p) == origem));
+}
+
+
+#[tokio::test]
+async fn ajuste_srt_persiste_e_a_faixa_original_pode_ser_restaurada() {
+    let s = server("ajuste-srt").await;
+    let config = Arc::new(test_config(&s.dir));
+    let pool = db::init_db(&config.database_url).await.unwrap();
+    let legenda = s.dir.join("filme.srt");
+    let original = concat!(
+        "1\n00:00:01,000 --> 00:00:02,000\nPrimeiro\n\n",
+        "2\n00:01:01,000 --> 00:01:02,000\nSegundo\n",
+    );
+    std::fs::write(&legenda, original).unwrap();
+    sqlx::query(
+        "INSERT INTO items (id, name, path, media_type, subtitle_path) \
+         VALUES ('abc', 'Filme', '/media/filme.mp4', 'Movie', ?)",
+    ).bind(legenda.to_str().unwrap()).execute(&pool).await.unwrap();
+    let (_, faixas) = call(&s.app, Method::GET, "/admin/api/legendas/abc", None, None).await;
+    let indice = faixas[0]["indice"].as_i64().unwrap();
+    let rota = format!("/admin/api/legendas/abc/{indice}");
+    let (status, dados) = call(&s.app, Method::GET, &rota, None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let pedido = json!({
+        "versao": dados["versao"],
+        "ajuste": { "modo": "doisPontos", "originalAMs": 1000, "corrigidoAMs": 2000,
+                     "originalBMs": 61000, "corrigidoBMs": 63000 }
+    });
+    let rota_previa = format!("{rota}/previa");
+    let (_, previa) = call(&s.app, Method::POST, &rota_previa, None, Some(pedido.clone())).await;
+    assert_eq!(previa["amostras"][0]["inicioCorrigidoMs"], 2000);
+    assert_eq!(previa["amostras"][1]["inicioCorrigidoMs"], 63_000);
+    let (status, _) = call(&s.app, Method::PUT, &rota, None, Some(pedido.clone())).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let app = api::build_router(config, pool, Arc::new(tokio::sync::Notify::new()));
+    let token = login(&app, "Admin").await;
+    let stream = format!("/Videos/abc/abc/Subtitles/{indice}/0/Stream");
+    let (status, bytes) = corpo(&app, Method::GET, &format!("{stream}.srt"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let texto = std::str::from_utf8(&bytes).unwrap();
+    assert!(texto.contains("00:00:02,000 -->"));
+    assert!(texto.contains("00:01:03,000 -->"));
+    let (_, bytes) = corpo(&app, Method::GET, &format!("{stream}.vtt"), Some(&token), None).await;
+    assert!(std::str::from_utf8(&bytes).unwrap().contains("00:01:03.000 -->"));
+    assert_eq!(std::fs::read_to_string(&legenda).unwrap(), original);
+
+    let trocada = original.replace("Segundo", "Substituído");
+    std::fs::write(&legenda, &trocada).unwrap();
+    let (status, _) = call(&app, Method::PUT, &rota, None, Some(pedido)).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (_, bytes) = corpo(&app, Method::GET, &format!("{stream}.srt"), Some(&token), None).await;
+    assert_eq!(bytes.as_ref(), trocada.as_bytes());
+
+    std::fs::write(&legenda, original).unwrap();
+    let (status, _) = call(&app, Method::DELETE, &rota, None, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, bytes) = corpo(&app, Method::GET, &format!("{stream}.srt"), Some(&token), None).await;
+    assert_eq!(bytes.as_ref(), original.as_bytes());
 }

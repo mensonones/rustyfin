@@ -95,6 +95,13 @@ async fn stream_media_by_id(
     if !users::item_allowed(pool, user, item_id).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)? {
         return Err(StatusCode::NOT_FOUND);
     }
+    servir_catalogado(pool, item_id, headers).await
+}
+
+/// Entrega o arquivo depois de o chamador validar acesso ao item ou ao painel.
+pub(super) async fn servir_catalogado(
+    pool: &DbPool, item_id: &str, headers: HeaderMap,
+) -> Result<Response, StatusCode> {
     let (file_path, container): (String, Option<String>) = sqlx::query_as(
         "SELECT path, container FROM items WHERE id = ?"
     )
