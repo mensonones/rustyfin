@@ -41,6 +41,8 @@ pub fn router(config: Arc<AppConfig>, pool: DbPool, scan: ScanTrigger) -> Router
     Router::new()
         .route("/admin", get(page))
         .route("/admin/", get(page))
+        .route("/admin/favicon.png", get(favicon))
+        .route("/admin/logo.png", get(logo))
         .route("/admin/api/status", get(status))
         .route("/admin/api/settings", get(get_settings).put(put_settings))
         .route("/admin/api/browse", get(browse))
@@ -490,6 +492,15 @@ async fn page() -> impl IntoResponse {
         [(header::CACHE_CONTROL, "no-store")],
         Html(include_str!("../admin.html")),
     )
+}
+
+/// Ícones do painel, embutidos no binário (gerados a partir do logotipo do projeto).
+async fn favicon() -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=86400")], include_bytes!("../assets/favicon.png").as_slice())
+}
+
+async fn logo() -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=86400")], include_bytes!("../assets/icon.png").as_slice())
 }
 
 async fn scan_now(State(st): State<AdminState>) -> StatusCode {
