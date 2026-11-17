@@ -5,6 +5,8 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.11.0] - 2026-11-17
+
 ### Corrigido
 - A varredura listava a pasta inteira a cada vídeo (um `stat` por entrada), o que a tornava quadrática: com 1.000 vídeos numa pasta levava 3,5 minutos e com 3.000 não terminava. Agora cada pasta é lida uma única vez: 1.000 arquivos em ~16 s, 3.000 em ~76 s, e um arquivo novo aparece em menos de 1 s.
 
@@ -12,8 +14,8 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 - Logotipo do projeto, com fundo transparente e uma variante para temas escuros, no `README` (que troca sozinho conforme o tema), no painel (cabeçalho e ícone da aba, também transparentes e com variante escura) e em `docs/assets/`, com uma imagem de pré-visualização social.
 
 ### Alterado
-- Capas, fundos e segmentos HLS exigem token. As playlists propagam a credencial para players que não reenviam os cabeçalhos. Avatares de login continuam públicos.
-- A varredura reaproveita listagens de pastas e agrupa episódios sem ano quando a pasta da série tem um único ano conhecido.
+- **Compatibilidade com clientes Jellyfin:** capas e fundos exigem token no cabeçalho ou na query (`api_key`). Segmentos e arquivos de inicialização HLS também exigem token. As playlists já incluem a credencial nas URLs para players que não reenviam cabeçalhos. Avatares exibidos na tela de login continuam públicos. Veja a [documentação de segurança](docs/usuarios-e-seguranca.md).
+- Episódios com e sem ano são agrupados quando a pasta da série tem um único ano conhecido. Séries homônimas de anos diferentes mantêm IDs distintos.
 - Painel administrativo responsivo, com estado da varredura em Bibliotecas, listas compactas e diagnóstico de serviços.
 - Documentação reorganizada em `docs/`: configuração, usuários e segurança, reprodução, clientes, arquitetura, API, solução de problemas, desempenho (antes `BENCHMARK.md`) e desenvolvimento. O `README` virou uma apresentação com início rápido e índice.
 - Compilar o projeto agora exige **Rust 1.85 ou mais novo** (edição 2024). A imagem Docker não é afetada.
