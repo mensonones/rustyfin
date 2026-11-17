@@ -34,6 +34,9 @@ pub struct ItemQuery {
     pub include_item_types: Vec<String>,
     pub season_number: Option<i32>,
     pub season_id: Option<String>,
+    pub genres: Vec<String>,
+    pub years: Vec<i32>,
+    pub official_ratings: Vec<String>,
 }
 
 impl ItemQuery {
@@ -77,6 +80,9 @@ impl ItemQuery {
                 .or_else(|| p.get("parentindexnumber"))
                 .and_then(|v| v.parse().ok()),
             season_id: p.get("seasonid").filter(|s| !s.is_empty()).cloned(),
+            genres: crate::api::facets::parse_pipe_list(p.get("genres")),
+            years: list("years").iter().filter_map(|y| y.parse().ok()).collect(),
+            official_ratings: crate::api::facets::parse_pipe_list(p.get("officialratings")),
         }
     }
 }
@@ -111,6 +117,7 @@ struct DbItemRow {
     overview: Option<String>,
     rating: Option<f64>,
     genres: Option<String>,
+    extra: Option<String>,
     position_ticks: Option<i64>,
     is_played: Option<bool>,
     play_count: Option<i32>,
@@ -127,6 +134,7 @@ const SELECT_ITEM: &str = r#"
         i.production_year, i.series_name, i.season_number, i.episode_number,
         i.series_id, i.season_id, i.library_id,
         i.tmdb_title, i.overview, i.rating, i.genres,
+        COALESCE(i.extra, (SELECT s.extra FROM series s WHERE s.id = i.series_id)) AS extra,
         p.position_ticks, p.is_played, p.play_count, p.is_favorite
     FROM items i
     LEFT JOIN playback_state p ON i.id = p.item_id AND p.user_id = ?
@@ -439,6 +447,14 @@ pub async fn fetch_scoped(
         binds.push(format!("%{}%", escape_like(term)));
         conds.push("i.name LIKE ? ESCAPE '\\'".to_string());
     }
+    let (fc, fb) = crate::api::facets::filter_conds(
+        &query,
+        "COALESCE(i.genres, (SELECT s.genres FROM series s WHERE s.id = i.series_id))",
+        "i.production_year",
+        "json_extract(COALESCE(i.extra, (SELECT s.extra FROM series s WHERE s.id = i.series_id)), '$.official_rating')",
+    );
+    conds.extend(fc);
+    binds.extend(fb);
     let where_sql = if conds.is_empty() {
         String::new()
     } else {
@@ -704,7 +720,8 @@ fn map_db_item_to_dto(config: &AppConfig, row: DbItemRow) -> BaseItemDto {
         .unwrap_or_default();
     let is_episode = item_type == "Episode";
     let played = row.is_played.unwrap_or(false);
-    BaseItemDto {
+    let extra_json = row.extra.clone();
+    let mut dto = BaseItemDto {
         id: row.id,
         name: display_name,
         original_title: None,
@@ -740,7 +757,9 @@ fn map_db_item_to_dto(config: &AppConfig, row: DbItemRow) -> BaseItemDto {
         season_id: if is_episode { row.season_id } else { None },
         season_name: if is_episode { row.season_number.map(|n| season_name(Some(n))) } else { None },
         ..Default::default()
-    }
+    };
+    crate::api::facets::apply_extra(&mut dto, extra_json.as_deref());
+    dto
 }
 
 #[cfg(test)]

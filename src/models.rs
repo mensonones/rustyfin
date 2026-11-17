@@ -133,6 +133,43 @@ pub struct BaseItemDto {
     /// Só em views: "movies" ou "tvshows".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub collection_type: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub genre_items: Vec<NameId>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub studios: Vec<NameId>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub people: Vec<PersonDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub official_rating: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub taglines: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub remote_trailers: Vec<MediaUrl>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "PascalCase")]
+pub struct NameId {
+    pub name: String,
+    pub id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "PascalCase")]
+pub struct PersonDto {
+    pub name: String,
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// "Actor", "Director" ou "Writer"
+    pub r#type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "PascalCase")]
+pub struct MediaUrl {
+    pub url: String,
+    pub name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

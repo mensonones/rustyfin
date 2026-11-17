@@ -38,6 +38,9 @@ pub struct VFilter {
     /// Um único item (para `/Items/{id}`).
     pub group_id: Option<String>,
     pub search: Option<String>,
+    pub genres: Vec<String>,
+    pub years: Vec<i32>,
+    pub official_ratings: Vec<String>,
 }
 
 #[derive(FromRow)]
@@ -54,6 +57,7 @@ struct VRow {
     st_overview: Option<String>,
     st_rating: Option<f64>,
     st_genres: Option<String>,
+    st_extra: Option<String>,
     st_poster: Option<String>,
     st_backdrop: Option<String>,
     season_poster: Option<String>,
@@ -111,6 +115,24 @@ async fn fetch_virtual(
         conds.push_str(" AND i.series_name LIKE ? ESCAPE '\\'");
         binds.push(format!("%{}%", escape_like(term)));
     }
+    {
+        let facet_query = ItemQuery {
+            genres: filter.genres.clone(),
+            years: filter.years.clone(),
+            official_ratings: filter.official_ratings.clone(),
+            ..Default::default()
+        };
+        let (fc, fb) = crate::api::facets::filter_conds(
+            &facet_query,
+            "s.genres",
+            "s.year",
+            "json_extract(s.extra, '$.official_rating')",
+        );
+        for c in fc {
+            conds.push_str(&format!(" AND {c}"));
+        }
+        binds.extend(fb);
+    }
 
     let base = format!(
         r#"
@@ -120,7 +142,7 @@ async fn fetch_virtual(
                SUM(CASE WHEN IFNULL(p.is_played, 0) = 0 THEN 1 ELSE 0 END) AS unplayed,
                MAX(i.production_year) AS year, MAX(i.created_at) AS added,
                MAX(s.tmdb_title) AS st_title, MAX(s.overview) AS st_overview,
-               MAX(s.rating) AS st_rating, MAX(s.genres) AS st_genres,
+               MAX(s.rating) AS st_rating, MAX(s.genres) AS st_genres, MAX(s.extra) AS st_extra,
                COALESCE(MIN(i.series_poster_path), MAX(s.poster)) AS st_poster,
                COALESCE(MIN(i.series_backdrop_path), MAX(s.backdrop)) AS st_backdrop,
                COALESCE(MIN(i.season_poster_path), MAX(sa.poster)) AS season_poster,
@@ -209,7 +231,8 @@ fn row_to_dto(config: &AppConfig, kind: VKind, row: VRow) -> BaseItemDto {
         ..Default::default()
     });
 
-    match kind {
+    let extra_json = row.st_extra.clone();
+    let mut dto = match kind {
         VKind::Series => BaseItemDto {
             id: row.id,
             name: series_display,
@@ -244,7 +267,11 @@ fn row_to_dto(config: &AppConfig, kind: VKind, row: VRow) -> BaseItemDto {
             recursive_item_count: Some(row.episode_count as i32),
             ..Default::default()
         },
+    };
+    if kind == VKind::Series {
+        crate::api::facets::apply_extra(&mut dto, extra_json.as_deref());
     }
+    dto
 }
 
 /// Lista séries (ou temporadas) com paginação e ordenação.
@@ -262,6 +289,9 @@ pub async fn list_virtual(
         library_id,
         group_id: None,
         search: q.search_term.clone(),
+        genres: q.genres.clone(),
+        years: q.years.clone(),
+        official_ratings: q.official_ratings.clone(),
     };
     let (rows, total) = fetch_virtual(pool, user, kind, &filter, &q.sort_by, q.descending, q.limit, q.start_index)
         .await

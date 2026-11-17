@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod auth;
 pub mod compat;
+pub mod facets;
 pub mod images;
 pub mod items;
 pub mod playback;
@@ -89,11 +90,11 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
         .route("/UserViews", get(views::get_user_views_all).with_state(app_state_tuple.clone()))
         .route("/Library/MediaFolders", get(views::get_user_views_all).with_state(app_state_tuple.clone()))
         .route("/Items/Latest", get(items::get_latest_items_no_user).with_state(app_state_tuple.clone()))
-        .route("/Items/Filters", get(compat::query_filters))
-        .route("/Items/Filters2", get(compat::query_filters))
-        .route("/Genres", get(compat::empty_query))
-        .route("/Studios", get(compat::empty_query))
-        .route("/Persons", get(compat::empty_query))
+        .route("/Items/Filters", get(facets::filters).with_state(app_state_tuple.clone()))
+        .route("/Items/Filters2", get(facets::filters).with_state(app_state_tuple.clone()))
+        .route("/Genres", get(facets::genres).with_state(app_state_tuple.clone()))
+        .route("/Studios", get(facets::studios).with_state(app_state_tuple.clone()))
+        .route("/Persons", get(facets::persons).with_state(app_state_tuple.clone()))
         .route("/Items/:id/Similar", get(compat::empty_query))
         .route("/Items/:id/Intros", get(compat::empty_query))
         .route("/Items/:id/ThemeMedia", get(compat::theme_media))

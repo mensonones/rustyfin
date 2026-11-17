@@ -17,6 +17,35 @@ use tracing::{info, warn};
 const RETRY_AFTER_SECS: i64 = 7 * 24 * 3600;
 const REQUEST_TIMEOUT_SECS: u32 = 20;
 
+/// Dados extras do TMDB guardados como JSON (`items.extra` / `series.extra`).
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Extra {
+    #[serde(default)]
+    pub studios: Vec<String>,
+    #[serde(default)]
+    pub people: Vec<Person>,
+    #[serde(default)]
+    pub official_rating: Option<String>,
+    #[serde(default)]
+    pub tagline: Option<String>,
+    #[serde(default)]
+    pub trailers: Vec<Trailer>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Person {
+    pub name: String,
+    pub role: Option<String>,
+    /// "Actor", "Director" ou "Writer"
+    pub kind: String,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Trailer {
+    pub name: String,
+    pub url: String,
+}
+
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Info {
     pub id: i64,
@@ -27,6 +56,115 @@ pub struct Info {
     pub year: Option<i32>,
     pub poster: Option<String>,
     pub backdrop: Option<String>,
+    pub extra: Extra,
+}
+
+/// Países cuja classificação indicativa vale: o do idioma configurado (`pt-BR` → `BR`), depois `US`.
+fn certification_regions() -> Vec<String> {
+    let lang = crate::settings::tmdb_language();
+    let mut regions = Vec::new();
+    if let Some((_, region)) = lang.split_once('-') {
+        regions.push(region.to_uppercase());
+    }
+    regions.push("US".to_string());
+    regions
+}
+
+/// Elenco (até 20), diretores/roteiristas (até 6), estúdios, classificação e trailer do YouTube.
+fn parse_extra(v: &Value, regions: &[String]) -> Extra {
+    let studios: Vec<String> = ["production_companies", "networks"]
+        .iter()
+        .filter_map(|k| v.get(*k).and_then(|a| a.as_array()))
+        .flatten()
+        .filter_map(|c| non_empty(c.get("name")))
+        .fold(Vec::new(), |mut acc, n| {
+            if !acc.contains(&n) {
+                acc.push(n);
+            }
+            acc
+        });
+
+    let mut people = Vec::new();
+    if let Some(cast) = v.pointer("/credits/cast").and_then(|c| c.as_array()) {
+        for p in cast.iter().take(20) {
+            if let Some(name) = non_empty(p.get("name")) {
+                people.push(Person { name, role: non_empty(p.get("character")), kind: "Actor".into() });
+            }
+        }
+    }
+    if let Some(crew) = v.pointer("/credits/crew").and_then(|c| c.as_array()) {
+        let mut crew_count = 0;
+        for p in crew {
+            let job = non_empty(p.get("job")).unwrap_or_default();
+            let kind = match job.as_str() {
+                "Director" => "Director",
+                "Writer" | "Screenplay" | "Story" => "Writer",
+                _ => continue,
+            };
+            let Some(name) = non_empty(p.get("name")) else { continue };
+            if people.iter().any(|x| x.name == name && x.kind == kind) {
+                continue;
+            }
+            people.push(Person { name, role: Some(job), kind: kind.into() });
+            crew_count += 1;
+            if crew_count >= 6 {
+                break;
+            }
+        }
+    }
+
+    // Filme: release_dates.results[].release_dates[].certification; série: content_ratings.results[].rating
+    let mut official_rating = None;
+    'outer: for region in regions {
+        if let Some(list) = v.pointer("/release_dates/results").and_then(|r| r.as_array()) {
+            for entry in list.iter().filter(|e| e.get("iso_3166_1").and_then(|c| c.as_str()) == Some(region)) {
+                if let Some(c) = entry
+                    .get("release_dates")
+                    .and_then(|d| d.as_array())
+                    .and_then(|d| d.iter().find_map(|x| non_empty(x.get("certification"))))
+                {
+                    official_rating = Some(c);
+                    break 'outer;
+                }
+            }
+        }
+        if let Some(list) = v.pointer("/content_ratings/results").and_then(|r| r.as_array()) {
+            if let Some(c) = list
+                .iter()
+                .filter(|e| e.get("iso_3166_1").and_then(|c| c.as_str()) == Some(region))
+                .find_map(|e| non_empty(e.get("rating")))
+            {
+                official_rating = Some(c);
+                break 'outer;
+            }
+        }
+    }
+
+    let trailers = v
+        .pointer("/videos/results")
+        .and_then(|r| r.as_array())
+        .map(|list| {
+            list.iter()
+                .filter(|x| {
+                    x.get("site").and_then(|s| s.as_str()) == Some("YouTube")
+                        && x.get("type").and_then(|s| s.as_str()) == Some("Trailer")
+                })
+                .filter_map(|x| {
+                    let key = non_empty(x.get("key"))?;
+                    // O código do vídeo entra na URL: só caracteres seguros.
+                    key.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                        .then(|| Trailer {
+                            name: non_empty(x.get("name")).unwrap_or_else(|| "Trailer".into()),
+                            url: format!("https://www.youtube.com/watch?v={key}"),
+                        })
+                })
+                .take(2)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Extra { studios, people, official_rating, tagline: non_empty(v.get("tagline")), trailers }
 }
 
 #[derive(Debug)]
@@ -177,6 +315,7 @@ pub fn parse_details(v: &Value) -> Option<Info> {
         ),
         poster: non_empty(v.get("poster_path")),
         backdrop: non_empty(v.get("backdrop_path")),
+        extra: parse_extra(v, &certification_regions()),
     })
 }
 
@@ -232,6 +371,8 @@ pub async fn enrich_pending(pool: &DbPool, config: &AppConfig) {
 
     // Independe dos itens pendentes: também preenche séries já enriquecidas antes desta função existir.
     enrich_seasons(pool, config, &key).await;
+    // Itens e séries enriquecidos antes de existir elenco/estúdios/classificação.
+    enrich_extras(pool, config, &key).await;
 
     let rows: Result<Vec<PendingRow>, _> = sqlx::query_as(
         "SELECT id, media_type, name, production_year, series_name, season_number, episode_number, series_id
@@ -367,6 +508,53 @@ async fn process_batch(
     (found, false)
 }
 
+/// Preenche `extra` de filmes e séries já identificados no TMDB (sem refazer a busca por nome).
+async fn enrich_extras(pool: &DbPool, config: &AppConfig, key: &str) {
+    let lang_owned = crate::settings::tmdb_language();
+    let lang = lang_owned.as_str();
+    let regions = certification_regions();
+
+    let movies: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT id, tmdb_id FROM items WHERE media_type = 'Movie' AND tmdb_id IS NOT NULL AND extra IS NULL",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+    let shows: Vec<(String, i64)> =
+        sqlx::query_as("SELECT id, tmdb_id FROM series WHERE tmdb_id IS NOT NULL AND extra IS NULL")
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+    if movies.is_empty() && shows.is_empty() {
+        return;
+    }
+    info!("TMDB: buscando elenco e classificação de {} filmes e {} séries...", movies.len(), shows.len());
+
+    for (table, rows, path, append) in [
+        ("items", movies, "movie", "credits,release_dates,videos"),
+        ("series", shows, "tv", "credits,content_ratings,videos"),
+    ] {
+        for (id, tmdb_id) in rows {
+            let v = match get_json(
+                config,
+                key,
+                &format!("/{path}/{tmdb_id}"),
+                &[("language", lang), ("append_to_response", append)],
+            )
+            .await
+            {
+                Ok(v) => v,
+                // 404 do TMDB: grava vazio para não repetir; sem rede ou chave recusada: tenta no próximo ciclo.
+                Err(FetchError::Http(_)) => serde_json::json!({}),
+                Err(_) => return,
+            };
+            let extra = serde_json::to_string(&parse_extra(&v, &regions)).unwrap_or_else(|_| "{}".into());
+            let sql = format!("UPDATE {table} SET extra = ? WHERE id = ?");
+            let _ = sqlx::query(&sql).bind(extra).bind(&id).execute(pool).await;
+        }
+    }
+}
+
 /// Poster de cada temporada (`/tv/{id}/season/{n}`). Sem poster próprio, grava `NULL` para não repetir.
 async fn enrich_seasons(pool: &DbPool, config: &AppConfig, key: &str) {
     type Row = (String, i32, i64);
@@ -435,7 +623,13 @@ async fn lookup_movie(
     }
     let Some(id) = id else { return Ok(None) };
 
-    let details = get_json(config, key, &format!("/movie/{id}"), &[("language", lang)]).await?;
+    let details = get_json(
+        config,
+        key,
+        &format!("/movie/{id}"),
+        &[("language", lang), ("append_to_response", "credits,release_dates,videos")],
+    )
+    .await?;
     Ok(parse_details(&details))
 }
 
@@ -454,7 +648,13 @@ async fn lookup_episode(
         let v = get_json(config, key, "/search/tv", &[("query", series), ("language", lang)]).await?;
         let info = match first_result_id(&v) {
             Some(id) => {
-                let d = get_json(config, key, &format!("/tv/{id}"), &[("language", lang)]).await?;
+                let d = get_json(
+                    config,
+                    key,
+                    &format!("/tv/{id}"),
+                    &[("language", lang), ("append_to_response", "credits,content_ratings,videos")],
+                )
+                .await?;
                 parse_details(&d)
             }
             None => None,
@@ -500,11 +700,12 @@ async fn store_series(pool: &DbPool, config: &AppConfig, id: &str, show: &Info) 
     };
     let genres = serde_json::to_string(&show.genres).unwrap_or_else(|_| "[]".to_string());
     sqlx::query(
-        "INSERT INTO series (id, tmdb_id, tmdb_title, overview, rating, genres, year, poster, backdrop)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO series (id, tmdb_id, tmdb_title, overview, rating, genres, year, poster, backdrop, extra)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET tmdb_id = excluded.tmdb_id, tmdb_title = excluded.tmdb_title,
             overview = excluded.overview, rating = excluded.rating, genres = excluded.genres,
-            year = excluded.year, poster = excluded.poster, backdrop = excluded.backdrop",
+            year = excluded.year, poster = excluded.poster, backdrop = excluded.backdrop,
+            extra = excluded.extra",
     )
     .bind(id)
     .bind(show.id)
@@ -515,6 +716,7 @@ async fn store_series(pool: &DbPool, config: &AppConfig, id: &str, show: &Info) 
     .bind(show.year)
     .bind(poster)
     .bind(backdrop)
+    .bind(serde_json::to_string(&show.extra).ok())
     .execute(pool)
     .await?;
     Ok(())
@@ -536,7 +738,7 @@ async fn store(pool: &DbPool, config: &AppConfig, id: &str, info: &Info) -> Resu
         UPDATE items SET
             tmdb_id = ?, tmdb_title = ?, overview = ?, rating = ?, genres = ?,
             production_year = COALESCE(production_year, ?),
-            tmdb_poster = ?, tmdb_backdrop = ?, tmdb_checked_at = ?
+            tmdb_poster = ?, tmdb_backdrop = ?, tmdb_checked_at = ?, extra = ?
         WHERE id = ?
         "#,
     )
@@ -549,6 +751,7 @@ async fn store(pool: &DbPool, config: &AppConfig, id: &str, info: &Info) -> Resu
     .bind(poster)
     .bind(backdrop)
     .bind(now_secs())
+    .bind(serde_json::to_string(&info.extra).ok())
     .bind(id)
     .execute(pool)
     .await?;
@@ -559,6 +762,48 @@ async fn store(pool: &DbPool, config: &AppConfig, id: &str, info: &Info) -> Resu
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn parses_cast_studios_rating_and_trailer() {
+        let v = json!({
+            "id": 1, "title": "Filme", "tagline": "Slogan",
+            "production_companies": [{"name": "Lucasfilm"}, {"name": "Disney"}],
+            "credits": {
+                "cast": [{"name": "Ator Um", "character": "Herói"}, {"name": "Atriz Dois", "character": ""}],
+                "crew": [{"name": "Diretora", "job": "Director"}, {"name": "Cinegrafista", "job": "Camera"},
+                         {"name": "Roteirista", "job": "Screenplay"}, {"name": "Diretora", "job": "Director"}]
+            },
+            "release_dates": {"results": [
+                {"iso_3166_1": "US", "release_dates": [{"certification": "PG-13"}]},
+                {"iso_3166_1": "BR", "release_dates": [{"certification": ""}, {"certification": "14"}]}
+            ]},
+            "videos": {"results": [
+                {"site": "Vimeo", "type": "Trailer", "key": "x"},
+                {"site": "YouTube", "type": "Teaser", "key": "t"},
+                {"site": "YouTube", "type": "Trailer", "key": "abc_123-X", "name": "Trailer oficial"},
+                {"site": "YouTube", "type": "Trailer", "key": "bad key;rm"}
+            ]}
+        });
+        let e = parse_extra(&v, &["BR".to_string(), "US".to_string()]);
+        assert_eq!(e.studios, vec!["Lucasfilm", "Disney"]);
+        assert_eq!(e.people.len(), 4); // 2 atores + diretora + roteirista (sem câmera, sem repetir)
+        assert_eq!(e.people[0], Person { name: "Ator Um".into(), role: Some("Herói".into()), kind: "Actor".into() });
+        assert_eq!(e.people[1].role, None);
+        assert!(e.people.iter().any(|p| p.kind == "Director" && p.name == "Diretora"));
+        assert!(e.people.iter().any(|p| p.kind == "Writer" && p.name == "Roteirista"));
+        assert_eq!(e.official_rating.as_deref(), Some("14")); // região do idioma vence a US
+        let us = parse_extra(&v, &["JP".to_string(), "US".to_string()]);
+        assert_eq!(us.official_rating.as_deref(), Some("PG-13"));
+        assert_eq!(e.tagline.as_deref(), Some("Slogan"));
+        assert_eq!(e.trailers.len(), 1);
+        assert_eq!(e.trailers[0].url, "https://www.youtube.com/watch?v=abc_123-X");
+
+        // série: content_ratings
+        let tv = json!({"id": 2, "name": "Série", "content_ratings": {"results": [
+            {"iso_3166_1": "BR", "rating": "12"}]}});
+        assert_eq!(parse_extra(&tv, &["BR".to_string()]).official_rating.as_deref(), Some("12"));
+        assert_eq!(parse_extra(&json!({}), &["BR".to_string()]), Extra::default());
+    }
 
     #[test]
     fn encodes_query() {

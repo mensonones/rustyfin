@@ -67,6 +67,8 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
     add_column_if_missing(&pool, "items", "overview", "TEXT").await?;
     add_column_if_missing(&pool, "items", "rating", "REAL").await?;
     add_column_if_missing(&pool, "items", "genres", "TEXT").await?;
+    // Elenco, estúdios, classificação e trailers do TMDB (JSON); `NULL` = ainda não buscado.
+    add_column_if_missing(&pool, "items", "extra", "TEXT").await?;
     add_column_if_missing(&pool, "items", "tmdb_poster", "TEXT").await?;
     add_column_if_missing(&pool, "items", "tmdb_backdrop", "TEXT").await?;
     add_column_if_missing(&pool, "items", "tmdb_checked_at", "INTEGER NOT NULL DEFAULT 0").await?;
@@ -127,6 +129,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
     .execute(&pool)
     .await?;
     // Poster específico de cada temporada (TMDB); `poster` nulo = sem arte própria (usa a da série).
+    add_column_if_missing(&pool, "series", "extra", "TEXT").await?;
     sqlx::query("CREATE TABLE IF NOT EXISTS season_art (season_id TEXT PRIMARY KEY, poster TEXT)")
         .execute(&pool)
         .await?;

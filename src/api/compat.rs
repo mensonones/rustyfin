@@ -89,10 +89,6 @@ pub async fn empty_query() -> impl IntoResponse {
     })
 }
 
-pub async fn query_filters() -> impl IntoResponse {
-    Json(json!({ "Genres": [], "Tags": [], "OfficialRatings": [], "Years": [] }))
-}
-
 pub async fn theme_media() -> impl IntoResponse {
     let empty = json!({ "Items": [], "TotalRecordCount": 0, "StartIndex": 0 });
     Json(json!({
