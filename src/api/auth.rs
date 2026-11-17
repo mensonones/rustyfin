@@ -119,7 +119,7 @@ pub fn extract_credentials(headers: &HeaderMap, query: Option<&str>) -> ClientCr
 
 // ---------------------------------------------------------------- middleware e extratores
 
-/// Rotas acessíveis sem token (descoberta, login, imagens e segmentos HLS).
+/// Rotas acessíveis sem token (descoberta, login e avatares).
 pub fn is_public(path: &str) -> bool {
     matches!(
         path,
@@ -132,9 +132,7 @@ pub fn is_public(path: &str) -> bool {
             | "/Branding/Css"
     ) || path.starts_with("/admin") // tem guarda própria (api/admin.rs)
         || path.starts_with("/Library/VirtualFolders")
-        || (path.starts_with("/Items/") && path.contains("/Images/"))
         || (path.starts_with("/Users/") && path.contains("/Images/")) // avatar: 404 em vez de 401
-        || (path.starts_with("/Videos/") && path.contains("/hls/"))
 }
 
 pub async fn require_user(State(pool): State<DbPool>, mut req: Request, next: Next) -> Response {
@@ -498,16 +496,24 @@ mod tests {
             "/System/Info/Public",
             "/Users/Public",
             "/Users/AuthenticateByName",
-            "/Items/abc/Images/Primary",
             "/Users/abc/Images/Primary",
-            "/Videos/abc/hls/0123456789abcdef/seg_00001.ts",
             "/admin",
             "/admin/api/status",
             "/Library/VirtualFolders",
         ] {
             assert!(is_public(p), "{p}");
         }
-        for p in ["/Users/Me", "/Items", "/Users/abc/Items", "/Videos/abc/stream", "/System/Info", "/Sessions/Playing", "/Videos/abc/master.m3u8"] {
+        for p in [
+            "/Users/Me",
+            "/Items",
+            "/Users/abc/Items",
+            "/Videos/abc/stream",
+            "/System/Info",
+            "/Sessions/Playing",
+            "/Videos/abc/master.m3u8",
+            "/Items/abc/Images/Primary",
+            "/Videos/abc/hls/0123456789abcdef/seg_00001.ts",
+        ] {
             assert!(!is_public(p), "{p}");
         }
     }

@@ -12,6 +12,8 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 - Logotipo do projeto, com fundo transparente e uma variante para temas escuros, no `README` (que troca sozinho conforme o tema), no painel (cabeçalho e ícone da aba, também transparentes e com variante escura) e em `docs/assets/`, com uma imagem de pré-visualização social.
 
 ### Alterado
+- Capas, fundos e segmentos HLS exigem token. As playlists propagam a credencial para players que não reenviam os cabeçalhos. Avatares de login continuam públicos.
+- A varredura reaproveita listagens de pastas e agrupa episódios sem ano quando a pasta da série tem um único ano conhecido.
 - Painel administrativo responsivo, com estado da varredura em Bibliotecas, listas compactas e diagnóstico de serviços.
 - Documentação reorganizada em `docs/`: configuração, usuários e segurança, reprodução, clientes, arquitetura, API, solução de problemas, desempenho (antes `BENCHMARK.md`) e desenvolvimento. O `README` virou uma apresentação com início rápido e índice.
 - Compilar o projeto agora exige **Rust 1.85 ou mais novo** (edição 2024). A imagem Docker não é afetada.

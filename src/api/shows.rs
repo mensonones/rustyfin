@@ -334,10 +334,11 @@ struct VirtualArtwork {
 /// Arte em ordem de preferência e ID do primeiro episódio como reserva.
 pub async fn resolve_art(
     pool: &DbPool,
+    user: &AuthUser,
     id: &str,
     backdrop: bool,
 ) -> Result<Option<(Vec<String>, String)>, sqlx::Error> {
-    let art: Option<VirtualArtwork> = sqlx::query_as(
+    let mut sql = String::from(
         "SELECT i.id AS episode_id,
                 MIN(CASE WHEN i.season_id = ?1 THEN i.season_poster_path END) OVER () AS local_season_poster,
                 sa.poster AS tmdb_season_poster,
@@ -348,12 +349,20 @@ pub async fn resolve_art(
          FROM items i
          LEFT JOIN series s ON s.id = i.series_id
          LEFT JOIN season_art sa ON sa.season_id = ?1
-         WHERE (i.series_id = ?1 OR i.season_id = ?1) AND i.media_type = 'Episode'
-         ORDER BY i.season_number, i.episode_number, i.id LIMIT 1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?;
+         WHERE (i.series_id = ?1 OR i.season_id = ?1) AND i.media_type = 'Episode'",
+    );
+    let mut valores = Vec::new();
+    if let Some((filtro, binds)) = user.library_clause("i.library_id") {
+        sql.push_str(" AND ");
+        sql.push_str(&filtro);
+        valores = binds;
+    }
+    sql.push_str(" ORDER BY i.season_number, i.episode_number, i.id LIMIT 1");
+    let mut consulta = sqlx::query_as(&sql).bind(id);
+    for valor in valores {
+        consulta = consulta.bind(valor);
+    }
+    let art: Option<VirtualArtwork> = consulta.fetch_optional(pool).await?;
     Ok(art.map(|row| {
         let candidates = if backdrop {
             vec![row.local_series_backdrop, row.tmdb_series_backdrop]

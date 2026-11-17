@@ -57,7 +57,7 @@ O `userId` que algumas rotas trazem no caminho é ignorado: vale sempre o usuár
 Listas que o Rustyfin não modela respondem **vazias**: `Items/{id}/Ancestors`, `LocalTrailers`, `SpecialFeatures`,
 `Intros`, `Similar`, `ThemeMedia` e `MediaSegments/{id}`.
 
-### Imagens (públicas)
+### Imagens (token obrigatório)
 
 | Rota | Observação |
 |---|---|
@@ -71,8 +71,8 @@ Listas que o Rustyfin não modela respondem **vazias**: `Items/{id}/Ancestors`, 
 |---|---|
 | `POST /Items/{id}/PlaybackInfo` | Recebe o `DeviceProfile` e devolve as fontes e a decisão (Direct Play, Remux ou Transcode) |
 | `GET /Videos/{id}/stream[.{ext}]`, `GET /Audio/{id}/stream`, `GET /Items/{id}/Download` | Arquivo com `Range` (`206`/`416`) ou stream progressivo quando há `transcode=` |
-| `GET /Videos/{id}/master.m3u8`, `main.m3u8`, `low.m3u8` | HLS |
-| `GET /Videos/{id}/hls/{chave}/{arquivo}` | Segmentos e arquivo de inicialização (públicos; a chave da sessão é aleatória) |
+| `GET /Videos/{id}/master.m3u8`, `main.m3u8`, `low.m3u8` | HLS. As URLs geradas pelas playlists incluem `api_key` |
+| `GET /Videos/{id}/hls/{chave}/{arquivo}` | Segmentos e arquivo de inicialização. Exigem token e acesso à biblioteca do vídeo |
 | `GET /Videos/{id}/{fonte}/Subtitles/{n}/[{ticks}/]Stream.{srt\|vtt\|ass}` | Legendas de texto extraídas |
 | `POST /Sessions/Playing`, `.../Progress`, `.../Stopped`, `.../Ping` | Progresso e fim da reprodução |
 | `POST/DELETE /UserPlayedItems/{id}`, `/Users/{id}/PlayedItems/{id}` | Assistido |

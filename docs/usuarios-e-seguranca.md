@@ -44,15 +44,17 @@ Para os apps funcionarem, algumas rotas são públicas:
 |---|---|
 | `GET /System/Info/Public`, `/System/Ping`, `/Branding/*`, `/QuickConnect/Enabled` | Descoberta e tela de conexão |
 | `GET /Users/Public`, `POST /Users/AuthenticateByName` | Tela de login |
-| Imagens de itens e de usuários (`/Items/{id}/Images/*`, `/Users/{id}/Images/*`) | Os apps carregam as capas sem enviar o token |
-| Segmentos HLS (`/Videos/{id}/hls/...`) | O player os pede sem cabeçalhos; a chave da sessão é aleatória |
+| Avatares de usuários (`/Users/{id}/Images/*`) | Os apps carregam os avatares na tela de login |
 
 Todo o resto (listagens, detalhes, streaming, reprodução, administração de usuários) exige um token válido, aceito em
 `Authorization: MediaBrowser Token="..."`, `X-Emby-Token`, `X-MediaBrowser-Token` ou `api_key`/`ApiKey` na URL.
 
-Isto é um servidor de **rede doméstica**. Se for expô-lo à internet, use HTTPS por um *proxy reverso*, defina senhas
-fortes e saiba que as imagens e os segmentos HLS acima não exigem autenticação (autenticá-los está no
-[roadmap](../ROADMAP.md)).
+Capas e fundos exigem token, inclusive quando o cliente os busca em uma requisição separada. No HLS, o servidor
+inclui `api_key` nas URLs das playlists e dos segmentos para players que não reenviam cabeçalhos. As URLs
+de reprodução contêm uma credencial e devem ser tratadas como privadas.
+
+Isto é um servidor de **rede doméstica**. Se for expô-lo à internet, use HTTPS por um *proxy reverso*,
+defina senhas fortes e configure o proxy para omitir a query dos logs.
 
 ## Logs
 

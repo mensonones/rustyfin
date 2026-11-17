@@ -356,11 +356,13 @@ pub async fn run_scan(pool: &DbPool, libraries: &[Library]) -> usize {
         let leitura = tokio::task::spawn_blocking(move || collect_media_files(&dir_owned, &anteriores));
         let (files, folder_art, listings) = match leitura.await {
             Ok((files, folder_art, listings, complete)) => {
-                if !complete {
+                if complete {
+                    visitadas.insert(dir.clone());
+                } else {
                     warn!("Varredura incompleta de {}: nada será removido neste ciclo.", dir.display());
                     all_dirs_ok = false;
                 }
-                (files, std::sync::Arc::new(folder_art), std::sync::Arc::new(listings))
+                (files, folder_art, listings)
             }
             Err(e) => {
                 error!("Falha na varredura de {}: {}", dir.display(), e);
@@ -720,6 +722,29 @@ fn parse_ffprobe(stdout: &[u8]) -> Option<MediaMetadata> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn completa_ano_so_na_mesma_pasta_e_sem_conflito() {
+        let caminhos = [
+            "/media/a/Ghosts/Season 1/Ghosts (2019) S01E01.mkv",
+            "/media/a/Ghosts/Season 2/Ghosts S02E01.mkv",
+            "/media/b/Ghosts/Season 1/Ghosts (2021) S01E01.mkv",
+            "/media/b/Ghosts/Season 1/Ghosts S01E02.mkv",
+            "/media/c/Ghosts/Ghosts (2019) S01E01.mkv",
+            "/media/c/Ghosts/Ghosts (2021) S01E02.mkv",
+            "/media/c/Ghosts/Ghosts S01E03.mkv",
+            "/media/d/Ghosts/Ghosts S01E01.mkv",
+        ];
+        let mut itens: Vec<_> = caminhos.iter().map(|caminho| {
+            let path = PathBuf::from(caminho);
+            let parsed = parser::parse_path(&path);
+            (path, parsed)
+        }).collect();
+        completar_anos(&mut itens);
+        let anos: Vec<_> = itens.into_iter().map(|(_, item)| item.year).collect();
+        assert_eq!(anos, [Some(2019), Some(2019), Some(2021), Some(2021),
+            Some(2019), Some(2021), None, None]);
+    }
 
     #[test]
     fn finds_local_images() {

@@ -127,10 +127,10 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
             "/Users/:user_id/FavoriteItems/:id",
             post(compat::mark_favorite_user).delete(compat::unmark_favorite_user).with_state(pool.clone()),
         )
-        .route("/Videos/:id/master.m3u8", get(transcoding::hls_master))
+        .route("/Videos/:id/master.m3u8", get(transcoding::hls_master).with_state(pool.clone()))
         .route("/Videos/:id/main.m3u8", get(transcoding::hls_main).with_state(pool.clone()))
         .route("/Videos/:id/low.m3u8", get(transcoding::hls_low).with_state(pool.clone()))
-        .route("/Videos/:id/hls/:key/:file", get(transcoding::hls_segment))
+        .route("/Videos/:id/hls/:key/:file", get(transcoding::hls_segment).with_state(pool.clone()))
         .route("/Items/:id/Download", get(stream::stream_video).with_state(pool.clone()))
         // 6. Direct Play Streaming with Range Requests
         .route("/Videos/:id/stream", get(stream::stream_video).with_state(pool.clone()))

@@ -26,7 +26,7 @@
   - `POST /Users/AuthenticateByName` (login automático / sem senha no modo local)
   - `GET /Users/{id}`
 
-### Fase 2: Scanner de Mídia & Indexação (Em Andamento)
+### Fase 2: Scanner de Mídia & Indexação (Implementada)
 - [x] Varredura de pastas configuradas (`walkdir` em `spawn_blocking`), incremental por tamanho/mtime e com remoção de arquivos ausentes.
 - [x] Extração de metadados:
   - [x] Duração, resolução e codecs principais via `ffprobe` (sem ffprobe: campos ficam vazios e o item é reinspecionado no próximo scan).
@@ -39,6 +39,11 @@
   - `GET /Users/{userId}/Views` (exposição de pastas: "Filmes", "Séries", "Animes")
   - `GET /Users/{userId}/Items` (listagem com paginação e ordenação)
   - `GET /Items/{id}` (detalhes de um item específico)
+
+#### Melhorias da revisão do scanner
+
+- [x] Reaproveitar a listagem de cada pasta durante a varredura ao localizar vídeos, capas e legendas. Isso evita repetir leituras em pastas com muitos arquivos e em montagens lentas.
+- [x] Agrupar episódios com e sem ano da mesma série quando a associação for inequívoca. Manter separadas séries homônimas de anos distintos.
 
 ### Fase 2b: Autoscan & Metadados Online
 - [x] Scan automático periódico (`RUSTYFIN_SCAN_INTERVAL_SECS`), por eventos de arquivo e sob demanda (`POST /Library/Refresh`, `/Items/{id}/Refresh`).
@@ -54,7 +59,7 @@
 - [x] Nomes de episódio em várias formas: `S01E02`, `1x02`, `Temporada 1 Episódio 2`, `Season 1 Episode 2`, `T1 E2`.
 - [x] Respostas vazias válidas para `Genres`, `Studios`, `Persons`, `Similar`, `Intros`, `ThemeMedia`, `MediaSegments`, `Items/Filters`.
 - [x] Validado no **Moonfin 3.0.0 (Android)**: conexão, login, home com destaques, bibliotecas Filmes/Séries (série → temporada → episódio, NextUp), Direct Play com seek, transcode HLS por limite de bitrate, marcar assistido, WebSocket `/socket`.
-- [ ] Validar também no Swiftfin/Findroid e em TV; `Moonfin/*` e `Plugins/*` retornam 404 de propósito (plugin do servidor não instalado).
+- Validação manual opcional: testar a compatibilidade com Swiftfin, Findroid e TV. `Moonfin/*` e `Plugins/*` retornam 404 de propósito (plugin do servidor não instalado).
 - [x] Descoberta automática (UDP 7359, protocolo "who is JellyfinServer?"): validada no Moonfin. No Docker defina `RUSTYFIN_PUBLIC_URL` (IP do PC) no `.env`; o app esconde da lista "descobertos" os servidores já salvos.
 - [x] `GenreItems`, `Studios`, `People`, `OfficialRating`, `Taglines` e `RemoteTrailers` nos itens; listas `/Genres`, `/Studios`, `/Persons` (com `PersonTypes`, busca e paginação) e `/Items/Filters`; filtros `Genres`, `Years` e `OfficialRatings` em `/Items` (filmes, séries e episódios).
 
@@ -63,14 +68,14 @@
 - [x] Rotas `/Library/VirtualFolders` (criar, listar, excluir, adicionar/remover pasta, renomear) compatíveis com o Jellyfin; uma biblioteca por pasta e item atribuído à mais específica.
 - [x] Painel web `/admin` embutido no binário: bibliotecas, seletor de pastas, TMDB, status e scan.
 - [x] Acesso só de rede privada/loopback; senha opcional (`RUSTYFIN_ADMIN_PASSWORD`).
-- [x] **Usuários e senhas**: Argon2, tokens por dispositivo validados em toda rota (exceto imagens/HLS/login), limite de tentativas, progresso e favoritos por usuário, acesso por biblioteca, administradores, painel com login.
+- [x] **Usuários e senhas**: Argon2, tokens por dispositivo validados em toda rota (exceto rotas públicas, como login e avatares), limite de tentativas, progresso e favoritos por usuário, acesso por biblioteca, administradores, painel com login.
 - [x] Revisão de segurança/correção (Argus, v0.2.0): limpeza do scan, login sem senha só na LAN, logs sem token, trava do último admin e outros.
-- [ ] Pendências da revisão: exigir autenticação em imagens e segmentos HLS (hoje públicos para os apps carregarem), ler cada pasta uma vez por scan, e série dividida quando só parte dos episódios tem ano.
+- [x] Autenticar imagens e segmentos HLS com autorização por usuário e biblioteca, mantendo a compatibilidade com os apps e o carregamento de avatares na tela de login.
 - [x] Aba **Sessões** no painel: dispositivos conectados (aparelho, app, usuário, último uso), encerrar uma ou todas; expiração de tokens parados (`RUSTYFIN_TOKEN_TTL_DAYS`, desligada por padrão).
 - [x] Perfil oculto (fora da lista da tela de login; entra digitando o nome) e foto de perfil (`GET/POST/DELETE /Users/{id}/Images/Primary`, JPEG/PNG/WebP/GIF até 8 MB, enviada pelo app ou pelo painel).
 - [x] Painel: nome do servidor, intervalo do scan e limite de transcodificações simultâneas, aplicados na hora, sem reiniciar (têm prioridade sobre as variáveis de ambiente).
 
-### Fase 3: Motor de Streaming Direto (Direct Play & Scrubbing) (Implementada, falta teste com cliente real)
+### Fase 3: Motor de Streaming Direto (Direct Play & Scrubbing) (Implementada)
 - [x] Implementação de **HTTP 206 Partial Content** com suporte completo a headers `Range` e `Content-Range`.
 - [x] Suporte a seeking instantâneo (inclui 416 para ranges inválidos) (avanço e retrocesso rápido no player).
 - [x] Rotas de streaming:
@@ -87,14 +92,14 @@
   - `POST /Sessions/Playing/Stopped`
 - [x] Persistência de "Continuar Assistindo" (*Resume playback*) e marcação de assistido (*Played status*).
 
-### Fase 5: Capas & Imagens (Artwork) (Implementada, falta teste com ffmpeg e cliente real)
+### Fase 5: Capas & Imagens (Artwork) (Implementada)
 - [x] Suporte a posters/backdrops locais: `<nome>.jpg`, `<nome>-poster.jpg`, `<nome>-fanart.jpg` e, se o vídeo está sozinho na pasta, `poster/cover/folder` e `fanart/backdrop`.
 - [x] Extração de thumbnail sob demanda via ffmpeg (cache em `RUSTYFIN_CACHE_DIR`, máx. 2 processos simultâneos, timeout 30s)  do arquivo de vídeo caso não haja imagem local.
 - [x] Rotas de imagens (sem redimensionamento: `maxWidth` e afins são ignorados):
   - `GET /Items/{id}/Images/Primary`
   - `GET /Items/{id}/Images/Backdrop`
 
-### Fase 6: Transcodificação & Remuxing Sob Demanda (Implementada, falta teste com ffmpeg real e clientes)
+### Fase 6: Transcodificação & Remuxing Sob Demanda (Implementada)
 - [x] Decisão Direct Play / Remux / Transcode a partir do `DeviceProfile` (contêiner, codecs, `MaxStreamingBitrate`, `EnableDirectPlay/Transcoding`) e do bitrate médio do arquivo.
 - [x] Smart Remuxing: copia o vídeo (`-c:v copy`) e só recodifica o áudio (AAC estéreo) quando o vídeo é compatível.
 - [x] Saída HLS (`master.m3u8`/`main.m3u8`/segmentos `.ts`) e progressiva (mkv/mp4 fragmentado/ts); `StartTimeTicks` e faixa de áudio escolhida.
@@ -103,7 +108,7 @@
 - [x] Validado no Docker com `ffmpeg`/`ffprobe` reais: HLS H.264+AAC, remux HEVC preservado, `StartTimeTicks`, miniaturas, Direct Play com Range e sem processos órfãos.
 - [x] Validado no Moonfin 3.0.0 em um aparelho Android físico: seleção e exibição de SRT embutido e externo em Direct Play, e SRT externo durante transcode HLS ao limitar a taxa a 2 Mbps.
 - [x] *Seek* livre em HLS: na transcodificação completa a playlist é VOD (todos os segmentos de 6 s, com `ENDLIST`) e os segmentos são gerados sob demanda; ao avançar ou voltar além do que o ffmpeg vai gerar, ele é reiniciado no segmento pedido (`-ss`, `-start_number` e `-output_ts_offset` mantêm a linha do tempo). Validado no Docker com TS e fMP4, com e sem ABR. Com vídeo copiado (*remux*) os cortes dependem dos quadros-chave e a playlist continua `EVENT`.
-- [ ] Validar com Swiftfin e outros clientes que suportam HLS, e o avanço em HLS na TV Samsung.
+- Validação manual opcional: testar HLS no Swiftfin e em outros clientes, incluindo o avanço no vídeo em uma TV Samsung.
 - [x] Legendas: as de texto (SRT, ASS, mov_text, WebVTT) são extraídas pelo ffmpeg para `/Videos/{id}/{src}/Subtitles/{n}/[{ticks}/]Stream.{srt|vtt|ass}` (com cache) e anunciadas como `External` no `PlaybackInfo`; as de imagem (PGS/DVD) são queimadas no vídeo (transcode com *overlay*, ainda sem teste com arquivo real).
 - [x] Legendas externas ao lado do vídeo (`Filme.srt` para `Filme.mkv`): detectadas na varredura e anunciadas como `External` nos detalhes do item e no `PlaybackInfo`.
 - [x] HLS em fMP4 quando o perfil do cliente solicita MP4 com protocolo HLS. Perfis HLS sem essa opção usam segmentos MPEG-TS.

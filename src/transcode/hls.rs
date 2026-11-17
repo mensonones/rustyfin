@@ -126,6 +126,10 @@ pub(super) fn segment_parts(name: &str) -> Option<(&str, u32, &str)> {
 /// Entrega o arquivo da sessão VOD, reiniciando o ffmpeg se o segmento pedido está fora do alcance
 /// do que ele vai gerar (avanço ou retrocesso do usuário, ffmpeg encerrado ou sessão ociosa).
 pub async fn ensure_segment(key: &str, file: &str, timeout: Duration) -> Result<Option<PathBuf>, SpawnError> {
+    let ativa = sessions().lock().await.contains_key(key);
+    if !ativa && !recipes().lock().await.contains_key(key) {
+        return Ok(None);
+    }
     let s = settings()?;
     let path = s.work_dir.join(key).join(file);
     if tokio::fs::metadata(&path).await.is_ok() {

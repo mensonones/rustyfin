@@ -1,7 +1,8 @@
 use crate::{
-    api::shows::{self, normalize_id},
+    api::{auth::CurrentUser, shows::{self, normalize_id}},
     config::AppConfig,
     db::DbPool,
+    users::{self, AuthUser},
 };
 use axum::{
     body::Body,
@@ -38,39 +39,43 @@ type Params = Query<HashMap<String, String>>;
 
 pub async fn get_primary_image(
     State((config, pool)): ImgState,
+    CurrentUser(user): CurrentUser,
     Path(item_id): Path<String>,
     Query(q): Params,
     headers: HeaderMap,
 ) -> Result<Response, StatusCode> {
-    serve_image(&config, &pool, &item_id, ImageKind::Primary, &q, &headers).await
+    serve_image(&config, &pool, &user, &item_id, ImageKind::Primary, &q, &headers).await
 }
 
 /// `/Items/:id/Images/Primary/:index` e variantes com índice.
 pub async fn get_primary_image_indexed(
     state: ImgState,
+    user: CurrentUser,
     Path((item_id, _index)): Path<(String, String)>,
     q: Params,
     headers: HeaderMap,
 ) -> Result<Response, StatusCode> {
-    get_primary_image(state, Path(item_id), q, headers).await
+    get_primary_image(state, user, Path(item_id), q, headers).await
 }
 
 pub async fn get_backdrop_image(
     State((config, pool)): ImgState,
+    CurrentUser(user): CurrentUser,
     Path(item_id): Path<String>,
     Query(q): Params,
     headers: HeaderMap,
 ) -> Result<Response, StatusCode> {
-    serve_image(&config, &pool, &item_id, ImageKind::Backdrop, &q, &headers).await
+    serve_image(&config, &pool, &user, &item_id, ImageKind::Backdrop, &q, &headers).await
 }
 
 pub async fn get_backdrop_image_indexed(
     state: ImgState,
+    user: CurrentUser,
     Path((item_id, _index)): Path<(String, String)>,
     q: Params,
     headers: HeaderMap,
 ) -> Result<Response, StatusCode> {
-    get_backdrop_image(state, Path(item_id), q, headers).await
+    get_backdrop_image(state, user, Path(item_id), q, headers).await
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -99,6 +104,7 @@ async fn fetch_image_row(pool: &DbPool, id: &str) -> Result<Option<ImageRow>, St
 async fn serve_image(
     config: &AppConfig,
     pool: &DbPool,
+    user: &AuthUser,
     item_id: &str,
     kind: ImageKind,
     q: &HashMap<String, String>,
@@ -110,9 +116,13 @@ async fn serve_image(
     let mut candidates = Vec::new();
     let mut row = fetch_image_row(pool, &target).await?;
 
+    if row.is_some() && !users::item_allowed(pool, user, &item_id).await.map_err(db_error)? {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
     // Série/temporada não estão em `items`: usam a arte da série ou o primeiro episódio.
     if row.is_none() {
-        let found = shows::resolve_art(pool, &item_id, kind == ImageKind::Backdrop)
+        let found = shows::resolve_art(pool, user, &item_id, kind == ImageKind::Backdrop)
             .await
             .map_err(db_error)?;
         if let Some((art, episode_id)) = found {
@@ -210,7 +220,7 @@ async fn respond_file(
         return Response::builder()
             .status(StatusCode::NOT_MODIFIED)
             .header(header::ETAG, &etag)
-            .header(header::CACHE_CONTROL, "public, max-age=86400")
+            .header(header::CACHE_CONTROL, "private, no-cache")
             .body(Body::empty())
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR);
     }
@@ -221,7 +231,7 @@ async fn respond_file(
         .header(header::CONTENT_TYPE, mime.as_ref())
         .header(header::CONTENT_LENGTH, len.to_string())
         .header(header::ETAG, &etag)
-        .header(header::CACHE_CONTROL, "public, max-age=86400")
+        .header(header::CACHE_CONTROL, "private, no-cache")
         .body(Body::from_stream(ReaderStream::new(file)))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
@@ -525,14 +535,15 @@ mod tests {
         sqlx::query("INSERT INTO season_art (season_id, poster) VALUES (?, ?)")
             .bind(&season_id).bind(tmdb_season.to_str())
             .execute(&pool).await.unwrap();
+        let usuario = AuthUser { id: "admin".into(), name: "Admin".into(), is_admin: true, allowed_libraries: None };
         let unrelated = scanner::series_id_for("Other Show", None);
-        assert!(shows::resolve_art(&pool, &unrelated, false).await.unwrap().unwrap().0.is_empty());
+        assert!(shows::resolve_art(&pool, &usuario, &unrelated, false).await.unwrap().unwrap().0.is_empty());
 
         let serve = |id: &str, kind| {
             let id = id.to_owned();
-            let (pool, config) = (&pool, &config);
+            let (pool, config, usuario) = (&pool, &config, &usuario);
             async move {
-                let result = serve_image(config, pool, &id, kind, &HashMap::new(), &HeaderMap::new())
+                let result = serve_image(config, pool, usuario, &id, kind, &HashMap::new(), &HeaderMap::new())
                     .await.unwrap();
                 axum::body::to_bytes(result.into_body(), 100).await.unwrap()
             }

@@ -1,14 +1,14 @@
 //! Rotas de remux/transcode: stream progressivo e HLS (`master.m3u8`, `main.m3u8`, segmentos).
 
 use crate::{
-    api::{auth::CurrentUser, shows::normalize_id},
+    api::{auth::{CurrentCreds, CurrentUser}, shows::normalize_id},
     db::DbPool,
     transcode::{self, Container, SpawnError, TranscodeParams},
     users::{self, AuthUser},
 };
 use axum::{
     body::Body,
-    extract::{Path, Query, RawQuery, State},
+    extract::{Path, Query, State},
     http::{header, StatusCode},
     response::Response,
 };
@@ -106,14 +106,51 @@ fn text_response(mime: &'static str, body: String) -> Result<Response, StatusCod
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
+/// Usa o token da sessão nas URLs porque players HLS podem omitir os cabeçalhos.
+fn token_url(token: Option<&str>) -> Result<String, StatusCode> {
+    let token = token.ok_or(StatusCode::UNAUTHORIZED)?;
+    serde_urlencoded::to_string([("api_key", token)]).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+fn autorizar_segmentos(playlist: &str, prefixo: &str, query: &str) -> String {
+    let mut resposta = String::with_capacity(playlist.len());
+    for linha in playlist.lines() {
+        if linha.starts_with(prefixo) {
+            resposta.push_str(&format!("{linha}?{query}"));
+        } else if let Some(uri) = linha.strip_prefix("#EXT-X-MAP:URI=\"")
+            .and_then(|uri| uri.strip_suffix('"'))
+            .filter(|uri| uri.starts_with(prefixo))
+        {
+            resposta.push_str(&format!("#EXT-X-MAP:URI=\"{uri}?{query}\""));
+        } else {
+            resposta.push_str(linha);
+        }
+        resposta.push('\n');
+    }
+    resposta
+}
+
+/// Dá a cada item um espaço de sessões próprio, inclusive para requisições sem playlist.
+fn chave_interna(id: &str, chave: &str) -> String {
+    uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_URL, format!("rustyfin:hls:{id}:{chave}").as_bytes())
+        .simple()
+        .to_string()
+}
+
 /// A mesma query nas variantes permite compartilhar a sessão `FFmpeg`.
 pub async fn hls_master(
-    Path(_id): Path<String>,
-    Query(q): Query<HashMap<String, String>>,
-    RawQuery(raw): RawQuery,
+    State(pool): State<DbPool>,
+    CurrentUser(user): CurrentUser,
+    CurrentCreds(creds): CurrentCreds,
+    Path(id): Path<String>,
+    Query(mut q): Query<HashMap<String, String>>,
 ) -> Result<Response, StatusCode> {
     let params = TranscodeParams::from_query(&q, Container::Ts, true).ok_or(StatusCode::BAD_REQUEST)?;
-    let query = raw.unwrap_or_default();
+    item_input(&pool, &user, &id).await?;
+    remover_tokens(&mut q);
+    let query = serde_urlencoded::to_string(&q).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let token = token_url(creds.token.as_deref())?;
+    let query = if query.is_empty() { token } else { format!("{query}&{token}") };
     let with_audio = |video: i64| video.saturating_add(transcode::AUDIO_BITRATE);
     let bandwidth = params.abr.map(|ladder| ladder.high).or(params.video_bitrate).map_or(8_000_000, with_audio);
     let version = if params.container == Container::Mp4 { "#EXT-X-VERSION:7\n" } else { "" };
@@ -128,26 +165,34 @@ pub async fn hls_master(
 pub async fn hls_main(
     State(pool): State<DbPool>,
     CurrentUser(user): CurrentUser,
+    CurrentCreds(creds): CurrentCreds,
     Path(id): Path<String>,
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Response, StatusCode> {
-    hls_playlist(pool, user, id, q, false).await
+    hls_playlist(pool, user, id, q, token_url(creds.token.as_deref())?, false).await
 }
 
 pub async fn hls_low(
     State(pool): State<DbPool>,
     CurrentUser(user): CurrentUser,
+    CurrentCreds(creds): CurrentCreds,
     Path(id): Path<String>,
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Response, StatusCode> {
-    hls_playlist(pool, user, id, q, true).await
+    hls_playlist(pool, user, id, q, token_url(creds.token.as_deref())?, true).await
+}
+
+fn remover_tokens(query: &mut HashMap<String, String>) {
+    query.retain(|chave, _| !["api_key", "apikey", "token"].iter()
+        .any(|nome| chave.eq_ignore_ascii_case(nome)));
 }
 
 async fn hls_playlist(
     pool: DbPool,
     user: AuthUser,
     id: String,
-    q: HashMap<String, String>,
+    mut q: HashMap<String, String>,
+    credencial: String,
     low: bool,
 ) -> Result<Response, StatusCode> {
     let mut params = TranscodeParams::from_query(&q, Container::Ts, true).ok_or(StatusCode::BAD_REQUEST)?;
@@ -163,7 +208,10 @@ async fn hls_playlist(
         params.tone_map_hdr = transcode::tone_map_hdr(input.streams_json.as_deref());
     }
     params.has_audio = input.has_audio;
-    let key = transcode::session_key(&id, &q, params.tone_map_hdr);
+    remover_tokens(&mut q);
+    let chave = transcode::session_key(&id, &q, params.tone_map_hdr);
+    let prefixo = format!("/Videos/{id}/hls/{chave}/");
+    let key = chave_interna(&id, &chave);
 
     // Transcodificação completa: playlist VOD com todos os segmentos (o cliente pode avançar para
     // qualquer ponto) e segmentos gerados sob demanda. Com vídeo copiado os cortes dependem dos
@@ -180,15 +228,10 @@ async fn hls_playlist(
             (Some(_), false) => Some("high"),
             (None, _) => None,
         };
-        return text_response(
-            PLAYLIST_MIME,
-            transcode::vod_playlist(
-                duration_secs,
-                &format!("/Videos/{id}/hls/{key}/"),
-                rendition,
-                params.container == Container::Mp4,
-            ),
+        let playlist = transcode::vod_playlist(
+            duration_secs, &prefixo, rendition, params.container == Container::Mp4,
         );
+        return text_response(PLAYLIST_MIME, autorizar_segmentos(&playlist, &prefixo, &credencial));
     }
 
     transcode::ensure_hls(&key, std::path::Path::new(&input.path), &params)
@@ -207,19 +250,23 @@ async fn hls_playlist(
 
     text_response(
         PLAYLIST_MIME,
-        transcode::rewrite_playlist(&content, &format!("/Videos/{id}/hls/{key}/")),
+        autorizar_segmentos(&transcode::rewrite_playlist(&content, &prefixo), &prefixo, &credencial),
     )
 }
 
 /// Segmento MPEG-TS ou fMP4, ou arquivo de inicialização fMP4.
 pub async fn hls_segment(
-    Path((_id, key, file)): Path<(String, String, String)>,
+    State(pool): State<DbPool>,
+    CurrentUser(user): CurrentUser,
+    Path((id, key, file)): Path<(String, String, String)>,
 ) -> Result<Response, StatusCode> {
-    if !transcode::is_valid_key(&key) {
+    if !transcode::is_valid_key(&key) || file == "main.m3u8" {
         return Err(StatusCode::NOT_FOUND);
     }
     let mime = transcode::hls_file_mime(&file).ok_or(StatusCode::NOT_FOUND)?;
-    let path = transcode::ensure_segment(&key, &file, SEGMENT_TIMEOUT)
+    item_input(&pool, &user, &id).await?;
+    let chave = chave_interna(&normalize_id(&id), &key);
+    let path = transcode::ensure_segment(&chave, &file, SEGMENT_TIMEOUT)
         .await
         .map_err(spawn_status)?
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -232,4 +279,23 @@ pub async fn hls_segment(
         .header(header::CACHE_CONTROL, "no-store")
         .body(Body::from_stream(ReaderStream::with_capacity(f, 256 * 1024)))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn playlist_autentica_segmentos_e_inicializacao() {
+        let prefixo = "/Videos/abc/hls/chave/";
+        let playlist = format!(
+            "#EXTM3U\n#EXT-X-MAP:URI=\"{prefixo}init.mp4\"\n{prefixo}seg_00000.m4s\n"
+        );
+        let query = token_url(Some("a+b&c")).unwrap();
+        let protegida = autorizar_segmentos(&playlist, prefixo, &query);
+        assert!(protegida.contains("init.mp4?api_key=a%2Bb%26c\""));
+        assert!(protegida.contains("seg_00000.m4s?api_key=a%2Bb%26c\n"));
+        assert_ne!(chave_interna("abc", "chave"), chave_interna("outro", "chave"));
+    }
 }

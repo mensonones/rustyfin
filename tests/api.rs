@@ -148,3 +148,24 @@ async fn revoked_sessions_stop_working_and_tokens_never_leak() {
     }
     assert_eq!(ok, 1);
 }
+
+
+#[tokio::test]
+async fn midia_protegida_rejeita_requisicoes_sem_token() {
+    let s = server("midia").await;
+    let token = login(&s.app, "Admin").await;
+    for rota in [
+        "/Items/abc/Images/Primary",
+        "/Items/abc/Images/Backdrop/0",
+        "/Videos/abc/hls/0123456789abcdef/seg_00000.ts",
+        "/Videos/abc/hls/0123456789abcdef/init.mp4",
+    ] {
+        let (status, _) = call(&s.app, Method::GET, rota, None, None).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{rota}");
+        let com_token = format!("{rota}?api_key={token}");
+        let (status, _) = call(&s.app, Method::GET, &com_token, None, None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{rota}");
+    }
+    let (status, _) = call(&s.app, Method::GET, "/Users/abc/Images/Primary", None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
