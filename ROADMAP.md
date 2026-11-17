@@ -100,7 +100,8 @@
 - [x] Processos isolados via `tokio::process`: limite simultâneo (`RUSTYFIN_MAX_TRANSCODES`), `kill_on_drop`, sessões HLS ociosas encerradas e apagadas, limpeza na inicialização.
 - [x] Encoder configurável (`libx264` ou hardware via `RUSTYFIN_VIDEO_ENCODER`).
 - [x] Validado no Docker com `ffmpeg`/`ffprobe` reais: HLS H.264+AAC, remux HEVC preservado, `StartTimeTicks`, miniaturas, Direct Play com Range e sem processos órfãos.
-- [ ] Validar com clientes reais (Moonfin/Swiftfin/Findroid); *seek* em HLS só dentro do já transcodificado (playlist `EVENT`).
+- [x] Validado no Moonfin 3.0.0 em um aparelho Android físico: seleção e exibição de SRT embutido e externo em Direct Play, e SRT externo durante transcode HLS ao limitar a taxa a 2 Mbps.
+- [ ] Validar com Swiftfin e outros clientes que suportam HLS. O *seek* em HLS fica limitado ao trecho já transcodificado (playlist `EVENT`).
 - [x] Legendas: as de texto (SRT, ASS, mov_text, WebVTT) são extraídas pelo ffmpeg para `/Videos/{id}/{src}/Subtitles/{n}/[{ticks}/]Stream.{srt|vtt|ass}` (com cache) e anunciadas como `External` no `PlaybackInfo`; as de imagem (PGS/DVD) são queimadas no vídeo (transcode com *overlay*, ainda sem teste com arquivo real).
 - [x] Legendas externas ao lado do vídeo (`Filme.srt` para `Filme.mkv`): detectadas na varredura e anunciadas como `External` nos detalhes do item e no `PlaybackInfo`.
 - [ ] Tone mapping HDR, múltiplas qualidades (ABR), fMP4 HLS.
