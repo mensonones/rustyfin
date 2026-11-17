@@ -7,6 +7,7 @@ use crate::{
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
+    sync::Arc,
     time::UNIX_EPOCH,
 };
 use tokio::process::Command;
@@ -41,6 +42,34 @@ const SEASON_POSTERS: &[&str] = &["folder", "poster"];
 
 type FolderArt = HashMap<PathBuf, HashMap<String, PathBuf>>;
 
+/// Arquivo relevante (vídeo, imagem ou legenda) de uma pasta, listado uma única vez por varredura.
+struct DirEntryInfo {
+    path: PathBuf,
+    is_file: bool,
+}
+
+/// Conteúdo de cada pasta com vídeos. Sem isto, cada vídeo relistava a própria pasta e fazia um `stat`
+/// por entrada (N vídeos × N entradas): em pastas grandes ou em montagens lentas a varredura não terminava.
+type DirListings = HashMap<PathBuf, Vec<DirEntryInfo>>;
+
+/// Lista uma pasta sem um `stat` por entrada (só os links simbólicos precisam resolver o destino).
+fn list_dir(dir: &Path) -> Vec<DirEntryInfo> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(std::result::Result::ok)
+        .map(|entry| {
+            let is_file = match entry.file_type() {
+                Ok(kind) if kind.is_symlink() => entry.path().is_file(),
+                Ok(kind) => kind.is_file(),
+                Err(_) => false,
+            };
+            DirEntryInfo { path: entry.path(), is_file }
+        })
+        .collect()
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct LocalAssets {
     poster: Option<String>,
@@ -57,12 +86,16 @@ struct LocalAssets {
 /// - `poster.jpg`/`cover.jpg`/`folder.jpg`... só valem se o vídeo é o único da pasta
 ///   (evita que todos os filmes de uma pasta "solta" herdem o mesmo poster).
 /// - `<nome>.srt` → legenda de texto; o nome base deve coincidir com o do vídeo.
-fn find_local_assets(video: &Path) -> LocalAssets {
+fn find_local_assets(video: &Path, listings: &DirListings) -> LocalAssets {
     let (Some(dir), Some(stem)) = (video.parent(), video.file_stem().and_then(|s| s.to_str())) else {
         return LocalAssets::default();
     };
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return LocalAssets::default();
+    let fallback;
+    let entries: &[DirEntryInfo] = if let Some(listing) = listings.get(dir) {
+        listing
+    } else {
+        fallback = list_dir(dir);
+        &fallback
     };
 
     let image_stem = stem.to_lowercase();
@@ -74,22 +107,20 @@ fn find_local_assets(video: &Path) -> LocalAssets {
     let mut folder_backdrop: Option<(u8, PathBuf)> = None;
     let mut subtitle: Option<(bool, PathBuf)> = None;
 
-    for entry in entries.filter_map(std::result::Result::ok) {
-        let p = entry.path();
+    for info in entries {
+        let p = &info.path;
         let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
         if ext.eq_ignore_ascii_case("srt") {
-            if p.file_stem().and_then(|s| s.to_str()) == Some(stem)
-                && entry.file_type().is_ok_and(|kind| kind.is_file())
-            {
+            if p.file_stem().and_then(|s| s.to_str()) == Some(stem) && info.is_file {
                 // Prefere a extensão minúscula se houver mais de um arquivo com o mesmo nome.
-                let candidate = (ext != "srt", p);
+                let candidate = (ext != "srt", p.clone());
                 if subtitle.as_ref().is_none_or(|current| &candidate < current) {
                     subtitle = Some(candidate);
                 }
             }
             continue;
         }
-        if !p.is_file() {
+        if !info.is_file {
             continue;
         }
         let ext = ext.to_lowercase();
@@ -220,20 +251,31 @@ async fn migrate_legacy_series(
 
 /// Indexa vídeos e arte de pasta na mesma passagem (rode dentro de `spawn_blocking`).
 /// Se houve erro de leitura, arquivos não visitados não podem ser tratados como removidos.
-fn collect_media_files(dir: &Path) -> (Vec<PathBuf>, FolderArt, bool) {
+fn collect_media_files(dir: &Path, visitadas: &HashSet<PathBuf>) -> (Vec<PathBuf>, FolderArt, DirListings, bool) {
     let mut complete = true;
     let mut files = Vec::new();
     let mut folder_art = FolderArt::new();
-    for entry in WalkDir::new(dir) {
+    let mut listings = DirListings::new();
+    for entry in WalkDir::new(dir).into_iter().filter_entry(|e| !visitadas.contains(e.path())) {
         match entry {
             Ok(e) => {
-                if !e.file_type().is_file() {
-                    continue;
-                }
                 let ext = e.path().extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
-                if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
+                let is_video = VIDEO_EXTENSIONS.contains(&ext.as_str());
+                let is_image = IMAGE_EXTENSIONS.contains(&ext.as_str());
+                let arquivo = e.file_type().is_file();
+                if (is_video || is_image || ext == "srt")
+                    && (arquivo || (e.file_type().is_symlink() && e.path().is_file()))
+                {
+                    if let Some(parent) = e.path().parent() {
+                        listings
+                            .entry(parent.to_path_buf())
+                            .or_default()
+                            .push(DirEntryInfo { path: e.path().to_path_buf(), is_file: true });
+                    }
+                }
+                if arquivo && is_video {
                     files.push(e.into_path());
-                } else if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+                } else if arquivo && is_image {
                     add_folder_art(&mut folder_art, e.path());
                 }
             }
@@ -243,7 +285,39 @@ fn collect_media_files(dir: &Path) -> (Vec<PathBuf>, FolderArt, bool) {
             }
         }
     }
-    (files, folder_art, complete)
+    (files, folder_art, listings, complete)
+}
+
+/// Associa episódios sem ano só dentro da mesma pasta de série (ou pasta imediata).
+/// Anos conflitantes nessa pasta deixam os episódios sem ano no grupo original.
+fn completar_anos(arquivos: &mut [(PathBuf, Parsed)]) {
+    let pasta_serie = |path: &Path, series: &str, season| {
+        parser::artwork_dirs(path, series, season)
+            .map(|(pasta, _)| pasta)
+            .or_else(|| path.parent())
+            .map(Path::to_path_buf)
+    };
+    let mut anos = HashMap::new();
+    for (caminho, item) in arquivos.iter() {
+        if let (Kind::Episode { series, season, .. }, Some(ano)) = (&item.kind, item.year) {
+            let chave = (pasta_serie(caminho, series, *season), normalize_series_key(series));
+            anos.entry(chave)
+                .and_modify(|anterior| {
+                    if *anterior != Some(ano) {
+                        *anterior = None;
+                    }
+                })
+                .or_insert(Some(ano));
+        }
+    }
+    for (caminho, item) in arquivos {
+        if let Kind::Episode { series, season, .. } = &item.kind {
+            if item.year.is_none() {
+                let chave = (pasta_serie(caminho, series, *season), normalize_series_key(series));
+                item.year = anos.get(&chave).copied().flatten();
+            }
+        }
+    }
 }
 
 /// Arquivos processados em paralelo (`RUSTYFIN_SCAN_CONCURRENCY`; padrão: núcleos, entre 2 e 8).
@@ -265,6 +339,7 @@ pub async fn run_scan(pool: &DbPool, libraries: &[Library]) -> usize {
 
     let mut seen: HashSet<String> = HashSet::new();
     let mut all_dirs_ok = true;
+    let mut visitadas = HashSet::new();
 
     for (dir, refs) in libraries::scan_roots(libraries) {
         // Pasta ausente (drive desmontado, erro de digitação): não cria nada e preserva os itens.
@@ -277,13 +352,15 @@ pub async fn run_scan(pool: &DbPool, libraries: &[Library]) -> usize {
         info!("Varrendo diretório: {}", dir.display());
 
         let dir_owned = dir.clone();
-        let (files, folder_art) = match tokio::task::spawn_blocking(move || collect_media_files(&dir_owned)).await {
-            Ok((files, folder_art, complete)) => {
+        let anteriores = visitadas.clone();
+        let leitura = tokio::task::spawn_blocking(move || collect_media_files(&dir_owned, &anteriores));
+        let (files, folder_art, listings) = match leitura.await {
+            Ok((files, folder_art, listings, complete)) => {
                 if !complete {
                     warn!("Varredura incompleta de {}: nada será removido neste ciclo.", dir.display());
                     all_dirs_ok = false;
                 }
-                (files, std::sync::Arc::new(folder_art))
+                (files, std::sync::Arc::new(folder_art), std::sync::Arc::new(listings))
             }
             Err(e) => {
                 error!("Falha na varredura de {}: {}", dir.display(), e);
@@ -293,21 +370,29 @@ pub async fn run_scan(pool: &DbPool, libraries: &[Library]) -> usize {
         };
 
         // ffprobe domina o custo: processa vários arquivos ao mesmo tempo (limitado).
-        let refs = std::sync::Arc::new(refs);
-        let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(scan_concurrency()));
+        let refs = Arc::new(refs);
+        let gate = Arc::new(tokio::sync::Semaphore::new(scan_concurrency()));
+        let folder_art = Arc::new(folder_art);
+        let listings = Arc::new(listings);
+        let mut arquivos: Vec<_> = files.into_iter().map(|path| {
+            let parsed = parser::parse_path(&path);
+            (path, parsed)
+        }).collect();
+        completar_anos(&mut arquivos);
         let mut tasks = tokio::task::JoinSet::new();
-        for path in files {
+        for (path, parsed) in arquivos {
             // Pastas mais profundas vêm primeiro: o arquivo fica com a biblioteca mais específica.
             if !seen.insert(path.to_string_lossy().to_string()) {
                 continue;
             }
             let (pool, refs, gate) = (pool.clone(), refs.clone(), gate.clone());
             let folder_art = folder_art.clone();
+            let listings = listings.clone();
             tasks.spawn(async move {
                 let Ok(_permit) = gate.acquire_owned().await else {
                     return;
                 };
-                if let Err(err) = process_media_file(&pool, &path, &refs, &folder_art).await {
+                if let Err(err) = process_media_file(&pool, &path, &parsed, &refs, &folder_art, &listings).await {
                     error!("Erro ao processar {}: {}", path.display(), err);
                 }
             });
@@ -350,11 +435,12 @@ async fn remove_missing(
 async fn process_media_file(
     pool: &DbPool,
     path: &Path,
+    parsed: &Parsed,
     libs: &[LibRef],
     folder_art: &FolderArt,
+    listings: &DirListings,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let path_str = path.to_string_lossy().to_string();
-    let parsed = parser::parse_path(path);
     let library_id = libraries::pick_library(libs, matches!(parsed.kind, Kind::Episode { .. }));
     let ext = path
         .extension()
@@ -370,12 +456,7 @@ async fn process_media_file(
         .and_then(|m| m.duration_since(UNIX_EPOCH).ok())
         .map_or(0, |d| d.as_secs() as i64);
 
-    let mut assets = {
-        let p = path.to_path_buf();
-        tokio::task::spawn_blocking(move || find_local_assets(&p))
-            .await
-            .unwrap_or_default()
-    };
+    let mut assets = find_local_assets(path, listings);
     if let Kind::Episode { series, season, .. } = &parsed.kind {
         if let Some((show_dir, season_dir)) = parser::artwork_dirs(path, series, *season) {
             assets.series_poster = folder_image(folder_art, show_dir, SERIES_POSTERS);
@@ -393,7 +474,7 @@ async fn process_media_file(
     // Atualiza arquivos auxiliares mesmo quando o vídeo já foi inspecionado e não mudou.
     if let Some((_, old_size, old_mtime, probed)) = &existing {
         if *old_size == size_bytes && *old_mtime == modified_at && *probed {
-            update_parsed(pool, &path_str, &parsed, &assets, library_id.as_deref()).await?;
+            update_parsed(pool, &path_str, parsed, &assets, library_id.as_deref()).await?;
             return Ok(());
         }
     }
@@ -451,7 +532,7 @@ async fn process_media_file(
     .execute(pool)
     .await?;
 
-    update_parsed(pool, &path_str, &parsed, &assets, library_id.as_deref()).await?;
+    update_parsed(pool, &path_str, parsed, &assets, library_id.as_deref()).await?;
 
     info!("Indexado: {} [{}]", parsed.title, item_id);
     Ok(())
@@ -649,17 +730,17 @@ mod tests {
         touch("Filme.mkv");
         touch("Poster.JPG");
         touch("fanart.png");
-        let r = find_local_assets(&dir.join("Filme.mkv"));
+        let r = find_local_assets(&dir.join("Filme.mkv"), &DirListings::new());
         assert!(r.poster.unwrap().to_lowercase().ends_with("poster.jpg"));
         assert!(r.backdrop.unwrap().ends_with("fanart.png"));
 
         // Com dois vídeos, imagens de pasta não são herdadas; imagens por nome sim.
         touch("Outro.mkv");
         touch("Filme-poster.jpg");
-        let r = find_local_assets(&dir.join("Filme.mkv"));
+        let r = find_local_assets(&dir.join("Filme.mkv"), &DirListings::new());
         assert!(r.poster.unwrap().ends_with("Filme-poster.jpg"));
         assert_eq!(r.backdrop, None);
-        assert_eq!(find_local_assets(&dir.join("Outro.mkv")), LocalAssets::default());
+        assert_eq!(find_local_assets(&dir.join("Outro.mkv"), &DirListings::new()), LocalAssets::default());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -691,15 +772,15 @@ mod tests {
                 .fetch_one(&pool)
         };
 
-        process_media_file(&pool, &video, &[], &FolderArt::new()).await.unwrap();
+        process_media_file(&pool, &video, &parser::parse_path(&video), &[], &FolderArt::new(), &DirListings::new()).await.unwrap();
         assert_eq!(read_subtitle().await.unwrap(), None);
 
         std::fs::write(&subtitle, b"x").unwrap();
-        process_media_file(&pool, &video, &[], &FolderArt::new()).await.unwrap();
+        process_media_file(&pool, &video, &parser::parse_path(&video), &[], &FolderArt::new(), &DirListings::new()).await.unwrap();
         assert_eq!(read_subtitle().await.unwrap().as_deref(), subtitle.to_str());
 
         std::fs::remove_file(&subtitle).unwrap();
-        process_media_file(&pool, &video, &[], &FolderArt::new()).await.unwrap();
+        process_media_file(&pool, &video, &parser::parse_path(&video), &[], &FolderArt::new(), &DirListings::new()).await.unwrap();
         assert_eq!(read_subtitle().await.unwrap(), None);
         std::fs::remove_dir_all(dir).unwrap();
     }

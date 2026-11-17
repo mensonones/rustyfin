@@ -5,6 +5,9 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+### Corrigido
+- A varredura listava a pasta inteira a cada vídeo (um `stat` por entrada), o que a tornava quadrática: com 1.000 vídeos numa pasta levava 3,5 minutos e com 3.000 não terminava. Agora cada pasta é lida uma única vez: 1.000 arquivos em ~16 s, 3.000 em ~76 s, e um arquivo novo aparece em menos de 1 s.
+
 ### Adicionado
 - Logotipo do projeto, com fundo transparente e uma variante para temas escuros, no `README` (que troca sozinho conforme o tema), no painel (cabeçalho e ícone da aba, também transparentes e com variante escura) e em `docs/assets/`, com uma imagem de pré-visualização social.
 
