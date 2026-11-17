@@ -1,0 +1,16 @@
+#!/bin/sh
+
+# O Git mantém MERGE_HEAD enquanto executa o hook de um merge.
+if git rev-parse --verify --quiet MERGE_HEAD >/dev/null; then
+    exit 0
+fi
+
+for command in python python3; do
+    if command -v "$command" >/dev/null 2>&1 &&
+       "$command" -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+        exec "$command" -X utf8 tools/commitlint.py message -- "$1"
+    fi
+done
+
+echo "Commit lint: instale o Python 3.8+ e disponibilize python ou python3 no PATH." >&2
+exit 1
