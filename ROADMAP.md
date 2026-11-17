@@ -66,8 +66,9 @@
 - [x] **Usuários e senhas**: Argon2, tokens por dispositivo validados em toda rota (exceto imagens/HLS/login), limite de tentativas, progresso e favoritos por usuário, acesso por biblioteca, administradores, painel com login.
 - [x] Revisão de segurança/correção (Argus, v0.2.0): limpeza do scan, login sem senha só na LAN, logs sem token, trava do último admin e outros.
 - [ ] Pendências da revisão: exigir autenticação em imagens e segmentos HLS (hoje públicos para os apps carregarem), ler cada pasta uma vez por scan, e série dividida quando só parte dos episódios tem ano.
-- [ ] Sessões ativas/dispositivos no painel, expiração de tokens, perfil oculto na tela de login e imagem de perfil.
-- [ ] Mais configurações no painel (transcode, intervalo de scan, nome do servidor) e *reload* sem reiniciar.
+- [x] Aba **Sessões** no painel: dispositivos conectados (aparelho, app, usuário, último uso), encerrar uma ou todas; expiração de tokens parados (`RUSTYFIN_TOKEN_TTL_DAYS`, desligada por padrão).
+- [ ] Perfil oculto na tela de login e imagem de perfil.
+- [x] Painel: nome do servidor, intervalo do scan e limite de transcodificações simultâneas, aplicados na hora, sem reiniciar (têm prioridade sobre as variáveis de ambiente).
 
 ### Fase 3: Motor de Streaming Direto (Direct Play & Scrubbing) (Implementada, falta teste com cliente real)
 - [x] Implementação de **HTTP 206 Partial Content** com suporte completo a headers `Range` e `Content-Range`.

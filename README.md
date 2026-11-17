@@ -102,6 +102,7 @@ Um arquivo pertence à biblioteca da pasta mais específica que o contém; ao ex
 | `RUSTYFIN_PORT` / `RUSTYFIN_HOST` | `8096` / `0.0.0.0` | Endereço de escuta (use `127.0.0.1` para só localhost) |
 | `DATABASE_URL` | `sqlite://rustyfin.db?mode=rwc` | Banco SQLite |
 | `RUSTYFIN_MEDIA_DIRS` | `/media`, Vídeos do usuário, `./media` | Pastas de mídia, separadas por vírgula |
+| `RUSTYFIN_TOKEN_TTL_DAYS` | `0` (nunca) | Dias sem uso para um dispositivo perder o login e voltar à tela de entrada; as sessões aparecem em `/admin` → Sessões |
 | `RUSTYFIN_SCAN_CONCURRENCY` | núcleos (2–8) | Arquivos analisados em paralelo (ffprobe) na varredura |
 | `RUSTYFIN_SCAN_INTERVAL_SECS` | `300` | Scan automático periódico (`0` desativa; `POST /Library/Refresh` sempre funciona) |
 | `RUSTYFIN_WATCH` | `true` | Monitora as pastas por eventos do sistema de arquivos (novos/removidos aparecem em ~3 s). O scan periódico continua como reserva, útil em unidades de rede |

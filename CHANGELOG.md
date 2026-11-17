@@ -5,6 +5,13 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.9.0] - 2026-11-17
+
+### Adicionado
+- Aba **Sessões** no painel `/admin`: lista os dispositivos conectados (aparelho, app, usuário e último uso) e permite encerrar uma sessão ou todas. O token nunca é exposto.
+- Expiração de tokens sem uso (`RUSTYFIN_TOKEN_TTL_DAYS`; por padrão nunca expira).
+- Configurações do servidor no painel: nome (apps e descoberta automática), intervalo do scan e limite de transcodificações simultâneas. Aplicam-se na hora e têm prioridade sobre as variáveis de ambiente.
+
 ## [0.8.0] - 2026-11-17
 
 ### Adicionado
