@@ -5,6 +5,10 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+### Alterado
+- Compilar o projeto agora exige **Rust 1.85 ou mais novo** (edição 2024). A imagem Docker não é afetada.
+- Organização interna: biblioteca (`lib.rs`) separada do binário, `transcode` dividido em módulos, testes de integração em `tests/`, Clippy sem avisos na integração contínua e `AGENTS.md` com as diretrizes para agentes. Sem mudança de comportamento.
+
 ## [0.10.0] - 2026-11-17
 
 ### Adicionado

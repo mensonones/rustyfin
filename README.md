@@ -39,7 +39,7 @@ docker compose logs -f
 ## 💻 Executando Nativo no Host
 
 ### Pré-requisitos
-* Rust 1.80+ (`rustup`)
+* Rust 1.85+ (`rustup`)
 * GCC / MinGW (no Windows)
 
 ### Compilação e Execução
