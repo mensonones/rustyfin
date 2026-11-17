@@ -122,6 +122,13 @@
   .legendas .amostra { margin-top: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
   .legendas .amostra p { white-space: pre-wrap; overflow-wrap: anywhere; }
   .legendas .hint { margin-top: 8px; }
+  .revisoes { margin-bottom: 24px; }
+  .revisoes article { padding-block: 16px; border-top: 1px solid var(--line); }
+  .revisoes code { font-family: var(--mono); overflow-wrap: anywhere; }
+  .revisoes .row { margin-top: 12px; }
+  .revisoes .destino-revisao { margin: 8px 0; }
+  .revisoes .destino-revisao input { width: auto; margin-inline-end: 8px; }
+  .revisoes .destino-revisao span { display: block; color: var(--muted); }
   .mobile-nav { display: none; }
   @media (max-width: 600px) {
     header, main, .mobile-nav { padding-inline: 16px; }
@@ -174,6 +181,14 @@
       <button class="btn" id="scanBtn" disabled>Iniciar varredura</button>
       <button class="btn" id="retryScan" hidden>Tentar novamente</button>
     </div>
+    <details id="revisoesAcervo" class="card revisoes">
+      <summary><strong>Revisar alterações</strong></summary>
+      <p class="hint">Confira substituições e possíveis correspondências antes de transferir
+        favoritos e marcações de assistido. A posição de reprodução fica fora da transferência.</p>
+      <button class="btn small" id="recarregarRevisoes" type="button">Atualizar fila</button>
+      <p id="mensagemRevisoes" class="hint" role="status"></p>
+      <div id="listaRevisoes"></div>
+    </details>
     <div id="libs" class="records"></div>
   </section>
 
@@ -513,7 +528,105 @@ window.addEventListener('hashchange', abrirAba);
 // ---- bibliotecas
 const typeLabel = { movies: 'Filmes', tvshows: 'Séries' };
 let bibliotecasExibidas;
+// ---- revisão de alterações do acervo
+const motivosRevisao = {
+  substituido: 'O conteúdo mudou no mesmo caminho.',
+  mesmo_conteudo: 'O mesmo conteúdo existe em outro caminho. Escolha o destino, se for o caso.',
+  possivel_edicao: 'O nome e os dados do arquivo sugerem outra versão do mesmo título.',
+};
+const rotaRevisoes = '/admin/api/acervo/revisoes';
+let requisicaoRevisoes = 0;
+const duracaoRevisao = (ticks) => {
+  if (!ticks) return 'Duração indisponível';
+  const segundos = Math.round(ticks / 10000000);
+  return Math.floor(segundos / 60) + ' min ' + (segundos % 60) + ' s';
+};
+async function decidirRevisao(revisao, acao, controles) {
+  const mensagem = acao.acao === 'transferir'
+    ? 'Transferir favoritos e marcações de assistido para o destino escolhido?'
+    : 'Encerrar esta revisão e manter os itens separados?';
+  if (!confirm(mensagem)) return;
+  for (const campo of controles) campo.disabled = true;
+  try {
+    await api('POST', rotaRevisoes + '/' + encodeURIComponent(revisao.id), acao);
+    await carregarRevisoes();
+    toast(acao.acao === 'transferir' ? 'Estado transferido.' : 'Revisão encerrada.');
+  } catch (erro) {
+    if (erro.status === 404 || erro.status === 409) {
+      await carregarRevisoes();
+      toast('A revisão ou o destino mudou. Confira a fila atualizada.', true);
+    } else {
+      toast(mensagemErro(erro), true);
+    }
+  } finally {
+    for (const campo of controles) campo.disabled = false;
+  }
+}
+function montarRevisao(revisao) {
+  const disponiveis = [];
+  const opcoes = revisao.destinos.map((destino, indice) => {
+    const identificador = 'destino-' + revisao.id + '-' + indice;
+    const radio = el('input', {
+      type: 'radio', id: identificador, name: 'destino-' + revisao.id,
+      value: destino.itemId || '', disabled: !destino.itemId,
+    });
+    if (destino.itemId) disponiveis.push(radio);
+    return el('label', { className: 'destino-revisao', htmlFor: identificador },
+      radio, destino.titulo || 'Destino indisponível',
+      el('span', {}, el('code', { textContent: destino.caminho }),
+        ' / ' + duracaoRevisao(destino.duracaoTicks)));
+  });
+  const transferir = el('button', {
+    type: 'button', className: 'btn primary', textContent: 'Transferir estado', disabled: true,
+  });
+  const separar = el('button', {
+    type: 'button', className: 'btn', textContent: 'Manter separados',
+  });
+  const controles = [transferir, separar, ...disponiveis];
+  for (const radio of disponiveis) radio.onchange = () => { transferir.disabled = false; };
+  if (disponiveis.length === 1) {
+    disponiveis[0].checked = true;
+    transferir.disabled = false;
+  }
+  transferir.onclick = () => {
+    const itemId = disponiveis.find((r) => r.checked)?.value;
+    if (itemId) decidirRevisao(revisao, { acao: 'transferir', itemId }, controles);
+  };
+  separar.onclick = () => decidirRevisao(revisao, { acao: 'manterSeparados' },
+    controles.filter((campo) => !campo.disabled));
+  return el('article', {},
+    el('h3', { textContent: revisao.titulo }),
+    el('p', { className: 'hint', textContent: motivosRevisao[revisao.motivo] }),
+    el('p', {}, 'Arquivo anterior: ', el('code', { textContent: revisao.caminho }),
+      ' / ' + duracaoRevisao(revisao.duracaoTicks)),
+    el('p', { className: 'hint', textContent: revisao.perfis === 1
+      ? '1 perfil com estado transferível' : revisao.perfis + ' perfis com estado transferível' }),
+    el('fieldset', {}, el('legend', { textContent: 'Novo arquivo' }), ...opcoes),
+    el('div', { className: 'row' }, transferir, separar));
+}
+async function carregarRevisoes() {
+  const atual = ++requisicaoRevisoes;
+  $('recarregarRevisoes').disabled = true;
+  const mensagem = $('mensagemRevisoes');
+  mensagem.textContent = 'Carregando alterações…';
+  try {
+    const revisoes = await api('GET', rotaRevisoes);
+    if (atual !== requisicaoRevisoes) return;
+    $('listaRevisoes').replaceChildren(...revisoes.map(montarRevisao));
+    mensagem.textContent = revisoes.length ? '' : 'Nenhuma alteração para revisar.';
+  } catch (erro) {
+    if (atual === requisicaoRevisoes) {
+      mensagem.textContent = 'Falha ao carregar a fila. ' + mensagemErro(erro);
+    }
+  } finally {
+    if (atual === requisicaoRevisoes) $('recarregarRevisoes').disabled = false;
+  }
+}
+$('recarregarRevisoes').onclick = carregarRevisoes;
+$('revisoesAcervo').ontoggle = () => { if ($('revisoesAcervo').open) carregarRevisoes(); };
+
 async function loadLibs() {
+  if ($('revisoesAcervo').open) carregarRevisoes();
   const libs = await api('GET', '/admin/api/folders');
   const dados = JSON.stringify(libs);
   if (dados === bibliotecasExibidas) return;

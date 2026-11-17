@@ -386,7 +386,7 @@ async fn coletar_lotes(libraries: &[Library]) -> (Vec<Lote>, bool) {
     (lotes, all_dirs_ok)
 }
 
-async fn indexar_lote(pool: &DbPool, lote: Lote) {
+async fn indexar_lote(pool: &DbPool, lote: Lote, substituicoes: &HashSet<String>) {
     // ffprobe domina o custo: processa vários arquivos ao mesmo tempo (limitado).
     let refs = Arc::new(lote.refs);
     let gate = Arc::new(tokio::sync::Semaphore::new(scan_concurrency()));
@@ -397,12 +397,15 @@ async fn indexar_lote(pool: &DbPool, lote: Lote) {
         let (pool, refs, gate) = (pool.clone(), refs.clone(), gate.clone());
         let folder_art = folder_art.clone();
         let listings = listings.clone();
+        let substituir = substituicoes.contains(path.to_string_lossy().as_ref());
         tasks.spawn(async move {
             let Ok(_permit) = gate.acquire_owned().await else {
                 return;
             };
             if let Err(err) =
-                process_media_file(&pool, &path, &parsed, &refs, &folder_art, &listings).await
+                process_media_file(
+                    &pool, &path, &parsed, &refs, &folder_art, &listings, substituir,
+                ).await
             {
                 error!("Erro ao processar {}: {}", path.display(), err);
             }
@@ -430,32 +433,40 @@ pub async fn run_scan(pool: &DbPool, libraries: &[Library]) -> usize {
         });
     }
 
-    let verificacao = match identidade::preparar(pool, vistos.keys().cloned().collect()).await {
-        Ok(resultado) => {
-            all_dirs_ok &= resultado.completa;
-            if all_dirs_ok {
-                if let Err(erro) = resultado.mover(pool, &vistos).await {
-                    error!("Falha ao reassociar arquivos movidos: {erro}");
-                    all_dirs_ok = false;
-                }
-            }
-            Some(resultado)
-        }
+    let mut verificacao = match identidade::preparar(pool, vistos.keys().cloned().collect()).await {
+        Ok(resultado) => resultado,
         Err(erro) => {
             error!("Falha ao verificar identidades de mídia: {erro}");
-            all_dirs_ok = false;
-            None
+            return vistos.len();
         }
     };
-
-    for lote in lotes {
-        indexar_lote(pool, lote).await;
-    }
-    if let Some(resultado) = verificacao {
-        if let Err(erro) = resultado.salvar(pool).await {
-            error!("Falha ao salvar assinaturas de mídia: {erro}");
+    all_dirs_ok &= verificacao.completa;
+    if all_dirs_ok {
+        if let Err(erro) = verificacao.mover(pool, &vistos).await {
+            error!("Falha ao reassociar arquivos movidos: {erro}");
             all_dirs_ok = false;
         }
+    }
+    if all_dirs_ok {
+        if let Err(erro) = verificacao.publicar_revisoes(pool).await {
+            error!("Falha ao preparar as revisões do acervo: {erro}");
+            all_dirs_ok = false;
+        }
+    }
+    let substituicoes = verificacao.substituicoes();
+    if !all_dirs_ok {
+        verificacao.suspender_substituicoes(&substituicoes);
+        for lote in &mut lotes {
+            lote.arquivos
+                .retain(|(path, _)| !substituicoes.contains(path.to_string_lossy().as_ref()));
+        }
+    }
+    for lote in lotes {
+        indexar_lote(pool, lote, &substituicoes).await;
+    }
+    if let Err(erro) = verificacao.salvar(pool).await {
+        error!("Falha ao salvar assinaturas de mídia: {erro}");
+        all_dirs_ok = false;
     }
 
     // Só remove órfãos se todas as pastas foram lidas (evita apagar tudo com um drive desmontado).
@@ -504,6 +515,7 @@ async fn process_media_file(
     libs: &[LibRef],
     folder_art: &FolderArt,
     listings: &DirListings,
+    substituir: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let path_str = path.to_string_lossy().to_string();
     let library_id = libraries::pick_library(libs, matches!(parsed.kind, Kind::Episode { .. }));
@@ -546,9 +558,14 @@ async fn process_media_file(
 
     let item_id = if let Some((id, ..)) = existing {
         id
+    } else if substituir {
+        Uuid::new_v4().simple().to_string()
     } else {
         let inicial = item_id_for_path(&path_str);
-        let ocupado: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM items WHERE id = ?)")
+        let ocupado: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM items WHERE id = ?1 \
+             UNION ALL SELECT 1 FROM media_reviews WHERE id = ?1)",
+        )
             .bind(&inicial)
             .fetch_one(pool)
             .await?;
@@ -869,15 +886,15 @@ mod tests {
                 .fetch_one(&pool)
         };
 
-        process_media_file(&pool, &video, &parser::parse_path(&video), &[], &FolderArt::new(), &DirListings::new()).await.unwrap();
+        process_media_file(&pool, &video, &parser::parse_path(&video), &[], &FolderArt::new(), &DirListings::new(), false).await.unwrap();
         assert_eq!(read_subtitle().await.unwrap(), None);
 
         std::fs::write(&subtitle, b"x").unwrap();
-        process_media_file(&pool, &video, &parser::parse_path(&video), &[], &FolderArt::new(), &DirListings::new()).await.unwrap();
+        process_media_file(&pool, &video, &parser::parse_path(&video), &[], &FolderArt::new(), &DirListings::new(), false).await.unwrap();
         assert_eq!(read_subtitle().await.unwrap().as_deref(), subtitle.to_str());
 
         std::fs::remove_file(&subtitle).unwrap();
-        process_media_file(&pool, &video, &parser::parse_path(&video), &[], &FolderArt::new(), &DirListings::new()).await.unwrap();
+        process_media_file(&pool, &video, &parser::parse_path(&video), &[], &FolderArt::new(), &DirListings::new(), false).await.unwrap();
         assert_eq!(read_subtitle().await.unwrap(), None);
         std::fs::remove_dir_all(dir).unwrap();
     }

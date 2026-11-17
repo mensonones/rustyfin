@@ -43,6 +43,29 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
             PRIMARY KEY (item_id, track_index)
         );
 
+        CREATE TABLE IF NOT EXISTS media_reviews (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            path TEXT NOT NULL,
+            duration_ticks INTEGER,
+            reason TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS media_review_targets (
+            review_id TEXT NOT NULL REFERENCES media_reviews(id) ON DELETE CASCADE,
+            path TEXT NOT NULL,
+            content_sha256 BLOB NOT NULL,
+            PRIMARY KEY (review_id, path)
+        );
+
+        CREATE TABLE IF NOT EXISTS media_review_state (
+            review_id TEXT NOT NULL REFERENCES media_reviews(id) ON DELETE CASCADE,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            is_played BOOLEAN NOT NULL,
+            is_favorite BOOLEAN NOT NULL,
+            PRIMARY KEY (review_id, user_id)
+        );
+
         CREATE TABLE IF NOT EXISTS playback_state (
             user_id TEXT NOT NULL,
             item_id TEXT NOT NULL,

@@ -54,6 +54,7 @@ sobe em segundos e usa **poucas dezenas de megabytes de memória**.
 
 **Administração**
 - Painel web em `/admin`: bibliotecas, usuários e permissões, dispositivos conectados e configurações, sem reiniciar.
+- [Revisão de alterações do acervo](docs/arquitetura.md#revisar-alterações-do-acervo) para transferir favoritos e marcações de assistido ao confirmar um novo arquivo.
 - Vários usuários, cada um com progresso e favoritos próprios, acesso por biblioteca, foto de perfil e perfil oculto.
 - Descoberta automática na rede (UDP 7359): o app encontra o servidor sozinho.
 
@@ -100,7 +101,7 @@ cargo run --release
 
 <table>
   <tr>
-    <td><img src="docs/assets/painel-bibliotecas.jpg" alt="Bibliotecas"></td>
+    <td><img src="docs/assets/painel-bibliotecas.jpg" alt="Bibliotecas com a fila Revisar alterações aberta"></td>
     <td><img src="docs/assets/painel-usuarios.jpg" alt="Usuários"></td>
   </tr>
   <tr>

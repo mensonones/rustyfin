@@ -99,6 +99,19 @@ Cópias que já foram indexadas separadamente mantêm IDs próprios. A associaç
 uma varredura completa. Arquivos reencodados, editados ou com metadados internos alterados
 têm outra impressão digital.
 
+### Revisar alterações do acervo
+
+Em **Bibliotecas → Revisar alterações**, o painel mostra arquivos substituídos no mesmo caminho,
+origens ausentes com cópias conhecidas e possíveis edições identificadas pelo nome de filme ou
+pelos dados de série, temporada e episódio. Quando ambos os anos são conhecidos, eles precisam
+coincidir para o scanner sugerir uma edição em outro caminho. Cada revisão lista até 12 destinos.
+
+A fila guarda uma cópia dos favoritos e das marcações de assistido dos perfis. Ao confirmar um
+destino, o Rustyfin combina esses marcadores com os que já existem nele e preserva a posição
+do destino. A posição do arquivo anterior, a contagem de reproduções e os ajustes de legenda
+ficam fora da transferência. **Manter separados** encerra a revisão e descarta a cópia dos
+marcadores da origem. As duas ações deixam os arquivos de mídia intactos.
+
 ## Decisões de projeto
 
 - **Compatibilidade antes de tudo:** os DTOs seguem o contrato do Jellyfin e, onde um cliente exige um comportamento

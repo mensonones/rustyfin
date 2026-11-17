@@ -9,6 +9,7 @@ use crate::{
     db::DbPool,
     libraries::{self, LibError, Library},
     library::{self, ScanTrigger},
+    revisao_acervo::{self, Resolucao, Revisao},
     settings, transcode,
     users::{self, PolicyUpdate},
 };
@@ -58,6 +59,8 @@ pub fn router(config: Arc<AppConfig>, pool: DbPool, scan: ScanTrigger) -> Router
                 .put(super::legendas_admin::salvar)
                 .delete(super::legendas_admin::excluir),
         )
+        .route("/admin/api/acervo/revisoes", get(listar_revisoes))
+        .route("/admin/api/acervo/revisoes/:id", post(resolver_revisao))
         .route("/admin/api/settings", get(get_settings).put(put_settings))
         .route("/admin/api/browse", get(browse))
         .route("/admin/api/scan", post(scan_now))
@@ -523,6 +526,39 @@ async fn logo_dark() -> impl IntoResponse {
 
 async fn logo() -> impl IntoResponse {
     ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=86400")], include_bytes!("../assets/icon.png").as_slice())
+}
+
+async fn listar_revisoes(State(st): State<AdminState>) -> Result<Json<Vec<Revisao>>, StatusCode> {
+    revisao_acervo::listar(&st.pool).await.map(Json).map_err(|erro| {
+        tracing::error!("Falha ao listar revisões do acervo: {erro}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "acao", rename_all = "camelCase", rename_all_fields = "camelCase")]
+enum AcaoRevisao {
+    Transferir { item_id: String },
+    ManterSeparados,
+}
+
+async fn resolver_revisao(
+    State(st): State<AdminState>, axum::extract::Path(id): axum::extract::Path<String>,
+    Json(acao): Json<AcaoRevisao>,
+) -> Result<StatusCode, StatusCode> {
+    let destino = match &acao {
+        AcaoRevisao::Transferir { item_id } => Some(item_id.as_str()),
+        AcaoRevisao::ManterSeparados => None,
+    };
+    match revisao_acervo::resolver(&st.pool, &id, destino).await {
+        Ok(Resolucao::Aplicada) => Ok(StatusCode::NO_CONTENT),
+        Ok(Resolucao::RevisaoAusente) => Err(StatusCode::NOT_FOUND),
+        Ok(Resolucao::DestinoIndisponivel) => Err(StatusCode::CONFLICT),
+        Err(erro) => {
+            tracing::error!("Falha ao resolver revisão do acervo: {erro}");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 async fn scan_now(State(st): State<AdminState>) -> StatusCode {

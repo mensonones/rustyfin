@@ -1,4 +1,8 @@
-use crate::db::DbPool;
+use crate::{
+    db::DbPool,
+    parser::{self, Kind},
+    revisao_acervo::{self, Sugestao},
+};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
@@ -27,6 +31,7 @@ struct Assinatura {
 pub(super) struct Verificacao {
     recalculadas: HashMap<String, Assinatura>,
     movimentos: Vec<(String, String, String)>,
+    revisoes: Vec<Sugestao>,
     pub(super) completa: bool,
 }
 
@@ -122,17 +127,17 @@ fn verificar(caminhos: &[String], catalogo: Vec<Catalogado>) -> Verificacao {
             }
         }
     }
-    let movimentos = ausentes
-        .into_iter()
+    let movimentos: Vec<_> = ausentes
+        .iter()
         .filter_map(|(hash, origens)| {
             let [origem] = origens.as_slice() else {
                 return None;
             };
-            let [destino] = por_assinatura.get(hash)?.as_slice() else {
+            let [destino] = por_assinatura.get(*hash)?.as_slice() else {
                 return None;
             };
             if catalogo.contains_key(*destino) {
-                // Um arquivo que já tinha identidade própria continua sendo uma cópia independente.
+                // Uma cópia já conhecida pode ser escolhida manualmente na revisão.
                 return None;
             }
             Some((
@@ -142,11 +147,115 @@ fn verificar(caminhos: &[String], catalogo: Vec<Catalogado>) -> Verificacao {
             ))
         })
         .collect();
+    for caminhos in por_assinatura.values_mut().filter(|c| c.len() > 1) {
+        caminhos.sort_unstable();
+    }
+    let revisoes = sugerir_revisoes(
+        &catalogo,
+        &recalculadas,
+        &ausentes,
+        &por_assinatura,
+        &movimentos,
+    );
     Verificacao {
         recalculadas,
         movimentos,
+        revisoes,
         completa,
     }
+}
+
+#[derive(PartialEq, Eq, Hash)]
+enum Chave {
+    Filme(String),
+    Episodio(String, i32, i32),
+}
+
+fn chave(caminho: &str) -> (Chave, Option<i32>) {
+    let parsed = parser::parse_path(Path::new(caminho));
+    let chave = match parsed.kind {
+        Kind::Movie => Chave::Filme(parsed.title.to_lowercase()),
+        Kind::Episode {
+            series,
+            season,
+            episode,
+        } => Chave::Episodio(series.to_lowercase(), season, episode),
+    };
+    (chave, parsed.year)
+}
+
+fn sugerir_revisoes(
+    catalogo: &HashMap<String, Catalogado>,
+    recalculadas: &HashMap<String, Assinatura>,
+    ausentes: &HashMap<&[u8], Vec<&Catalogado>>,
+    por_assinatura: &HashMap<Vec<u8>, Vec<&str>>,
+    movimentos: &[(String, String, String)],
+) -> Vec<Sugestao> {
+    let mut novos = HashMap::<Chave, Vec<(&str, Option<i32>, &[u8])>>::new();
+    let mut revisoes = Vec::new();
+    for (caminho, assinatura) in recalculadas {
+        if let Some(item) = catalogo.get(caminho) {
+            if item
+                .content_sha256
+                .as_ref()
+                .is_some_and(|hash| *hash != assinatura.sha256)
+            {
+                revisoes.push(Sugestao {
+                    id: item.id.clone(),
+                    caminho: caminho.clone(),
+                    motivo: "substituido",
+                    destinos: vec![(caminho.clone(), assinatura.sha256.clone())],
+                });
+            }
+        } else {
+            let (chave, ano) = chave(caminho);
+            novos
+                .entry(chave)
+                .or_default()
+                .push((caminho, ano, &assinatura.sha256));
+        }
+    }
+
+    let movidos: HashSet<_> = movimentos.iter().map(|(id, _, _)| id.as_str()).collect();
+    for (hash, origens) in ausentes {
+        for item in origens {
+            if movidos.contains(item.id.as_str()) {
+                continue;
+            }
+            let (motivo, mut destinos) = if let Some(caminhos) = por_assinatura.get(*hash) {
+                let destinos = caminhos
+                    .iter()
+                    .take(12)
+                    .map(|c| (*c, *hash))
+                    .collect::<Vec<_>>();
+                ("mesmo_conteudo", destinos)
+            } else {
+                let (chave, ano) = chave(&item.path);
+                let destinos = novos
+                    .get(&chave)
+                    .into_iter()
+                    .flatten()
+                    .filter(|(_, outro, _)| ano.is_none() || outro.is_none() || ano == *outro)
+                    .map(|(caminho, _, hash)| (*caminho, *hash))
+                    .collect();
+                ("possivel_edicao", destinos)
+            };
+            destinos.sort_unstable_by_key(|(caminho, _)| *caminho);
+            destinos.truncate(12);
+            if !destinos.is_empty() {
+                revisoes.push(Sugestao {
+                    id: item.id.clone(),
+                    caminho: item.path.clone(),
+                    motivo,
+                    destinos: destinos
+                        .into_iter()
+                        .map(|(c, h)| (c.to_owned(), h.to_vec()))
+                        .collect(),
+                });
+            }
+        }
+    }
+    revisoes
 }
 
 pub(super) async fn preparar(
@@ -198,6 +307,48 @@ impl Verificacao {
         for (_, origem, destino) in &self.movimentos {
             info!("Arquivo movido: {origem} → {destino}");
         }
+        Ok(())
+    }
+
+    pub(super) fn substituicoes(&self) -> HashSet<String> {
+        self.revisoes
+            .iter()
+            .filter(|r| r.motivo == "substituido")
+            .map(|r| r.caminho.clone())
+            .collect()
+    }
+
+    pub(super) fn suspender_substituicoes(&mut self, suspensas: &HashSet<String>) {
+        self.recalculadas
+            .retain(|caminho, _| !suspensas.contains(caminho));
+    }
+
+    pub(super) async fn publicar_revisoes(
+        &self,
+        pool: &DbPool,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if self.revisoes.is_empty() {
+            return Ok(());
+        }
+        for sugestao in &self.revisoes {
+            if sugestao.motivo == "substituido" {
+                let assinatura = self
+                    .recalculadas
+                    .get(&sugestao.caminho)
+                    .ok_or_else(|| io::Error::other("Assinatura da substituição ausente"))?;
+                let (mtime, tamanho) = estado(&tokio::fs::metadata(&sugestao.caminho).await?)?;
+                if mtime != assinatura.mtime || tamanho != assinatura.tamanho {
+                    return Err(io::Error::other("A substituição mudou durante a varredura").into());
+                }
+            } else if tokio::fs::try_exists(&sugestao.caminho).await? {
+                return Err(io::Error::other("A origem reapareceu durante a varredura").into());
+            }
+        }
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        for sugestao in &self.revisoes {
+            revisao_acervo::arquivar(&mut tx, sugestao).await?;
+        }
+        tx.commit().await?;
         Ok(())
     }
 

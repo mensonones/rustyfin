@@ -130,8 +130,8 @@ ou convites pela internet.
 - [x] **Identidade estável ao mover arquivos.** Preservar ID, progresso e favoritos quando
   o mesmo conteúdo reaparece em um único caminho novo. Cópias e correspondências ambíguas
   mantêm identidades separadas.
-- [ ] **Revisão de alterações do acervo.** Mostrar substituições de arquivo e associações
-  ambíguas para revisão no painel.
+- [x] **Revisão de alterações do acervo.** Exibir substituições e possíveis edições no
+  painel e permitir transferir favoritos e marcações de assistido para um destino escolhido.
 - [x] **Correção de legendas SRT.** Salvar atraso e desvio de tempo por arquivo e faixa,
   com prévia em dois pontos e opção de restaurar o original.
 

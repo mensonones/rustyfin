@@ -329,3 +329,61 @@ async fn ajuste_srt_persiste_e_a_faixa_original_pode_ser_restaurada() {
     let (_, bytes) = corpo(&app, Method::GET, &format!("{stream}.srt"), Some(&token), None).await;
     assert_eq!(bytes.as_ref(), original.as_bytes());
 }
+
+
+#[tokio::test]
+async fn revisao_de_substituicao_transfere_marcadores_sem_sobrescrever_posicao() {
+    let s = server("revisao-acervo").await;
+    let pool = db::init_db(&test_config(&s.dir).database_url).await.unwrap();
+    let midia = s.dir.join("midia");
+    std::fs::create_dir(&midia).unwrap();
+    let caminho = midia.join("Filme (2024).mp4");
+    std::fs::write(&caminho, b"edicao anterior").unwrap();
+    let libs = [Library {
+        id: "filmes".into(), name: "Filmes".into(), collection_type: "movies".into(),
+        paths: vec![midia.to_str().unwrap().into()],
+    }];
+    assert_eq!(scanner::run_scan(&pool, &libs).await, 1);
+    let antigo = scanner::item_id_for_path(caminho.to_str().unwrap());
+    let token = login(&s.app, "Admin").await;
+    for rota in [format!("/UserFavoriteItems/{antigo}"), format!("/UserPlayedItems/{antigo}")] {
+        let (status, _) = call(&s.app, Method::POST, &rota, Some(&token), None).await;
+        assert!(status.is_success(), "{rota}: {status}");
+    }
+
+    std::fs::write(&caminho, b"outra edicao com duracao diferente").unwrap();
+    assert_eq!(scanner::run_scan(&pool, &libs).await, 1);
+    let (status, fila) = call(&s.app, Method::GET, "/admin/api/acervo/revisoes", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(fila.as_array().unwrap().len(), 1);
+    assert_eq!(fila[0]["id"], antigo);
+    assert_eq!(fila[0]["motivo"], "substituido");
+    let novo = fila[0]["destinos"][0]["itemId"].as_str().unwrap();
+    assert_ne!(novo, antigo);
+
+    let (status, _) = call(
+        &s.app, Method::POST, "/Sessions/Playing/Progress", Some(&token),
+        Some(json!({ "ItemId": novo, "PositionTicks": 50_000_000_i64 })),
+    ).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let rota = format!("/admin/api/acervo/revisoes/{antigo}");
+    let (status, _) = call(
+        &s.app, Method::POST, &rota, None,
+        Some(json!({ "acao": "transferir", "itemId": "outro" })),
+    ).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (status, _) = call(
+        &s.app, Method::POST, &rota, None,
+        Some(json!({ "acao": "transferir", "itemId": novo })),
+    ).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, item) = call(
+        &s.app, Method::GET, &format!("/Items/{novo}"), Some(&token), None,
+    ).await;
+    assert_eq!(item["UserData"]["IsFavorite"], true);
+    assert_eq!(item["UserData"]["Played"], true);
+    assert_eq!(item["UserData"]["PlaybackPositionTicks"], 50_000_000_i64);
+    assert_eq!(scanner::run_scan(&pool, &libs).await, 1);
+    let (_, fila) = call(&s.app, Method::GET, "/admin/api/acervo/revisoes", None, None).await;
+    assert_eq!(fila, json!([]));
+}

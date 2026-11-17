@@ -5,6 +5,12 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.15.0] - 2026-11-17
+
+### Adicionado
+- Fila de revisão em Bibliotecas para substituições, cópias ambíguas e possíveis novas edições.
+  O administrador pode transferir favoritos e marcações de assistido para um destino confirmado.
+
 ## [0.14.0] - 2026-11-17
 
 ### Adicionado
