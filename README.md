@@ -173,4 +173,4 @@ correspondentes do TMDB.
 
 Licença [MIT](LICENSE). Versões seguem [SemVer](https://semver.org/lang/pt-BR/) e as mudanças ficam no [CHANGELOG](CHANGELOG.md); cada versão é marcada com uma tag `vX.Y.Z`.
 
-O [guia de contribuição](CONTRIBUTING.md) descreve o padrão de commits e como ativar a validação local.
+O [guia de contribuição](CONTRIBUTING.md) descreve o padrão de commits e como ativar a validação local. O [`AGENTS.md`](AGENTS.md) reúne as instruções para agentes de IA (estilo, erros, `unsafe`, lints e fluxo de trabalho).

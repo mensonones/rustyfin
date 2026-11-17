@@ -1,6 +1,6 @@
 # Rustyfin AI Agent Rules
 
-Always adhere strictly to the standards defined in `RUST_STANDARDS.md`.
+Always adhere strictly to the standards defined in `RUST_STANDARDS.md` and `AGENTS.md`.
 
 Key directives:
 1. Axum 0.7 routes must use `:param` (not `{param}`).
@@ -10,3 +10,4 @@ Key directives:
 5. SQLite must operate with `PRAGMA journal_mode = WAL;`.
 6. No `unwrap()` or `expect()` in API route handlers or long-running tasks.
 7. Run `cargo check` after any code modifications.
+8. Keep `cargo clippy --all-targets` free of warnings (edition 2024, clippy pedantic); every `unsafe` needs a `// SAFETY:` comment.
