@@ -387,3 +387,50 @@ async fn revisao_de_substituicao_transfere_marcadores_sem_sobrescrever_posicao()
     let (_, fila) = call(&s.app, Method::GET, "/admin/api/acervo/revisoes", None, None).await;
     assert_eq!(fila, json!([]));
 }
+
+
+#[tokio::test]
+async fn retomada_mapeia_3210_para_3255_e_protege_posicao_atualizada() {
+    let s = server("retomada").await;
+    let pool = db::init_db(&test_config(&s.dir).database_url).await.unwrap();
+    let token = login(&s.app, "Admin").await;
+    sqlx::query(
+        "INSERT INTO items (id, name, path, media_type, duration_ticks, content_sha256)
+         VALUES ('nova', 'Edição nova', '/media/nova.mp4', 'Movie', 25000000000, X'01');
+         INSERT INTO media_reviews VALUES ('antiga', 'Edição antiga', '/media/antiga.mp4',
+                                          24000000000, 'possivel_edicao');
+         INSERT INTO media_review_targets VALUES ('antiga', '/media/nova.mp4', X'01');
+         INSERT INTO media_review_state
+         SELECT 'antiga', id, 0, 1, 19300000000 FROM users WHERE name = 'Admin';",
+    ).execute(&pool).await.unwrap();
+    let rota = "/admin/api/acervo/revisoes/antiga";
+    let (status, previa) = call(
+        &s.app, Method::POST, &format!("{rota}/previa"), None,
+        Some(json!({
+            "itemId": "nova",
+            "mapa": { "anteriorA": 0, "novoA": 450_000_000_i64,
+                      "anteriorB": 24_000_000_000_i64, "novoB": 24_450_000_000_i64 }
+        })),
+    ).await;
+    assert_eq!(status, StatusCode::OK);
+    let posicao = &previa["posicoes"][0];
+    assert_eq!(posicao["sugerida"], 19_750_000_000_i64);
+    let mut pedido = json!({
+        "acao": "transferir", "itemId": "nova",
+        "retomadas": [{ "perfilId": posicao["perfilId"], "posicaoTicks": posicao["sugerida"],
+                        "posicaoEsperadaTicks": 0 }]
+    });
+    let (status, _) = call(
+        &s.app, Method::POST, "/Sessions/Playing/Progress", Some(&token),
+        Some(json!({ "ItemId": "nova", "PositionTicks": 50_000_000_i64 })),
+    ).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = call(&s.app, Method::POST, rota, None, Some(pedido.clone())).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    pedido["retomadas"][0]["posicaoEsperadaTicks"] = json!(50_000_000_i64);
+    let (status, _) = call(&s.app, Method::POST, rota, None, Some(pedido)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, item) = call(&s.app, Method::GET, "/Items/nova", Some(&token), None).await;
+    assert_eq!(item["UserData"]["PlaybackPositionTicks"], 19_750_000_000_i64);
+    assert_eq!(item["UserData"]["IsFavorite"], true);
+}

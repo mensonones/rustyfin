@@ -135,9 +135,12 @@ ou convites pela internet.
 - [x] **Correção de legendas SRT.** Salvar atraso e desvio de tempo por arquivo e faixa,
   com prévia em dois pontos e opção de restaurar o original.
 
+- [x] **Retomar entre edições com dois pontos.** Mapear e confirmar a posição por perfil,
+  com opção de indicar um tempo manualmente para cenas cortadas ou fora do intervalo.
+
 ### Pesquisa de produto
 
-- [ ] **Continuar pela cena ao trocar de edição.** Alinhar cenas com trechos de áudio em comum.
+- [ ] **Alinhamento automático entre edições.** Alinhar cenas com trechos de áudio em comum.
   Usar a posição equivalente só quando houver confiança suficiente na correspondência.
 - [ ] **Preparar versões a partir das sessões.** Recomendar conversões que se repetem nos
   dispositivos locais, com orçamento de disco, pausa durante reprodução e originais preservados.

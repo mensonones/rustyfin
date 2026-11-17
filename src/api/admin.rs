@@ -9,7 +9,7 @@ use crate::{
     db::DbPool,
     libraries::{self, LibError, Library},
     library::{self, ScanTrigger},
-    revisao_acervo::{self, Resolucao, Revisao},
+    revisao_acervo::{self, MapaRetomada, Previa, Resolucao, Retomada, Revisao},
     settings, transcode,
     users::{self, PolicyUpdate},
 };
@@ -60,6 +60,7 @@ pub fn router(config: Arc<AppConfig>, pool: DbPool, scan: ScanTrigger) -> Router
                 .delete(super::legendas_admin::excluir),
         )
         .route("/admin/api/acervo/revisoes", get(listar_revisoes))
+        .route("/admin/api/acervo/revisoes/:id/previa", post(prever_retomada))
         .route("/admin/api/acervo/revisoes/:id", post(resolver_revisao))
         .route("/admin/api/settings", get(get_settings).put(put_settings))
         .route("/admin/api/browse", get(browse))
@@ -538,7 +539,11 @@ async fn listar_revisoes(State(st): State<AdminState>) -> Result<Json<Vec<Revisa
 #[derive(serde::Deserialize)]
 #[serde(tag = "acao", rename_all = "camelCase", rename_all_fields = "camelCase")]
 enum AcaoRevisao {
-    Transferir { item_id: String },
+    Transferir {
+        item_id: String,
+        #[serde(default)]
+        retomadas: Vec<Retomada>,
+    },
     ManterSeparados,
 }
 
@@ -546,19 +551,50 @@ async fn resolver_revisao(
     State(st): State<AdminState>, axum::extract::Path(id): axum::extract::Path<String>,
     Json(acao): Json<AcaoRevisao>,
 ) -> Result<StatusCode, StatusCode> {
-    let destino = match &acao {
-        AcaoRevisao::Transferir { item_id } => Some(item_id.as_str()),
-        AcaoRevisao::ManterSeparados => None,
+    let (destino, retomadas) = match &acao {
+        AcaoRevisao::Transferir { item_id, retomadas } => {
+            (Some(item_id.as_str()), retomadas.as_slice())
+        }
+        AcaoRevisao::ManterSeparados => (None, [].as_slice()),
     };
-    match revisao_acervo::resolver(&st.pool, &id, destino).await {
+    match revisao_acervo::resolver(&st.pool, &id, destino, retomadas).await {
         Ok(Resolucao::Aplicada) => Ok(StatusCode::NO_CONTENT),
-        Ok(Resolucao::RevisaoAusente) => Err(StatusCode::NOT_FOUND),
-        Ok(Resolucao::DestinoIndisponivel) => Err(StatusCode::CONFLICT),
+        Ok(erro) => Err(status_revisao(erro)),
         Err(erro) => {
             tracing::error!("Falha ao resolver revisão do acervo: {erro}");
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
+}
+
+fn status_revisao(erro: Resolucao) -> StatusCode {
+    match erro {
+        Resolucao::RevisaoAusente => StatusCode::NOT_FOUND,
+        Resolucao::DestinoIndisponivel | Resolucao::PosicaoAlterada => StatusCode::CONFLICT,
+        Resolucao::RetomadaInvalida => StatusCode::BAD_REQUEST,
+        Resolucao::Aplicada => StatusCode::NO_CONTENT,
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConsultaRetomada {
+    item_id: String,
+    mapa: Option<MapaRetomada>,
+}
+
+async fn prever_retomada(
+    State(st): State<AdminState>, axum::extract::Path(id): axum::extract::Path<String>,
+    Json(consulta): Json<ConsultaRetomada>,
+) -> Result<Json<Previa>, StatusCode> {
+    revisao_acervo::previa(&st.pool, &id, &consulta.item_id, consulta.mapa.as_ref())
+        .await
+        .map_err(|erro| {
+            tracing::error!("Falha ao calcular a retomada: {erro}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .map(Json)
+        .map_err(status_revisao)
 }
 
 async fn scan_now(State(st): State<AdminState>) -> StatusCode {

@@ -5,6 +5,12 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.16.0] - 2026-11-17
+
+### Adicionado
+- Mapeamento manual de retomada entre edições na revisão do acervo, com dois pontos,
+  prévia por perfil e confirmação de cada posição.
+
 ## [0.15.0] - 2026-11-17
 
 ### Adicionado

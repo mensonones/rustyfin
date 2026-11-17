@@ -88,7 +88,8 @@ Usada por `/admin`. O painel abre em Bibliotecas, onde mostra a última varredur
 | `GET /admin` | Página do painel; `/admin/favicon[-dark].png` e `/admin/logo[-dark].png` são os ícones (claro e escuro) |
 | `GET /admin/api/status` | Contagens, `ffmpeg`, TMDB, descoberta e último scan |
 | `GET /admin/api/acervo/revisoes` | Até 30 revisões pendentes e seus destinos catalogados |
-| `POST /admin/api/acervo/revisoes/{id}` | `{"acao":"manterSeparados"}` ou `{"acao":"transferir","itemId":"..."}`. Retorna 409 se o destino mudou no catálogo |
+| `POST /admin/api/acervo/revisoes/{id}/previa` | Recebe `itemId` e `mapa` opcional com `anteriorA`, `novoA`, `anteriorB` e `novoB` em ticks. Retorna as posições anterior, atual e sugerida por perfil |
+| `POST /admin/api/acervo/revisoes/{id}` | `{"acao":"manterSeparados"}` ou `{"acao":"transferir","itemId":"..."}`. A transferência aceita `retomadas` com `perfilId`, `posicaoTicks` e `posicaoEsperadaTicks`. Retorna 409 se o destino mudou no catálogo ou se a posição mudou desde a prévia |
 | `GET /admin/api/legendas/{id}` | Lista faixas SRT ajustáveis do título |
 | `GET/PUT/DELETE /admin/api/legendas/{id}/{índice}` | Consulta, salva ou remove o ajuste da faixa. `PUT` recebe a `versao` do GET e o objeto `ajuste` |
 | `POST /admin/api/legendas/{id}/{índice}/previa` | Recebe o mesmo corpo do PUT e devolve amostras sincronizadas e WebVTT |

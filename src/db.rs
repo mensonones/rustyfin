@@ -63,6 +63,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
             user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             is_played BOOLEAN NOT NULL,
             is_favorite BOOLEAN NOT NULL,
+            position_ticks INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (review_id, user_id)
         );
 
@@ -80,6 +81,8 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
     .await?;
 
     // Migrações incrementais (bancos criados por versões anteriores).
+    add_column_if_missing(&pool, "media_review_state", "position_ticks",
+        "INTEGER NOT NULL DEFAULT 0").await?;
     add_column_if_missing(&pool, "items", "modified_at", "INTEGER NOT NULL DEFAULT 0").await?;
     add_column_if_missing(&pool, "items", "content_sha256", "BLOB").await?;
     add_column_if_missing(&pool, "items", "content_mtime", "TEXT").await?;

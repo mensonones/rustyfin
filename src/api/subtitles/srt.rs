@@ -75,10 +75,14 @@ impl Ajuste {
 
 impl Mapa {
     fn instante(self, ms: i64) -> i64 {
-        let delta = i128::from(ms - self.original_ms);
-        let proporcional = delta * i128::from(self.num) / i128::from(self.den);
-        let corrigido = i128::from(self.corrigido_ms) + proporcional;
-        i64::try_from(corrigido).unwrap_or(0)
+        crate::linha_do_tempo::interpolar(
+            ms,
+            self.original_ms,
+            self.corrigido_ms,
+            self.num,
+            self.den,
+        )
+        .unwrap_or(0)
     }
 
     fn trecho(self, trecho: &Trecho) -> Option<(i64, i64)> {

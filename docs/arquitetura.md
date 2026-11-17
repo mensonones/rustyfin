@@ -108,9 +108,16 @@ coincidir para o scanner sugerir uma edição em outro caminho. Cada revisão li
 
 A fila guarda uma cópia dos favoritos e das marcações de assistido dos perfis. Ao confirmar um
 destino, o Rustyfin combina esses marcadores com os que já existem nele e preserva a posição
-do destino. A posição do arquivo anterior, a contagem de reproduções e os ajustes de legenda
-ficam fora da transferência. **Manter separados** encerra a revisão e descarta a cópia dos
+do destino por padrão. A contagem de reproduções e os ajustes de legenda ficam fora da
+transferência. **Manter separados** encerra a revisão e descarta a cópia dos
 marcadores da origem. As duas ações deixam os arquivos de mídia intactos.
+
+Em **Mapear retomada**, informe os tempos de duas cenas correspondentes nas duas edições.
+O painel interpola posições entre as referências e permite confirmar ou editar a posição por
+perfil. Para uma cena cortada ou fora do intervalo, informe o tempo manualmente. A duração
+do destino precisa ser conhecida. Posições que já existem no destino ficam desmarcadas por
+padrão e mudanças feitas após a prévia exigem nova confirmação. Essa opção só está disponível
+para revisões criadas após a atualização que passaram a registrar a posição da origem.
 
 ## Decisões de projeto
 
