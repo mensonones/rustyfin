@@ -104,7 +104,7 @@ cargo run --release
   </tr>
   <tr>
     <td><img src="docs/assets/painel-sessoes.jpg" alt="Sessões e dispositivos"></td>
-    <td><img src="docs/assets/painel-status.jpg" alt="Diagnóstico do servidor"></td>
+    <td><img src="docs/assets/painel-status.jpg" alt="Diagnóstico antes do Play comparando dois dispositivos"></td>
   </tr>
 </table>
 

@@ -5,6 +5,12 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.12.0] - 2026-11-17
+
+### Adicionado
+- Diagnóstico local antes do Play no painel. Compara até dois dispositivos, simula faixas
+  de áudio e legenda e explica por que o servidor escolheria Direct Play, remux ou transcodificação.
+
 ## [0.11.0] - 2026-11-17
 
 ### Corrigido

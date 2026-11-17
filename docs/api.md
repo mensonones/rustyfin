@@ -87,6 +87,9 @@ Usada por `/admin`. O painel abre em Bibliotecas, onde mostra a última varredur
 |---|---|
 | `GET /admin` | Página do painel; `/admin/favicon[-dark].png` e `/admin/logo[-dark].png` são os ícones (claro e escuro) |
 | `GET /admin/api/status` | Contagens, `ffmpeg`, TMDB, descoberta e último scan |
+| `GET /admin/api/reproducao/titulos?busca=...` | Até 20 filmes e episódios que correspondem ao título |
+| `GET /admin/api/reproducao/perfis` | Perfis locais observados no `PlaybackInfo`, com a última decisão por dispositivo |
+| `POST /admin/api/reproducao/simular` | Recebe `itemId`, até dois IDs em `perfis`, `audioIndex` e `legendaIndex` opcionais. Devolve o plano por perfil e as faixas do título |
 | `POST /admin/api/scan` | Inicia uma varredura imediata |
 | `GET /admin/api/browse?path=...` | Lista as subpastas de um caminho (seletor de pastas) |
 | `GET/PUT /admin/api/settings` | Nome do servidor, intervalo do scan, transcodificações, chave e idioma do TMDB |
@@ -102,3 +105,9 @@ Erros de validação devolvem `400` com `{"Message": "..."}`.
 
 `python tools/client_probe.py http://127.0.0.1:8096` percorre o fluxo de um app e marca `FALHA` em qualquer rota sem
 resposta. Os testes de integração em `tests/` cobrem a autenticação, a lista de login e as sessões.
+
+
+O diagnóstico usa os perfis enviados pelos clientes ao consultar `PlaybackInfo` com ID de dispositivo.
+Retém até 32 perfis em memória, cada um com a decisão mais recente. Reiniciar o servidor limpa
+esses dados. A simulação usa o mesmo cálculo de `PlaybackInfo` e não inicia o FFmpeg. O plano é
+uma previsão baseada nas capacidades declaradas pelo cliente.

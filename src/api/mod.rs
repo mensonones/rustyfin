@@ -6,6 +6,7 @@ pub mod facets;
 pub mod images;
 pub mod items;
 pub mod playback;
+mod reproducao_admin;
 pub mod shows;
 pub mod stream;
 pub mod subtitles;
@@ -140,6 +141,7 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
         .route("/Videos/:id/:source/Subtitles/:index/:start/Stream.:ext", get(subtitles::get_subtitle_from).with_state(app_state_tuple.clone()))
         // Administração (painel /admin e /Library/VirtualFolders*): só rede local
         .merge(admin::router(config.clone(), pool.clone(), scan))
+        .layer(axum::Extension(reproducao_admin::Perfis::default()))
         // Toda rota (exceto as públicas) exige token válido; o CORS fica por fora para o preflight passar
         .layer(from_fn_with_state(pool.clone(), auth::require_user))
         // Allow permissive CORS for web clients and cross-origin mobile apps

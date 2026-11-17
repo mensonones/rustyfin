@@ -144,14 +144,41 @@ fn pick_output(profile: &DeviceProfile) -> (Container, bool) {
     (Container::Mkv, false)
 }
 
+#[derive(Clone, Copy, Debug, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MotivoReproducao {
+    SemPerfil,
+    SemDadosDeVideo,
+    FfmpegIndisponivel,
+    ConversaoDesabilitada,
+    DirectPlayDesabilitado,
+    ContainerIncompativel,
+    VideoIncompativel,
+    AudioIncompativel,
+    LimiteDeBitrate,
+    CombinacaoIncompativel,
+    LegendaDeImagem,
+    LegendaDeImagemSemConversao,
+}
+
 pub fn decide(
     src: &SourceInfo,
     profile: Option<&DeviceProfile>,
     opts: &RequestOptions,
     ffmpeg_ok: bool,
 ) -> Plan {
+    decidir_com_motivos(src, profile, opts, ffmpeg_ok).0
+}
+
+pub fn decidir_com_motivos(
+    src: &SourceInfo,
+    profile: Option<&DeviceProfile>,
+    opts: &RequestOptions,
+    ffmpeg_ok: bool,
+) -> (Plan, Vec<MotivoReproducao>) {
+    use MotivoReproducao as Motivo;
     let Some(profile) = profile else {
-        return Plan::Direct;
+        return (Plan::Direct, vec![Motivo::SemPerfil]);
     };
     let video_profiles: Vec<_> = profile
         .direct_play_profiles
@@ -160,10 +187,10 @@ pub fn decide(
         .collect();
     // Sem informação suficiente (perfil vazio, ffprobe ausente) ou sem como transcodificar.
     let Some(video) = src.video_codec else {
-        return Plan::Direct;
+        return (Plan::Direct, vec![Motivo::SemDadosDeVideo]);
     };
-    if video_profiles.is_empty() || !ffmpeg_ok || !opts.enable_transcoding {
-        return Plan::Direct;
+    if video_profiles.is_empty() {
+        return (Plan::Direct, vec![Motivo::SemPerfil]);
     }
 
     let max_bitrate = [profile.max_streaming_bitrate, opts.max_bitrate]
@@ -185,13 +212,34 @@ pub fn decide(
     });
 
     if opts.enable_direct_play && direct_ok && bitrate_ok {
-        return Plan::Direct;
+        return (Plan::Direct, Vec::new());
     }
 
     let video_ok = video_profiles.iter().any(|p| list_allows(p.video_codec.as_deref(), video, norm_codec));
     let audio_ok = audio
         .is_none_or(|a| video_profiles.iter().any(|p| list_allows(p.audio_codec.as_deref(), a, norm_codec)));
 
+    let container_ok = container.is_empty() || video_profiles.iter().any(|p| {
+        list_allows(p.container.as_deref(), container, norm_container)
+    });
+    let mut motivos = Vec::new();
+    for (ativo, motivo) in [
+        (!opts.enable_direct_play, Motivo::DirectPlayDesabilitado),
+        (!container_ok, Motivo::ContainerIncompativel),
+        (!video_ok, Motivo::VideoIncompativel),
+        (!audio_ok, Motivo::AudioIncompativel),
+        (!bitrate_ok, Motivo::LimiteDeBitrate),
+        (!direct_ok && container_ok && video_ok && audio_ok, Motivo::CombinacaoIncompativel),
+        (!ffmpeg_ok, Motivo::FfmpegIndisponivel),
+        (!opts.enable_transcoding, Motivo::ConversaoDesabilitada),
+    ] {
+        if ativo {
+            motivos.push(motivo);
+        }
+    }
+    if !ffmpeg_ok || !opts.enable_transcoding {
+        return (Plan::Direct, motivos);
+    }
     let (container, hls) = pick_output(profile);
     let fragmented = hls && container == Container::Mp4;
     let video_copy = video_ok
@@ -205,12 +253,12 @@ pub fn decide(
         max_bitrate.map(|m| (m - AUDIO_BITRATE).max(500_000))
     };
 
-    Plan::Transcode(TranscodePlan {
+    (Plan::Transcode(TranscodePlan {
         video_copy,
         audio_copy,
         container,
         hls,
         video_bitrate,
         abr: false,
-    })
+    }), motivos)
 }

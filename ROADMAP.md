@@ -117,8 +117,32 @@
 
 ---
 
+## Próximas funcionalidades
+
+O produto tem foco exclusivo na reprodução local. O roadmap não inclui acesso remoto, relay
+ou convites pela internet.
+
+### Diagnóstico e confiabilidade
+
+- [x] **Diagnóstico antes do Play.** Comparar até dois perfis recebidos de clientes locais
+  para o mesmo título e faixas selecionadas. Mostrar Direct Play, remux ou transcodificação,
+  os motivos da decisão e a última decisão observada por dispositivo.
+- [ ] **Identidade estável do acervo.** Preservar progresso e favoritos ao mover arquivos.
+  Reconhecer cópias idênticas e mostrar substituições e associações ambíguas para revisão.
+- [ ] **Correção de legendas.** Salvar ajustes reversíveis por arquivo e faixa. Começar com
+  atraso e desvio de tempo em SRT e oferecer prévia em dois pontos antes de aplicar.
+
+### Pesquisa de produto
+
+- [ ] **Continuar pela cena ao trocar de edição.** Alinhar cenas com trechos de áudio em comum.
+  Usar a posição equivalente só quando houver confiança suficiente na correspondência.
+- [ ] **Preparar versões a partir das sessões.** Recomendar conversões que se repetem nos
+  dispositivos locais, com orçamento de disco, pausa durante reprodução e originais preservados.
+- [ ] **Busca local de cenas com proteção contra spoilers.** Indexar legendas com timestamps e
+  permitir que cada perfil filtre falas e prévias pelo ponto que já assistiu.
+
 ## 🧪 Como Testar com o Moonfin
 1. Execute o servidor Rustyfin em `http://127.0.0.1:8096`.
 2. Abra o Moonfin no iOS / macOS ou navegador.
-3. No campo de endereço do servidor, digite: `http://localhost:8096` ou `http://<seu-ip-local>:8096`.
+3. No campo de endereço do servidor, digite `http://localhost:8096` quando o cliente estiver na mesma máquina.
 4. Usuário padrão: `Admin` (sem senha).

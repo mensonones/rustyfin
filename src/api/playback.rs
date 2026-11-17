@@ -1,168 +1,186 @@
 use crate::{
-    api::{auth::CurrentUser, items::build_streams, shows::normalize_id},
+    api::{
+        auth::{CurrentCreds, CurrentUser},
+        items::build_streams,
+        reproducao_admin::Perfis,
+        shows::normalize_id,
+    },
     db::DbPool,
-    models::{MediaSourceInfo, PlaybackInfoRequest, PlaybackInfoResponse, PlaybackProgressReport},
+    models::{MediaSourceInfo, MediaStream, PlaybackInfoRequest, PlaybackInfoResponse, PlaybackProgressReport},
     transcode, users,
 };
 use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
+    Extension, Json,
 };
 use uuid::Uuid;
 
-pub async fn get_playback_info(
+#[derive(sqlx::FromRow)]
+pub(super) struct FonteReproducao {
+    pub(super) id: String,
+    pub(super) name: String,
+    pub(super) container: Option<String>,
+    duration_ticks: Option<i64>,
+    size_bytes: Option<i64>,
+    pub(super) video_codec: Option<String>,
+    audio_codec: Option<String>,
+    width: Option<i32>,
+    height: Option<i32>,
+    streams_json: Option<String>,
+    subtitle_path: Option<String>,
+}
+
+pub(super) struct Avaliacao {
+    pub(super) plano: transcode::Plan,
+    pub(super) motivos: Vec<transcode::MotivoReproducao>,
+    pub(super) audio_codec: Option<String>,
+    legenda_queimada: Option<i32>,
+}
+
+impl FonteReproducao {
+    pub(super) async fn buscar(pool: &DbPool, item_id: &str) -> Result<Self, StatusCode> {
+        sqlx::query_as(
+            "SELECT id, name, container, duration_ticks, size_bytes, video_codec, audio_codec, \
+             width, height, streams_json, subtitle_path FROM items WHERE id = ?",
+        )
+        .bind(normalize_id(item_id))
+        .fetch_optional(pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)
+    }
+
+    pub(super) fn faixas(&self) -> Vec<MediaStream> {
+        let mut faixas = build_streams(
+            self.streams_json.as_deref(), self.video_codec.as_deref(),
+            self.audio_codec.as_deref(), self.width, self.height, self.subtitle_path.is_some(),
+        );
+        crate::api::items::decorate_subtitles(&self.id, &mut faixas);
+        faixas
+    }
+
+    pub(super) fn bitrate(&self) -> Option<i64> {
+        match (self.size_bytes, self.duration_ticks) {
+            (Some(size), Some(ticks)) if size > 0 && ticks > 0 => {
+                Some((size as f64 * 8.0 / (ticks as f64 / 10_000_000.0)) as i64)
+            }
+            _ => None,
+        }
+    }
+
+    pub(super) fn avaliar(
+        &self, req: &PlaybackInfoRequest, faixas: &[MediaStream], ffmpeg_ok: bool,
+    ) -> Avaliacao {
+        let audio_codec = req.audio_stream_index
+            .and_then(|i| faixas.iter().find(|s| s.index == i && s.r#type == "Audio"))
+            .map(|s| s.codec.clone())
+            .or_else(|| self.audio_codec.clone());
+        let legenda_imagem = req.subtitle_stream_index.filter(|i| {
+            faixas.iter().any(|s| {
+                s.index == *i && s.r#type == "Subtitle" && !transcode::is_text_subtitle(&s.codec)
+            })
+        });
+        let conversao = req.enable_transcoding.unwrap_or(true);
+        let legenda_queimada = legenda_imagem.filter(|_| conversao && ffmpeg_ok);
+        let bitrate = self.bitrate();
+        let (mut plano, mut motivos) = transcode::decidir_com_motivos(
+            &transcode::SourceInfo {
+                container: self.container.as_deref(),
+                video_codec: self.video_codec.as_deref(),
+                audio_codec: audio_codec.as_deref(),
+                bitrate,
+            },
+            req.device_profile.as_ref(),
+            &transcode::RequestOptions {
+                enable_direct_play: req.enable_direct_play.unwrap_or(true),
+                enable_transcoding: conversao,
+                max_bitrate: req.max_streaming_bitrate,
+            },
+            ffmpeg_ok,
+        );
+        if legenda_queimada.is_some() {
+            motivos.push(transcode::MotivoReproducao::LegendaDeImagem);
+            match &mut plano {
+                transcode::Plan::Direct => {
+                    plano = transcode::Plan::Transcode(transcode::TranscodePlan {
+                        video_copy: false, audio_copy: false, container: transcode::Container::Mkv,
+                        hls: false, video_bitrate: None, abr: false,
+                    });
+                }
+                transcode::Plan::Transcode(t) => t.video_copy = false,
+            }
+        } else if legenda_imagem.is_some() {
+            motivos.push(transcode::MotivoReproducao::LegendaDeImagemSemConversao);
+        }
+        if let transcode::Plan::Transcode(t) = &mut plano {
+            t.enable_abr(self.height, bitrate);
+        }
+        Avaliacao { plano, motivos, audio_codec, legenda_queimada }
+    }
+}
+
+pub(super) async fn get_playback_info(
     State(pool): State<DbPool>,
     CurrentUser(user): CurrentUser,
+    CurrentCreds(creds): CurrentCreds,
+    Extension(perfis): Extension<Perfis>,
     Path(item_id): Path<String>,
     payload: Option<Json<PlaybackInfoRequest>>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    if !users::item_allowed(&pool, &user, &normalize_id(&item_id)).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)? {
+    if !users::item_allowed(&pool, &user, &normalize_id(&item_id)).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
         return Err(StatusCode::NOT_FOUND);
     }
-    type Row = (String, String, Option<String>, Option<i64>, Option<i64>, Option<String>, Option<String>, Option<i32>, Option<i32>, Option<String>, Option<String>);
-    let row = sqlx::query_as::<_, Row>(
-        "SELECT id, name, container, duration_ticks, size_bytes, video_codec, audio_codec, width, height, streams_json, subtitle_path FROM items WHERE id = ?"
-    )
-    .bind(normalize_id(&item_id))
-    .fetch_optional(&pool)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    .ok_or(StatusCode::NOT_FOUND)?;
-
-    let (id, name, container, duration_ticks, size_bytes, video_codec, audio_codec, width, height, streams_json, subtitle_path) = row;
-    let mut streams = build_streams(
-        streams_json.as_deref(),
-        video_codec.as_deref(),
-        audio_codec.as_deref(),
-        width,
-        height,
-        subtitle_path.is_some(),
-    );
-    crate::api::items::decorate_subtitles(&id, &mut streams);
-
-    // Bitrate médio do arquivo (bits/s), usado para respeitar MaxStreamingBitrate.
-    let source_bitrate = match (size_bytes, duration_ticks) {
-        (Some(size), Some(ticks)) if size > 0 && ticks > 0 => {
-            Some((size as f64 * 8.0 / (ticks as f64 / 10_000_000.0)) as i64)
-        }
-        _ => None,
-    };
-
+    let fonte = FonteReproducao::buscar(&pool, &item_id).await?;
+    let mut streams = fonte.faixas();
     let req = payload.map(|Json(r)| r).unwrap_or_default();
-    // O codec de áudio do plano é o da faixa que o ffmpeg vai mapear (não necessariamente a primeira).
-    let selected_audio = req.audio_stream_index.and_then(|i| {
-        streams
-            .iter()
-            .find(|s| s.index == i && s.r#type == "Audio")
-            .map(|s| s.codec.clone())
-    });
-    let audio_codec = selected_audio.or(audio_codec);
-    // Legenda de imagem (PGS/DVD) só aparece queimada no vídeo: força transcode com overlay.
-    let burn_subtitle = req
-        .subtitle_stream_index
-        .filter(|i| {
-            streams
-                .iter()
-                .any(|s| s.index == *i && s.r#type == "Subtitle" && !transcode::is_text_subtitle(&s.codec))
-        })
-        .filter(|_| req.enable_transcoding.unwrap_or(true) && transcode::can_transcode());
-    let plan = transcode::decide(
-        &transcode::SourceInfo {
-            container: container.as_deref(),
-            video_codec: video_codec.as_deref(),
-            audio_codec: audio_codec.as_deref(),
-            bitrate: source_bitrate,
-        },
-        req.device_profile.as_ref(),
-        &transcode::RequestOptions {
-            enable_direct_play: req.enable_direct_play.unwrap_or(true),
-            enable_transcoding: req.enable_transcoding.unwrap_or(true),
-            max_bitrate: req.max_streaming_bitrate,
-        },
-        transcode::can_transcode(),
-    );
+    let ffmpeg_ok = transcode::can_transcode();
+    let avaliacao = fonte.avaliar(&req, &streams, ffmpeg_ok);
+    perfis.registrar(&creds.device, &req, &fonte, &avaliacao).await;
+    let Avaliacao { plano, motivos, legenda_queimada, .. } = avaliacao;
+    tracing::debug!(item = fonte.id, ?motivos, ?plano, "Decisão de reprodução");
 
-    // Diagnóstico: por que um cliente recebeu Direct Play ou transcode.
-    tracing::debug!(
-        "PlaybackInfo {}: origem container={:?} video={:?} audio={:?} bitrate={:?} | pedido direct_play={:?} transcoding={:?} max_bitrate={:?} | perfil {:?} max={:?} direct_play_profiles={:?} | plano {:?}",
-        id,
-        container,
-        video_codec,
-        audio_codec,
-        source_bitrate,
-        req.enable_direct_play,
-        req.enable_transcoding,
-        req.max_streaming_bitrate,
-        req.device_profile.as_ref().and_then(|p| p.name.clone()),
-        req.device_profile.as_ref().and_then(|p| p.max_streaming_bitrate),
-        req.device_profile.as_ref().map(|p| &p.direct_play_profiles),
-        plan
-    );
-
+    if let Some(i) = legenda_queimada {
+        if let Some(s) = streams.iter_mut().find(|s| s.index == i) {
+            s.delivery_method = Some("Encode".to_string());
+        }
+    }
     let play_session_id = Uuid::new_v4().simple().to_string();
+    let bitrate = fonte.bitrate();
     let mut source = MediaSourceInfo {
-        id: id.clone(),
+        id: fonte.id.clone(),
         path: None,
         protocol: "File".to_string(),
         media_streams: streams,
-        container: crate::api::stream::jellyfin_container(container.as_deref()),
-        size: size_bytes,
-        name,
+        container: crate::api::stream::jellyfin_container(fonte.container.as_deref()),
+        size: fonte.size_bytes,
+        name: fonte.name,
         is_remote: false,
-        run_time_ticks: duration_ticks,
-        supports_transcoding: transcode::can_transcode(),
-        bitrate: source_bitrate,
+        run_time_ticks: fonte.duration_ticks,
+        supports_transcoding: ffmpeg_ok,
+        bitrate,
         supports_direct_stream: true,
         supports_direct_play: true,
-        // Como o Jellyfin: sem URL pronta; o cliente monta `/Videos/{id}/stream.{container}?...` sozinho
-        // (a TV Samsung só lê por trechos quando monta a própria URL).
+        // O cliente monta a URL de Direct Play para garantir Range na TV Samsung.
         direct_stream_url: None,
         transcoding_url: None,
         transcoding_sub_protocol: None,
         transcoding_container: None,
     };
-
-    let plan = match (plan, burn_subtitle) {
-        (transcode::Plan::Direct, Some(_)) => transcode::Plan::Transcode(transcode::TranscodePlan {
-            video_copy: false,
-            audio_copy: false,
-            container: transcode::Container::Mkv,
-            hls: false,
-            video_bitrate: None,
-            abr: false,
-        }),
-        (transcode::Plan::Transcode(mut t), Some(_)) => {
-            t.video_copy = false;
-            transcode::Plan::Transcode(t)
-        }
-        (plan, _) => plan,
-    };
-    if let (Some(i), transcode::Plan::Transcode(_)) = (burn_subtitle, &plan) {
-        if let Some(s) = source.media_streams.iter_mut().find(|s| s.index == i) {
-            s.delivery_method = Some("Encode".to_string());
-        }
-    }
-
-    if let transcode::Plan::Transcode(mut t) = plan {
-        t.enable_abr(height, source_bitrate);
+    if let transcode::Plan::Transcode(t) = plano {
         source.supports_direct_play = false;
         source.supports_direct_stream = false;
         source.supports_transcoding = true;
-        source.direct_stream_url = None;
         source.transcoding_url = Some(transcode::transcode_url(
-            &id,
-            &t,
-            &play_session_id,
-            req.audio_stream_index,
-            req.start_time_ticks,
-            burn_subtitle,
+            &fonte.id, &t, &play_session_id, req.audio_stream_index,
+            req.start_time_ticks, legenda_queimada,
         ));
         source.transcoding_sub_protocol = Some(if t.hls { "hls" } else { "http" }.to_string());
         source.transcoding_container = Some(t.container.ext().to_string());
     }
-
     Ok(Json(PlaybackInfoResponse {
         media_sources: vec![source],
         play_session_id,

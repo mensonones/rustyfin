@@ -196,7 +196,7 @@ pub struct QueryResult<T> {
 }
 
 /// Perfil de dispositivo enviado pelo cliente no `PlaybackInfo` (só os campos usados na decisão).
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase", default)]
 pub struct DeviceProfile {
     pub name: Option<String>,
@@ -205,7 +205,7 @@ pub struct DeviceProfile {
     pub transcoding_profiles: Vec<TranscodingProfile>,
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase", default)]
 pub struct DirectPlayProfile {
     pub container: Option<String>,
@@ -214,7 +214,7 @@ pub struct DirectPlayProfile {
     pub r#type: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase", default)]
 pub struct TranscodingProfile {
     pub container: Option<String>,
@@ -225,7 +225,7 @@ pub struct TranscodingProfile {
 }
 
 /// Playback info DTOs
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone, Default, Serialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(dead_code)] // campos do contrato Jellyfin ainda não utilizados
 pub struct PlaybackInfoRequest {

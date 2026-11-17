@@ -34,7 +34,7 @@
   nav button { background: var(--transparent); border: 0; border-bottom: 2px solid var(--transparent); padding: 12px 16px; color: var(--muted); font: inherit; cursor: pointer; white-space: nowrap; }
   nav button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; background: var(--selected); }
   main { max-width: 920px; margin: 0 auto; padding: 20px 16px 60px; }
-  section[hidden] { display: none; }
+  [hidden] { display: none !important; }
   .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .page-heading .hint { margin: 0; }
   .row.between { justify-content: space-between; }
@@ -106,6 +106,16 @@
   .settings input[type=number], #tmdbLang { max-width: 8rem; }
   .feedback { margin-bottom: 12px; }
   .feedback p { margin-block: 0 8px; }
+  .preflight { margin-top: 24px; }
+  .preflight form { margin-top: 16px; }
+  .preflight .campos { display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+  .preflight .campos label { margin-top: 0; }
+  .preflight .row { margin-top: 16px; }
+  .preflight output { display: block; margin-top: 16px; }
+  .preflight output ul { margin-block: 4px 8px; padding-inline-start: 20px; }
+  .preflight .resultado { padding-block: 12px; border-top: 1px solid var(--line);
+    overflow-wrap: anywhere; }
   .mobile-nav { display: none; }
   @media (max-width: 600px) {
     header, main, .mobile-nav { padding-inline: 16px; }
@@ -218,6 +228,34 @@
   <section id="tab-status" role="tabpanel" aria-label="Diagnóstico" hidden>
     <h2 class="page-heading">Diagnóstico</h2>
     <div id="statusGrid"></div>
+    <section class="card preflight" aria-labelledby="preflightTitle">
+      <h3 id="preflightTitle">Diagnóstico antes do Play</h3>
+      <p class="hint">Compare o plano de reprodução em até dois dispositivos deste servidor.</p>
+      <form id="preflightBusca">
+        <label for="preflightTermo">Buscar filme ou episódio</label>
+        <input id="preflightTermo" maxlength="128" required>
+        <div class="row"><button class="btn" type="submit">Buscar títulos</button></div>
+      </form>
+      <form id="preflightForm" hidden>
+        <div class="campos">
+          <div><label for="preflightItem">Título</label><select id="preflightItem" required></select></div>
+          <div><label for="preflightA">Dispositivo</label><select id="preflightA" required></select></div>
+          <div><label for="preflightB">Comparar com</label><select id="preflightB"></select></div>
+          <div id="preflightFaixas" class="campos" hidden>
+            <div><label for="preflightAudio">Áudio</label><select id="preflightAudio"></select></div>
+            <div><label for="preflightLegenda">Legenda</label><select id="preflightLegenda"></select></div>
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn primary" id="preflightSimular" type="submit">Simular reprodução</button>
+        </div>
+      </form>
+      <output id="preflightResultado" aria-live="polite"></output>
+      <details id="preflightUltimas" hidden>
+        <summary>Última decisão por dispositivo</summary>
+        <div id="preflightHistorico"></div>
+      </details>
+    </section>
   </section>
   <noscript><p>Ative o JavaScript para administrar o servidor.</p></noscript>
 </main>
@@ -682,6 +720,129 @@ $('saveSettings').onclick = () => act(async () => {
   await loadSettings();
 }, 'Configurações salvas.');
 $('clearKey').onclick = () => { if (confirm('Remover a chave do TMDB salva?')) act(async () => { await api('PUT', '/admin/api/settings', { tmdbApiKey: '' }); await loadSettings(); }, 'Chave removida.'); };
+
+// ---- diagnóstico de reprodução
+const motivosReproducao = {
+  sem_perfil: 'O cliente não informou capacidades de vídeo.',
+  sem_dados_de_video: 'O scanner ainda não identificou o codec de vídeo.',
+  ffmpeg_indisponivel: 'A conversão está indisponível porque o FFmpeg não está ativo.',
+  conversao_desabilitada: 'O cliente desativou a conversão.',
+  direct_play_desabilitado: 'O cliente desativou a reprodução direta.',
+  container_incompativel: 'O contêiner não está no perfil do cliente.',
+  video_incompativel: 'O codec de vídeo não está no perfil do cliente.',
+  audio_incompativel: 'O codec da faixa de áudio não está no perfil do cliente.',
+  limite_de_bitrate: 'O bitrate do arquivo excede o limite informado pelo cliente.',
+  combinacao_incompativel: 'O cliente não declarou suporte à combinação de contêiner, vídeo e áudio.',
+  legenda_de_imagem: 'A legenda de imagem precisa ser incorporada ao vídeo.',
+  legenda_de_imagem_sem_conversao: 'A legenda de imagem exige conversão, que está indisponível.',
+};
+const modoReproducao = {
+  direct_play: 'Reprodução direta', remux: 'Remux', transcode: 'Transcodificação',
+};
+const opcao = (valor, rotulo) => el('option', { value: valor, textContent: rotulo });
+function mostrarPlano(titulo, plano) {
+  const detalhes = [plano.audioOrigem && 'Áudio: ' + plano.audioOrigem,
+    plano.container && plano.container.toUpperCase(), plano.protocolo,
+    !plano.videoCopiado && 'Converte vídeo', !plano.audioCopiado && 'Converte áudio'].filter(Boolean);
+  const motivos = plano.motivos.map((motivo) => el('li', {
+    textContent: motivosReproducao[motivo] || motivo,
+  }));
+  return el('div', { className: 'resultado' },
+    el('strong', { textContent: titulo + ' — ' + modoReproducao[plano.modo] }),
+    detalhes.length ? el('p', { className: 'hint', textContent: detalhes.join(' / ') }) : '',
+    motivos.length ? el('ul', {}, motivos) : '');
+}
+function limparFaixas() {
+  $('preflightFaixas').hidden = true;
+  $('preflightAudio').replaceChildren(opcao('', 'Padrão do arquivo'));
+  $('preflightLegenda').replaceChildren(opcao('', 'Sem legenda'));
+}
+$('preflightItem').onchange = () => {
+  limparFaixas();
+  $('preflightResultado').textContent = '';
+};
+$('preflightBusca').onsubmit = async (evento) => {
+  evento.preventDefault();
+  const botao = evento.submitter;
+  const saida = $('preflightResultado');
+  botao.disabled = true;
+  $('preflightForm').hidden = true;
+  saida.textContent = 'Buscando títulos e perfis…';
+  limparFaixas();
+  try {
+    const termo = $('preflightTermo').value.trim();
+    if (!termo) throw new Error('Informe parte do título.');
+    const [itens, perfis] = await Promise.all([
+      api('GET', '/admin/api/reproducao/titulos?busca=' + encodeURIComponent(termo)),
+      api('GET', '/admin/api/reproducao/perfis'),
+    ]);
+    $('preflightUltimas').hidden = !perfis.length;
+    $('preflightHistorico').replaceChildren(...perfis.map((p) =>
+      mostrarPlano(p.dispositivo + ' / ' + p.ultimaDecisao.titulo, p.ultimaDecisao.resultado)));
+    if (!perfis.length) {
+      saida.textContent = 'Nenhum perfil recebido. Reproduza um título no app para capturar o perfil.';
+      return;
+    }
+    if (!itens.length) {
+      saida.textContent = 'Nenhum título encontrado.';
+      return;
+    }
+    $('preflightItem').replaceChildren(...itens.map((item) => {
+      const episodio = item.serie && item.temporada !== null && item.episodio !== null;
+      const rotulo = episodio
+        ? item.serie + ' S' + item.temporada + 'E' + item.episodio + ' / ' + item.nome
+        : item.nome + (item.ano ? ' (' + item.ano + ')' : '');
+      return opcao(item.id, rotulo);
+    }));
+    const dispositivos = () => perfis.map((p) =>
+      opcao(p.id, p.cliente ? p.dispositivo + ' / ' + p.cliente : p.dispositivo));
+    $('preflightA').replaceChildren(...dispositivos());
+    $('preflightB').replaceChildren(opcao('', 'Sem comparação'), ...dispositivos());
+    $('preflightForm').hidden = false;
+    saida.textContent = '';
+  } catch (erro) {
+    saida.textContent = mensagemErro(erro);
+  } finally {
+    botao.disabled = false;
+  }
+};
+$('preflightForm').onsubmit = async (evento) => {
+  evento.preventDefault();
+  const saida = $('preflightResultado');
+  const elementos = [...evento.currentTarget.elements, $('preflightBusca').querySelector('button')];
+  const perfis = [...new Set([$('preflightA').value, $('preflightB').value].filter(Boolean))];
+  const itemId = $('preflightItem').value;
+  const audio = $('preflightAudio').value;
+  const legenda = $('preflightLegenda').value;
+  for (const campo of elementos) campo.disabled = true;
+  saida.textContent = 'Simulando…';
+  try {
+    const dados = await api('POST', '/admin/api/reproducao/simular', {
+      itemId, perfis, audioIndex: audio === '' ? null : Number(audio),
+      legendaIndex: legenda === '' ? null : Number(legenda),
+    });
+    limparFaixas();
+    for (const faixa of dados.faixas) {
+      const select = $(faixa.tipo === 'Audio' ? 'preflightAudio' : 'preflightLegenda');
+      select.append(opcao(faixa.indice, [faixa.codec, faixa.idioma, '#' + faixa.indice]
+        .filter(Boolean).join(' / ')));
+    }
+    $('preflightAudio').value = audio;
+    $('preflightLegenda').value = legenda;
+    $('preflightFaixas').hidden = !dados.faixas.length;
+    const origem = [dados.container, dados.video,
+      dados.bitrate && (dados.bitrate / 1000000).toLocaleString('pt-BR', {
+        maximumFractionDigits: 2,
+      }) + ' Mbps'].filter(Boolean);
+    saida.replaceChildren(el('h3', { textContent: dados.titulo }),
+      el('p', { className: 'hint', textContent: origem.join(' / ') }),
+      ...dados.resultados.map((p) => mostrarPlano(p.dispositivo, p.resultado)));
+  } catch (erro) {
+    saida.textContent = 'Falha ao simular. ' + mensagemErro(erro);
+  } finally {
+    for (const campo of elementos) campo.disabled = false;
+  }
+};
 
 // ---- diagnóstico e varredura
 const metrica = (nome, valor) => el('div', {}, el('dt', { textContent: nome }),

@@ -13,7 +13,7 @@ use tower::ServiceExt;
 
 struct Server {
     app: axum::Router,
-    _dir: PathBuf,
+    dir: PathBuf,
 }
 
 fn test_config(dir: &std::path::Path) -> AppConfig {
@@ -49,7 +49,7 @@ async fn server(name: &str) -> Server {
     let pool = db::init_db(&config.database_url).await.unwrap();
     users::ensure_seed_admin(&pool).await.unwrap();
     let app = api::build_router(config, pool, Arc::new(tokio::sync::Notify::new()));
-    Server { app, _dir: dir }
+    Server { app, dir }
 }
 
 async fn call(app: &axum::Router, method: Method, uri: &str, token: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {
@@ -168,4 +168,43 @@ async fn midia_protegida_rejeita_requisicoes_sem_token() {
     }
     let (status, _) = call(&s.app, Method::GET, "/Users/abc/Images/Primary", None, None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+
+#[tokio::test]
+async fn diagnostico_usa_perfil_observado_sem_alterar_a_ultima_decisao() {
+    let s = server("diagnostico").await;
+    let pool = db::init_db(&test_config(&s.dir).database_url).await.unwrap();
+    sqlx::query(
+        "INSERT INTO items (id, name, path, media_type, container, video_codec, audio_codec) \
+         VALUES ('a', 'Filme exemplo', '/media/a.mp4', 'Movie', 'mp4', 'h264', 'aac')",
+    )
+    .execute(&pool).await.unwrap();
+    let (_, perfis) = call(&s.app, Method::GET, "/admin/api/reproducao/perfis", None, None).await;
+    assert_eq!(perfis, json!([]));
+    let token = login(&s.app, "Admin").await;
+    let pedido = json!({ "DeviceProfile": { "DirectPlayProfiles": [
+        { "Type": "Video", "Container": "mp4", "VideoCodec": "h264", "AudioCodec": "aac" }
+    ] } });
+    let (status, playback) = call(&s.app, Method::POST, "/Items/a/PlaybackInfo", Some(&token), Some(pedido)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(playback["MediaSources"][0]["SupportsDirectPlay"], true);
+    let (_, titulos) = call(&s.app, Method::GET, "/admin/api/reproducao/titulos?busca=exemplo", None, None).await;
+    assert_eq!(titulos[0]["id"], "a");
+    let (_, perfis) = call(&s.app, Method::GET, "/admin/api/reproducao/perfis", None, None).await;
+    assert_eq!(perfis.as_array().unwrap().len(), 1);
+    assert!(!perfis.to_string().contains(&token));
+    let perfil = perfis[0]["id"].clone();
+    let rota = "/admin/api/reproducao/simular";
+    let pedido = json!({ "itemId": "a", "perfis": [perfil] });
+    let (status, resultado) = call(&s.app, Method::POST, rota, None, Some(pedido.clone())).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resultado["resultados"][0]["resultado"]["modo"], "direct_play");
+    assert_eq!(resultado["faixas"][0]["codec"], "aac");
+    let mut invalido = pedido;
+    invalido["legendaIndex"] = json!(999);
+    let (status, _) = call(&s.app, Method::POST, rota, None, Some(invalido)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (_, depois) = call(&s.app, Method::GET, "/admin/api/reproducao/perfis", None, None).await;
+    assert_eq!(depois, perfis);
 }
