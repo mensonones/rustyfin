@@ -115,6 +115,7 @@ pub async fn get_playback_info(
             container: transcode::Container::Mkv,
             hls: false,
             video_bitrate: None,
+            abr: false,
         }),
         (transcode::Plan::Transcode(mut t), Some(_)) => {
             t.video_copy = false;
@@ -128,7 +129,8 @@ pub async fn get_playback_info(
         }
     }
 
-    if let transcode::Plan::Transcode(t) = plan {
+    if let transcode::Plan::Transcode(mut t) = plan {
+        t.enable_abr(height, source_bitrate);
         source.supports_direct_play = false;
         source.supports_direct_stream = false;
         source.supports_transcoding = true;

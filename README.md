@@ -121,6 +121,8 @@ ou `MaxStreamingBitrate` é menor que o bitrate do arquivo). A saída é HLS (`m
 conforme o perfil do cliente. HLS usa MPEG-TS por padrão e fMP4 quando o perfil pede MP4 com protocolo HLS. Ao recodificar vídeo
 HDR PQ ou HLG, o FFmpeg com `zscale` e `tonemap` converte para SDR BT.709. Sem `ffmpeg`, o servidor continua em Direct Play.
 Sessões HLS ociosas são encerradas após 90 s. Processos de stream progressivo são encerrados quando o cliente desconecta.
+Quando o HLS recodifica um vídeo com altura de pelo menos 360 pixels e dispõe de 2 Mbps ou mais para vídeo, o player recebe duas
+qualidades (original e metade da altura) para adaptação automática de bitrate. Cada sessão usa um processo FFmpeg para as duas saídas.
 
 **Legendas:** arquivos SRT com o mesmo nome base do vídeo (`Filme.srt` ao lado de `Filme.mkv`) aparecem após a varredura.
 Trilhas de texto embutidas podem ser extraídas como SRT, VTT ou ASS. Legendas de imagem PGS e DVD são sobrepostas ao vídeo

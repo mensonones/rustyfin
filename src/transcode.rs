@@ -34,8 +34,10 @@ use tracing::{info, warn};
 
 /// Tempo sem requisições após o qual uma sessão HLS é encerrada.
 const HLS_IDLE: Duration = Duration::from_secs(90);
-const AUDIO_BITRATE: i64 = 192_000;
+pub const AUDIO_BITRATE: i64 = 192_000;
 const HLS_SEGMENT_SECS: u32 = 6;
+const ABR_MIN_VIDEO_BITRATE: i64 = 2_000_000;
+const ABR_MAX_VIDEO_BITRATE: i64 = 8_000_000 - AUDIO_BITRATE;
 const HDR_TO_SDR: &str = "zscale=transfer=linear:npl=100,format=gbrpf32le,zscale=primaries=bt709,tonemap=tonemap=hable,zscale=transfer=bt709:matrix=bt709:range=limited,format=yuv420p";
 
 // ---------------------------------------------------------------- configuração global
@@ -197,6 +199,33 @@ pub struct TranscodePlan {
     pub container: Container,
     pub hls: bool,
     pub video_bitrate: Option<i64>,
+    pub abr: bool,
+}
+
+impl TranscodePlan {
+    pub fn enable_abr(&mut self, height: Option<i32>, source_bitrate: Option<i64>) {
+        if !self.hls || self.video_copy || !height.is_some_and(|h| h >= 360) {
+            return;
+        }
+        let budget = self.video_bitrate.or_else(|| source_bitrate.map(|b| b - AUDIO_BITRATE));
+        if let Some(ladder) = budget.and_then(AbrLadder::new) {
+            self.video_bitrate = Some(ladder.high);
+            self.abr = true;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AbrLadder {
+    pub high: i64,
+    pub low: i64,
+}
+
+impl AbrLadder {
+    fn new(video_bitrate: i64) -> Option<Self> {
+        let high = video_bitrate.min(ABR_MAX_VIDEO_BITRATE);
+        (high >= ABR_MIN_VIDEO_BITRATE).then_some(Self { high, low: high / 2 })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -340,6 +369,7 @@ pub fn decide(
         container,
         hls,
         video_bitrate,
+        abr: false,
     })
 }
 
@@ -385,6 +415,9 @@ pub fn transcode_url(
     if plan.hls && plan.container == Container::Mp4 {
         q.push("segmentContainer=mp4".to_string());
     }
+    if plan.abr {
+        q.push("abr=true".to_string());
+    }
     if let Some(i) = audio_index.filter(|i| *i >= 0) {
         q.push(format!("audioStreamIndex={i}"));
     }
@@ -413,6 +446,8 @@ pub struct TranscodeParams {
     /// Legenda de imagem (índice absoluto da trilha) queimada no vídeo.
     pub burn_subtitle: Option<i32>,
     pub tone_map_hdr: Option<HdrToneMap>,
+    pub abr: Option<AbrLadder>,
+    pub has_audio: bool,
 }
 
 impl TranscodeParams {
@@ -432,8 +467,15 @@ impl TranscodeParams {
         } else {
             container
         };
+        let video_copy = mode.eq_ignore_ascii_case("remux");
+        let video_bitrate = get("videoBitrate").and_then(|v| v.parse().ok()).filter(|b: &i64| *b > 0);
+        let abr = if hls && !video_copy && get("abr") == Some("true") {
+            video_bitrate.and_then(AbrLadder::new)
+        } else {
+            None
+        };
         Some(Self {
-            video_copy: mode.eq_ignore_ascii_case("remux"),
+            video_copy,
             audio_copy: get("audioCodec").map(|a| a.eq_ignore_ascii_case("copy")).unwrap_or(false),
             container,
             hls,
@@ -443,13 +485,15 @@ impl TranscodeParams {
                 .filter(|t| *t > 0)
                 .map(|t| t as f64 / 10_000_000.0)
                 .unwrap_or(0.0),
-            video_bitrate: get("videoBitrate").and_then(|v| v.parse().ok()).filter(|b: &i64| *b > 0),
+            video_bitrate,
             burn_subtitle: if get("subtitleMethod").map(|m| m.eq_ignore_ascii_case("encode")).unwrap_or(false) {
                 get("subtitleStreamIndex").and_then(|v| v.parse().ok()).filter(|i: &i32| *i >= 0)
             } else {
                 None
             },
             tone_map_hdr: None,
+            abr,
+            has_audio: false,
         })
     }
 }
@@ -458,6 +502,33 @@ impl TranscodeParams {
 
 fn add<S: AsRef<std::ffi::OsStr>>(args: &mut Vec<OsString>, s: S) {
     args.push(s.as_ref().to_os_string());
+}
+
+fn map_video(args: &mut Vec<OsString>, p: &TranscodeParams, hdr_filter: Option<&str>) {
+    let mut filters = Vec::new();
+    let mut video = "[0:V:0]";
+    if let Some(filter) = hdr_filter {
+        filters.push(format!("{video}{filter}[sdr]"));
+        video = "[sdr]";
+    }
+    if let Some(i) = p.burn_subtitle.filter(|_| !p.video_copy) {
+        filters.push(format!("{video}[0:{i}]overlay=eof_action=pass[v]"));
+        video = "[v]";
+    }
+    if p.abr.is_some() {
+        filters.push(format!("{video}split=2[high][downscale];[downscale]scale=-2:trunc(ih/4)*2[low]"));
+    }
+    if filters.is_empty() {
+        args.extend(["-map", "0:V:0"].map(OsString::from));
+    } else {
+        add(args, "-filter_complex");
+        add(args, filters.join(";"));
+        if p.abr.is_some() {
+            args.extend(["-map", "[high]", "-map", "[low]"].map(OsString::from));
+        } else {
+            args.extend(["-map", video].map(OsString::from));
+        }
+    }
 }
 
 pub fn build_args(
@@ -481,32 +552,16 @@ pub fn build_args(
 
     // Trilhas: primeiro vídeo + áudio escolhido (ou o primeiro, se existir); sem legendas.
     let hdr_filter = p.tone_map_hdr.filter(|_| !p.video_copy).map(HdrToneMap::filter);
-    match p.burn_subtitle.filter(|_| !p.video_copy) {
-        Some(i) => {
-            // Legenda de imagem: sobrepõe a trilha escolhida ao vídeo antes de codificar.
-            add(&mut a, "-filter_complex");
-            let overlay = format!("[0:{i}]overlay=eof_action=pass[v]");
-            let graph = match &hdr_filter {
-                Some(filter) => format!("[0:V:0]{filter}[sdr];[sdr]{overlay}"),
-                None => format!("[0:V:0]{overlay}"),
-            };
-            add(&mut a, graph);
-            add(&mut a, "-map");
-            add(&mut a, "[v]");
-        }
-        None => {
-            add(&mut a, "-map");
-            add(&mut a, "0:V:0");
-            if let Some(filter) = &hdr_filter {
-                add(&mut a, "-vf");
-                add(&mut a, filter);
-            }
-        }
-    }
-    add(&mut a, "-map");
-    match p.audio_index {
-        Some(i) => add(&mut a, format!("0:{i}")),
-        None => add(&mut a, "0:a:0?"),
+    map_video(&mut a, p, hdr_filter.as_deref());
+    let audio = p.audio_index.map_or_else(|| "0:a:0?".to_string(), |i| format!("0:{i}"));
+    let audio_outputs = match (p.abr, p.has_audio) {
+        (Some(_), true) => 2,
+        (Some(_), false) => 0,
+        (None, _) => 1,
+    };
+    for _ in 0..audio_outputs {
+        add(&mut a, "-map");
+        add(&mut a, &audio);
     }
     add(&mut a, "-sn");
     add(&mut a, "-dn");
@@ -527,6 +582,20 @@ pub fn build_args(
         add(&mut a, "copy");
         add(&mut a, "-avoid_negative_ts");
         add(&mut a, "make_zero");
+    } else if let Some(ladder) = p.abr {
+        add(&mut a, "-c:v");
+        add(&mut a, encoder);
+        if encoder == "libx264" {
+            for s in ["-preset", "veryfast", "-pix_fmt", "yuv420p"] {
+                add(&mut a, s);
+            }
+        }
+        for (i, bitrate) in [ladder.high, ladder.low].into_iter().enumerate() {
+            for option in ["b", "maxrate", "bufsize"] {
+                add(&mut a, format!("-{option}:v:{i}"));
+                add(&mut a, bitrate.to_string());
+            }
+        }
     } else if encoder == "libx264" {
         for s in ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"] {
             add(&mut a, s);
@@ -550,7 +619,7 @@ pub fn build_args(
         add(&mut a, format!("expr:gte(t,n_forced*{HLS_SEGMENT_SECS})"));
     }
 
-    if p.audio_copy {
+    if p.audio_copy && p.abr.is_none() {
         add(&mut a, "-c:a");
         add(&mut a, "copy");
     } else {
@@ -563,12 +632,17 @@ pub fn build_args(
 
     match (hls_dir, p.container) {
         (Some(dir), container) => {
-            let (segment_type, segment_pattern) = if container == Container::Mp4 {
+            let abr = p.abr.is_some();
+            if abr {
+                add(&mut a, "-var_stream_map");
+                add(&mut a, if p.has_audio { "v:0,a:0,name:high v:1,a:1,name:low" } else { "v:0,name:high v:1,name:low" });
+            }
+            let (segment_type, extension) = if container == Container::Mp4 {
                 add(&mut a, "-hls_fmp4_init_filename");
-                add(&mut a, "init.mp4");
-                ("fmp4", "seg_%05d.m4s")
+                add(&mut a, if abr { "init_%v.mp4" } else { "init.mp4" });
+                ("fmp4", "m4s")
             } else {
-                ("mpegts", "seg_%05d.ts")
+                ("mpegts", "ts")
             };
             for s in [
                 "-f",
@@ -587,8 +661,9 @@ pub fn build_args(
             ] {
                 add(&mut a, s);
             }
-            add(&mut a, dir.join(segment_pattern));
-            add(&mut a, dir.join("main.m3u8"));
+            let segment = if abr { "seg_%v_%05d" } else { "seg_%05d" };
+            add(&mut a, dir.join(format!("{segment}.{extension}")));
+            add(&mut a, dir.join(if abr { "main_%v.m3u8" } else { "main.m3u8" }));
         }
         (None, Container::Mkv) => {
             for s in ["-f", "matroska", "pipe:1"] {
@@ -702,10 +777,15 @@ pub fn hls_file_mime(name: &str) -> Option<&'static str> {
     if name == "main.m3u8" {
         return Some("application/vnd.apple.mpegurl");
     }
-    if name == "init.mp4" {
+    if is_hls_init(name) {
         return Some(Container::Mp4.mime());
     }
-    let (number, ext) = name.strip_prefix("seg_")?.split_once('.')?;
+    let segment = name.strip_prefix("seg_")?;
+    let segment = segment
+        .strip_prefix("high_")
+        .or_else(|| segment.strip_prefix("low_"))
+        .unwrap_or(segment);
+    let (number, ext) = segment.split_once('.')?;
     if number.is_empty() || number.len() > 9 || !number.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
@@ -716,14 +796,23 @@ pub fn hls_file_mime(name: &str) -> Option<&'static str> {
     }
 }
 
+fn is_hls_init(name: &str) -> bool {
+    matches!(name, "init.mp4" | "init_high.mp4" | "init_low.mp4")
+}
+
 /// Reescreve os segmentos da playlist para URLs absolutas da sessão.
 pub fn rewrite_playlist(content: &str, prefix: &str) -> String {
     let mut out = String::with_capacity(content.len() + 64);
     for line in content.lines() {
-        if line == "#EXT-X-MAP:URI=\"init.mp4\"" {
+        let init = line
+            .strip_prefix("#EXT-X-MAP:URI=\"")
+            .and_then(|s| s.strip_suffix('"'))
+            .filter(|name| is_hls_init(name));
+        if let Some(init) = init {
             out.push_str("#EXT-X-MAP:URI=\"");
             out.push_str(prefix);
-            out.push_str("init.mp4\"");
+            out.push_str(init);
+            out.push('"');
         } else if hls_file_mime(line.trim()).is_some() {
             out.push_str(prefix);
             out.push_str(line.trim());
@@ -942,7 +1031,7 @@ mod tests {
 
     #[test]
     fn url_roundtrip() {
-        let plan = TranscodePlan { video_copy: false, audio_copy: false, container: Container::Mkv, hls: false, video_bitrate: Some(6_000_000) };
+        let plan = TranscodePlan { video_copy: false, audio_copy: false, container: Container::Mkv, hls: false, video_bitrate: Some(6_000_000), abr: false };
         let url = transcode_url("abc", &plan, "sess1", Some(2), Some(50_000_000), None);
         assert!(url.starts_with("/Videos/abc/stream.mkv?"));
         let q: HashMap<String, String> = url
@@ -970,7 +1059,7 @@ mod tests {
     }
 
     fn params(video_copy: bool, audio_copy: bool, container: Container, hls: bool) -> TranscodeParams {
-        TranscodeParams { video_copy, audio_copy, container, hls, audio_index: None, start_secs: 0.0, video_bitrate: None, burn_subtitle: None, tone_map_hdr: None }
+        TranscodeParams { video_copy, audio_copy, container, hls, audio_index: None, start_secs: 0.0, video_bitrate: None, burn_subtitle: None, tone_map_hdr: None, abr: None, has_audio: false }
     }
 
     #[test]
@@ -1039,7 +1128,9 @@ mod tests {
         assert_eq!(hls_file_mime("seg_00012.ts"), Some("video/mp2t"));
         assert_eq!(hls_file_mime("init.mp4"), Some("video/mp4"));
         assert_eq!(hls_file_mime("seg_00012.m4s"), Some("video/iso.segment"));
-        for bad in ["../init.mp4", "seg_.ts", "seg_1a.ts", "seg_00001.m4s/../x", "other.m3u8", "seg_1.m4s.tmp", ""] {
+        assert_eq!(hls_file_mime("init_high.mp4"), Some("video/mp4"));
+        assert_eq!(hls_file_mime("seg_low_00012.m4s"), Some("video/iso.segment"));
+        for bad in ["../init.mp4", "seg_.ts", "seg_1a.ts", "seg_00001.m4s/../x", "other.m3u8", "seg_1.m4s.tmp", "seg_other_001.ts", ""] {
             assert!(hls_file_mime(bad).is_none(), "{bad}");
         }
         assert!(is_valid_key("0123456789abcdef") && !is_valid_key("../..") && !is_valid_key("short"));
@@ -1077,12 +1168,38 @@ mod tests {
         let mut p = params(false, false, Container::Mkv, false);
         p.tone_map_hdr = Some(HdrToneMap::default());
         let args = args_str(&p, None);
-        assert!(args.contains("-vf zscale=transfer=linear") && args.contains("-color_trc bt709"));
+        assert!(args.contains("-filter_complex [0:V:0]zscale=transfer=linear") && args.contains("-color_trc bt709"));
         p.burn_subtitle = Some(4);
         let args = args_str(&p, None);
         assert!(args.contains("format=yuv420p[sdr];[sdr][0:4]overlay"));
         p.video_copy = true;
         assert!(!args_str(&p, None).contains("tonemap"));
+    }
+
+    #[test]
+    fn abr_requires_video_reencode_and_budget() {
+        let opts = RequestOptions { enable_direct_play: false, max_bitrate: Some(3_000_000), ..OPTS };
+        let Plan::Transcode(mut plan) = decide(&src("mkv", "av1", "aac"), Some(&profile()), &opts, true) else {
+            panic!("esperava HLS");
+        };
+        plan.enable_abr(Some(240), Some(6_000_000));
+        assert!(!plan.abr);
+        plan.enable_abr(Some(720), Some(6_000_000));
+        assert!(plan.abr);
+        let url = transcode_url("abc", &plan, "sess", None, None, None);
+        let query = serde_urlencoded::from_str(url.split_once('?').unwrap().1).unwrap();
+        let mut p = TranscodeParams::from_query(&query, Container::Ts, true).unwrap();
+        assert_eq!(p.abr, Some(AbrLadder { high: 2_808_000, low: 1_404_000 }));
+        p.has_audio = true;
+        let args = args_str(&p, Some(Path::new("/w/k")));
+        assert!(args.contains("-var_stream_map v:0,a:0,name:high v:1,a:1,name:low"));
+        assert!(args.contains("-b:v:1 1404000") && args.contains("seg_%v_%05d.ts"));
+
+        let mut lower_budget = plan.clone();
+        lower_budget.abr = false;
+        lower_budget.video_bitrate = Some(1_000_000);
+        lower_budget.enable_abr(Some(720), Some(6_000_000));
+        assert!(!lower_budget.abr);
     }
 
     #[test]

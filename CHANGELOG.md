@@ -5,6 +5,9 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+### Adicionado
+- ABR em HLS MPEG-TS e fMP4. Transcodificações elegíveis oferecem duas qualidades simultâneas na playlist mestre.
+
 ## [0.3.0] - 2026-11-17
 
 ### Adicionado

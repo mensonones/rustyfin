@@ -106,7 +106,7 @@
 - [x] Legendas externas ao lado do vídeo (`Filme.srt` para `Filme.mkv`): detectadas na varredura e anunciadas como `External` nos detalhes do item e no `PlaybackInfo`.
 - [x] HLS em fMP4 quando o perfil do cliente solicita MP4 com protocolo HLS. Perfis HLS sem essa opção usam segmentos MPEG-TS.
 - [x] Conversão HDR PQ/HLG para SDR BT.709 ao recodificar vídeo com FFmpeg que inclui `zscale` e `tonemap`. Direct Play e remux conservam o HDR.
-- [ ] Múltiplas qualidades simultâneas para troca automática de bitrate (ABR).
+- [x] ABR no HLS em MPEG-TS e fMP4: duas qualidades com segmentos alinhados por sessão, ao recodificar vídeo a partir de 360p e com pelo menos 2 Mbps de orçamento para vídeo.
 
 ---
 

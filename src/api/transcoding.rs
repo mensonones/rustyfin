@@ -35,12 +35,19 @@ fn spawn_status(e: SpawnError) -> StatusCode {
     }
 }
 
-async fn item_input(pool: &DbPool, user: &AuthUser, id: &str) -> Result<(String, Option<String>), StatusCode> {
+#[derive(sqlx::FromRow)]
+struct ItemInput {
+    path: String,
+    streams_json: Option<String>,
+    has_audio: bool,
+}
+
+async fn item_input(pool: &DbPool, user: &AuthUser, id: &str) -> Result<ItemInput, StatusCode> {
     let id = normalize_id(id);
     if !users::item_allowed(pool, user, &id).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)? {
         return Err(StatusCode::NOT_FOUND);
     }
-    sqlx::query_as("SELECT path, streams_json FROM items WHERE id = ?")
+    sqlx::query_as("SELECT path, streams_json, audio_codec IS NOT NULL AS has_audio FROM items WHERE id = ?")
         .bind(&id)
         .fetch_optional(pool)
         .await
@@ -73,12 +80,12 @@ pub async fn try_progressive(
         })
         .unwrap_or(Container::Mkv);
     let mut params = TranscodeParams::from_query(query, container, false).ok_or(StatusCode::BAD_REQUEST)?;
-    let (path, streams_json) = item_input(pool, user, id).await?;
+    let input = item_input(pool, user, id).await?;
     if !params.video_copy {
-        params.tone_map_hdr = transcode::tone_map_hdr(streams_json.as_deref());
+        params.tone_map_hdr = transcode::tone_map_hdr(input.streams_json.as_deref());
     }
 
-    let stream = transcode::spawn_progressive(std::path::Path::new(&path), &params).map_err(spawn_status)?;
+    let stream = transcode::spawn_progressive(std::path::Path::new(&input.path), &params).map_err(spawn_status)?;
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, container.mime())
@@ -98,22 +105,22 @@ fn text_response(mime: &'static str, body: String) -> Result<Response, StatusCod
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-/// `master.m3u8`: playlist mestre com uma única variante (`main.m3u8` com a mesma query).
+/// A mesma query nas variantes permite compartilhar a sessão FFmpeg.
 pub async fn hls_master(
     Path(_id): Path<String>,
     Query(q): Query<HashMap<String, String>>,
     RawQuery(raw): RawQuery,
 ) -> Result<Response, StatusCode> {
     let params = TranscodeParams::from_query(&q, Container::Ts, true).ok_or(StatusCode::BAD_REQUEST)?;
-    let bandwidth = params.video_bitrate.map(|b| b.saturating_add(192_000)).unwrap_or(8_000_000);
+    let query = raw.unwrap_or_default();
+    let with_audio = |video: i64| video.saturating_add(transcode::AUDIO_BITRATE);
+    let bandwidth = params.abr.map(|ladder| ladder.high).or(params.video_bitrate).map(with_audio).unwrap_or(8_000_000);
     let version = if params.container == Container::Mp4 { "#EXT-X-VERSION:7\n" } else { "" };
-    text_response(
-        PLAYLIST_MIME,
-        format!(
-            "#EXTM3U\n{version}#EXT-X-STREAM-INF:BANDWIDTH={bandwidth}\nmain.m3u8?{}\n",
-            raw.unwrap_or_default()
-        ),
-    )
+    let mut body = format!("#EXTM3U\n{version}#EXT-X-STREAM-INF:BANDWIDTH={bandwidth}\nmain.m3u8?{query}\n");
+    if let Some(ladder) = params.abr {
+        body.push_str(&format!("#EXT-X-STREAM-INF:BANDWIDTH={}\nlow.m3u8?{query}\n", with_audio(ladder.low)));
+    }
+    text_response(PLAYLIST_MIME, body)
 }
 
 /// `main.m3u8`: inicia (ou reaproveita) a sessão ffmpeg e devolve a playlist de segmentos.
@@ -123,19 +130,45 @@ pub async fn hls_main(
     Path(id): Path<String>,
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Response, StatusCode> {
+    hls_playlist(pool, user, id, q, false).await
+}
+
+pub async fn hls_low(
+    State(pool): State<DbPool>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<Response, StatusCode> {
+    hls_playlist(pool, user, id, q, true).await
+}
+
+async fn hls_playlist(
+    pool: DbPool,
+    user: AuthUser,
+    id: String,
+    q: HashMap<String, String>,
+    low: bool,
+) -> Result<Response, StatusCode> {
     let mut params = TranscodeParams::from_query(&q, Container::Ts, true).ok_or(StatusCode::BAD_REQUEST)?;
+    let file_name = match (params.abr, low) {
+        (Some(_), false) => "main_high.m3u8",
+        (Some(_), true) => "main_low.m3u8",
+        (None, false) => "main.m3u8",
+        (None, true) => return Err(StatusCode::NOT_FOUND),
+    };
     let id = normalize_id(&id);
-    let (path, streams_json) = item_input(&pool, &user, &id).await?;
+    let input = item_input(&pool, &user, &id).await?;
     if !params.video_copy {
-        params.tone_map_hdr = transcode::tone_map_hdr(streams_json.as_deref());
+        params.tone_map_hdr = transcode::tone_map_hdr(input.streams_json.as_deref());
     }
+    params.has_audio = input.has_audio;
     let key = transcode::session_key(&id, &q, params.tone_map_hdr);
 
-    transcode::ensure_hls(&key, std::path::Path::new(&path), &params)
+    transcode::ensure_hls(&key, std::path::Path::new(&input.path), &params)
         .await
         .map_err(spawn_status)?;
 
-    let file = transcode::wait_for_file(&key, "main.m3u8", PLAYLIST_TIMEOUT)
+    let file = transcode::wait_for_file(&key, file_name, PLAYLIST_TIMEOUT)
         .await
         .ok_or_else(|| {
             error!("ffmpeg não gerou a playlist HLS de {}", id);
