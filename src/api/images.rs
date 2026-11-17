@@ -107,7 +107,7 @@ async fn serve_image(
     // Itens inexistentes e views (sem imagem) devolvem 404.
     let item_id = normalize_id(item_id);
     let mut target = item_id.clone();
-    let mut art_override: Option<String> = None;
+    let mut candidates = Vec::new();
     let mut row = fetch_image_row(pool, &target).await?;
 
     // Série/temporada não estão em `items`: usam a arte da série ou o primeiro episódio.
@@ -116,20 +116,27 @@ async fn serve_image(
             .await
             .map_err(db_error)?;
         if let Some((art, episode_id)) = found {
-            art_override = art;
+            candidates = art;
             target = episode_id;
             row = fetch_image_row(pool, &target).await?;
         }
     }
     let (video_path, duration_ticks, poster, backdrop) = row.ok_or(StatusCode::NOT_FOUND)?;
 
-    let local = art_override.or(match kind {
+    candidates.extend(match kind {
         ImageKind::Primary => poster,
         ImageKind::Backdrop => backdrop,
     });
 
-    let image_path = match local {
-        Some(p) if tokio::fs::metadata(&p).await.is_ok() => PathBuf::from(p),
+    let mut available = None;
+    for path in candidates {
+        if tokio::fs::metadata(&path).await.is_ok_and(|m| m.is_file()) {
+            available = Some(PathBuf::from(path));
+            break;
+        }
+    }
+    let image_path = match available {
+        Some(path) => path,
         // Sem imagem local/TMDB: quadro do próprio vídeo (miniatura para Primary, 16:9 largo para Backdrop).
         _ => thumbnail_for(
             config,
@@ -160,9 +167,11 @@ async fn serve_image(
         .modified()
         .ok()
         .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs())
+        .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let etag = format!("\"{:x}-{:x}\"", len, mtime);
+    let mut tag = DefaultHasher::new();
+    (&image_path, len, mtime).hash(&mut tag);
+    let etag = format!("\"{:016x}\"", tag.finish());
 
     // Cache condicional: o cliente já tem esta versão.
     let not_modified = req_headers
@@ -225,7 +234,7 @@ async fn resized_for(config: &AppConfig, src: &FsPath, o: ResizeOpts) -> Option<
         .modified()
         .ok()
         .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs())
+        .map(|d| d.as_nanos())
         .unwrap_or(0);
     let mut h = DefaultHasher::new();
     (src.to_string_lossy().as_ref(), meta.len(), mtime, o.max_w, o.max_h, o.quality / 5).hash(&mut h);
@@ -429,5 +438,93 @@ mod tests {
         assert_eq!(a, image_tag(Some("/a.jpg"), 1));
         assert_ne!(a, image_tag(Some("/a.jpg"), 2));
         assert_ne!(a, image_tag(None, 1));
+    }
+
+    #[tokio::test]
+    async fn series_and_season_serve_local_art_before_tmdb() {
+        use crate::{libraries::Library, scanner, users::AuthUser};
+
+        let pool = crate::db::init_db("sqlite::memory:").await.unwrap();
+        let config = AppConfig::load();
+        let root = std::env::temp_dir().join(format!("rf_art_{}", uuid::Uuid::new_v4()));
+        let show = root.join("Ghosts (2019)");
+        let season = show.join("Season 01");
+        let shared = root.join("Mixed");
+        std::fs::create_dir_all(&season).unwrap();
+        std::fs::create_dir(&shared).unwrap();
+        let poster = show.join("Poster.JPG");
+        let backdrop = show.join("fanart.png");
+        let season_poster = season.join("folder.jpg");
+        let tmdb_poster = root.join("tmdb-series.jpg");
+        let tmdb_season = root.join("tmdb-season.jpg");
+        let tmdb_backdrop = root.join("tmdb-backdrop.jpg");
+        for (path, bytes) in [
+            (&poster, b"series local".as_slice()),
+            (&backdrop, b"backdrop local"),
+            (&season_poster, b"season local"),
+            (&tmdb_poster, b"series remote"),
+            (&tmdb_season, b"season remote"),
+            (&tmdb_backdrop, b"backdrop remote"),
+            (&shared.join("poster.jpg"), b"shared folder"),
+        ] {
+            std::fs::write(path, bytes).unwrap();
+        }
+
+        // Prepara linhas já inspecionadas para exercitar a varredura incremental sem ffprobe.
+        for (id, path) in [
+            ("a", season.join("Ghosts S01E01.mkv")),
+            ("b", season.join("Ghosts S01E02.mkv")),
+            ("c", shared.join("Other Show S01E01.mkv")),
+        ] {
+            std::fs::write(&path, b"x").unwrap();
+            let modified = std::fs::metadata(&path).unwrap().modified().unwrap()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+            sqlx::query("INSERT INTO items (id, name, path, media_type, size_bytes, modified_at, probed)
+                         VALUES (?, ?, ?, 'Episode', 1, ?, 1)")
+                .bind(id).bind(id).bind(path.to_str().unwrap()).bind(modified)
+                .execute(&pool).await.unwrap();
+        }
+        let library = [Library {
+            id: "tv".into(),
+            name: "Séries".into(),
+            collection_type: "tvshows".into(),
+            paths: vec![root.to_str().unwrap().into()],
+        }];
+        assert_eq!(scanner::run_scan(&pool, &library).await, 3);
+
+        let series_id = scanner::series_id_for("Ghosts", Some(2019));
+        let season_id = scanner::season_id_for("Ghosts", Some(2019), 1);
+        sqlx::query("INSERT OR REPLACE INTO series (id, poster, backdrop) VALUES (?, ?, ?)")
+            .bind(&series_id).bind(tmdb_poster.to_str()).bind(tmdb_backdrop.to_str())
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO season_art (season_id, poster) VALUES (?, ?)")
+            .bind(&season_id).bind(tmdb_season.to_str())
+            .execute(&pool).await.unwrap();
+        let unrelated = scanner::series_id_for("Other Show", None);
+        assert!(shows::resolve_art(&pool, &unrelated, false).await.unwrap().unwrap().0.is_empty());
+
+        let serve = |id: &str, kind| {
+            let id = id.to_owned();
+            let (pool, config) = (&pool, &config);
+            async move {
+                let result = serve_image(config, pool, &id, kind, &HashMap::new(), &HeaderMap::new())
+                    .await.unwrap();
+                axum::body::to_bytes(result.into_body(), 100).await.unwrap()
+            }
+        };
+        assert_eq!(serve(&series_id, ImageKind::Primary).await, "series local");
+        assert_eq!(serve(&season_id, ImageKind::Primary).await, "season local");
+        assert_eq!(serve(&season_id, ImageKind::Backdrop).await, "backdrop local");
+
+        std::fs::remove_file(&season_poster).unwrap();
+        std::fs::remove_file(&backdrop).unwrap();
+        assert_eq!(serve(&season_id, ImageKind::Primary).await, "season remote");
+        assert_eq!(serve(&series_id, ImageKind::Backdrop).await, "backdrop remote");
+
+        assert_eq!(scanner::run_scan(&pool, &library).await, 3);
+        let user = AuthUser { id: "test".into(), name: "Test".into(), is_admin: false, allowed_libraries: None };
+        let season_item = shows::get_virtual_item(&config, &pool, &user, &season_id).await.unwrap().unwrap();
+        assert_eq!(season_item.image_tags["Primary"], image_tag(tmdb_season.to_str(), 0));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

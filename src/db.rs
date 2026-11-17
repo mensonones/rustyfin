@@ -55,6 +55,9 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
     add_column_if_missing(&pool, "items", "subtitle_path", "TEXT").await?;
     add_column_if_missing(&pool, "items", "poster_path", "TEXT").await?;
     add_column_if_missing(&pool, "items", "backdrop_path", "TEXT").await?;
+    add_column_if_missing(&pool, "items", "series_poster_path", "TEXT").await?;
+    add_column_if_missing(&pool, "items", "series_backdrop_path", "TEXT").await?;
+    add_column_if_missing(&pool, "items", "season_poster_path", "TEXT").await?;
     add_column_if_missing(&pool, "items", "production_year", "INTEGER").await?;
     add_column_if_missing(&pool, "items", "series_name", "TEXT").await?;
     add_column_if_missing(&pool, "items", "season_number", "INTEGER").await?;

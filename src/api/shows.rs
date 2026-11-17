@@ -121,8 +121,9 @@ async fn fetch_virtual(
                MAX(i.production_year) AS year, MAX(i.created_at) AS added,
                MAX(s.tmdb_title) AS st_title, MAX(s.overview) AS st_overview,
                MAX(s.rating) AS st_rating, MAX(s.genres) AS st_genres,
-               MAX(s.poster) AS st_poster, MAX(s.backdrop) AS st_backdrop,
-               MAX(sa.poster) AS season_poster,
+               COALESCE(MIN(i.series_poster_path), MAX(s.poster)) AS st_poster,
+               COALESCE(MIN(i.series_backdrop_path), MAX(s.backdrop)) AS st_backdrop,
+               COALESCE(MIN(i.season_poster_path), MAX(sa.poster)) AS season_poster,
                MAX(IFNULL(f.is_favorite, 0)) AS fav
         FROM items i
         LEFT JOIN playback_state p ON i.id = p.item_id AND p.user_id = ?
@@ -289,42 +290,48 @@ pub async fn get_virtual_item(
     Ok(None)
 }
 
-/// Dados para imagens: (arte própria da série se houver, ID do primeiro episódio como reserva).
+#[derive(FromRow)]
+struct VirtualArtwork {
+    episode_id: String,
+    local_season_poster: Option<String>,
+    tmdb_season_poster: Option<String>,
+    local_series_poster: Option<String>,
+    tmdb_series_poster: Option<String>,
+    local_series_backdrop: Option<String>,
+    tmdb_series_backdrop: Option<String>,
+}
+
+/// Arte em ordem de preferência e ID do primeiro episódio como reserva.
 pub async fn resolve_art(
     pool: &DbPool,
     id: &str,
     backdrop: bool,
-) -> Result<Option<(Option<String>, String)>, sqlx::Error> {
-    let first: Option<(String, String)> = sqlx::query_as(
-        "SELECT id, series_id FROM items
-         WHERE (series_id = ?1 OR season_id = ?1) AND media_type = 'Episode'
-         ORDER BY season_number, episode_number LIMIT 1",
+) -> Result<Option<(Vec<String>, String)>, sqlx::Error> {
+    let art: Option<VirtualArtwork> = sqlx::query_as(
+        "SELECT i.id AS episode_id,
+                MIN(CASE WHEN i.season_id = ?1 THEN i.season_poster_path END) OVER () AS local_season_poster,
+                sa.poster AS tmdb_season_poster,
+                MIN(i.series_poster_path) OVER () AS local_series_poster,
+                s.poster AS tmdb_series_poster,
+                MIN(i.series_backdrop_path) OVER () AS local_series_backdrop,
+                s.backdrop AS tmdb_series_backdrop
+         FROM items i
+         LEFT JOIN series s ON s.id = i.series_id
+         LEFT JOIN season_art sa ON sa.season_id = ?1
+         WHERE (i.series_id = ?1 OR i.season_id = ?1) AND i.media_type = 'Episode'
+         ORDER BY i.season_number, i.episode_number, i.id LIMIT 1",
     )
     .bind(id)
     .fetch_optional(pool)
     .await?;
-    let Some((episode_id, series_id)) = first else {
-        return Ok(None);
-    };
-
-    // Temporadas usam a arte da própria série.
-    let column = if backdrop { "backdrop" } else { "poster" };
-    let art: Option<(Option<String>,)> =
-        sqlx::query_as(&format!("SELECT {column} FROM series WHERE id = ?"))
-            .bind(&series_id)
-            .fetch_optional(pool)
-            .await?;
-    // Temporada: poster próprio (o da série pode ser de outra fase, ex.: BLEACH).
-    let season_art: Option<String> = if backdrop {
-        None
-    } else {
-        sqlx::query_as::<_, (Option<String>,)>("SELECT poster FROM season_art WHERE season_id = ?")
-            .bind(id)
-            .fetch_optional(pool)
-            .await?
-            .and_then(|r| r.0)
-    };
-    Ok(Some((season_art.or(art.and_then(|a| a.0)), episode_id)))
+    Ok(art.map(|row| {
+        let candidates = if backdrop {
+            vec![row.local_series_backdrop, row.tmdb_series_backdrop]
+        } else {
+            vec![row.local_season_poster, row.tmdb_season_poster, row.local_series_poster, row.tmdb_series_poster]
+        };
+        (candidates.into_iter().flatten().collect(), row.episode_id)
+    }))
 }
 
 // ---------------- rotas /Shows ----------------

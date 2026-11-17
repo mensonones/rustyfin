@@ -5,6 +5,11 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.5.0] - 2026-11-17
+
+### Adicionado
+- Capas e backdrops locais de séries e capas de temporadas, com preferência sobre as imagens correspondentes do TMDB.
+
 ## [0.4.0] - 2026-11-17
 
 ### Adicionado

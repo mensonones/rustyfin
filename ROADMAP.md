@@ -44,7 +44,7 @@
 - [x] Scan automático periódico (`RUSTYFIN_SCAN_INTERVAL_SECS`), por eventos de arquivo e sob demanda (`POST /Library/Refresh`, `/Items/{id}/Refresh`).
 - [x] Provider TMDB opcional (`TMDB_API_KEY`): sinopse, nota, gêneros, ano, título localizado e posters/backdrops com cache em disco; episódios usam nome/sinopse/still do episódio.
 - [x] **Hierarquia de séries**: itens virtuais `Series` e `Season` (IDs determinísticos), view "Séries" (`tvshows`), `ParentId` por série/temporada, `/Shows/{id}/Seasons`, `/Shows/{id}/Episodes` (`seasonId`/`season`), `/Shows/NextUp`, contagem de não assistidos e imagens da série/temporada.
-- [ ] Poster/backdrop locais de série (`poster.jpg` na pasta da série) e `folder.jpg` de temporada.
+- [x] Poster e backdrop locais da série (`poster.jpg`, `backdrop.jpg` ou `fanart.jpg`) e capa da temporada (`folder.jpg`), com fallback para TMDB.
 - [ ] Elenco, estúdios, classificação indicativa e trailers do TMDB.
 - [x] Scan por eventos do sistema de arquivos (`notify`, com debounce de 3 s), mantendo o polling como reserva (`RUSTYFIN_WATCH=false` desativa o watcher).
 

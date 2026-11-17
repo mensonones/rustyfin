@@ -77,7 +77,22 @@ fn year_re() -> &'static Regex {
 
 fn season_dir_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"(?i)^(season|temporada|s)\s*\d+$|^specials?$").unwrap())
+    RE.get_or_init(|| Regex::new(r"(?i)^(?:season|temporada|s)\s*(\d+)$|^specials?$").unwrap())
+}
+
+/// Resolve as pastas da série e da temporada a partir da estrutura do episódio.
+pub fn artwork_dirs<'a>(video: &'a Path, series: &str, season: i32) -> Option<(&'a Path, Option<&'a Path>)> {
+    let parent = video.parent()?;
+    let season_dir = season_dir_re().captures(parent.file_name()?.to_str()?.trim());
+    let series_dir = if season_dir.is_some() { parent.parent()? } else { parent };
+    let folder_name = strip_year(&clean_title(series_dir.file_name()?.to_str()?));
+    if folder_name.to_lowercase() != series.to_lowercase() {
+        return None;
+    }
+    let matching_season = season_dir.is_some_and(|m| {
+        m.get(1).map_or(season == 0, |n| n.as_str().parse::<i32>() == Ok(season))
+    });
+    Some((series_dir, matching_season.then_some(parent)))
 }
 
 /// Troca separadores de arquivo por espaços e normaliza espaços.

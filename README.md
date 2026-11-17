@@ -135,6 +135,11 @@ Requisitos opcionais no `PATH`: `ffprobe`/`ffmpeg` (trilhas, duração e miniatu
 Nomes de arquivo reconhecidos: `Filme (2020).mkv`, `The.Matrix.1999.1080p.BluRay.mkv`, `Serie S01E02.mkv`,
 `Serie/Season 1/S01E02.mkv`.
 
+Para usar arte local de séries, nomeie a pasta com o nome da série e coloque `poster.jpg` e
+`backdrop.jpg` (ou `fanart.jpg`) nela. Para a capa de uma temporada, coloque `folder.jpg` na pasta
+correspondente, como `Serie/Season 1/folder.jpg`. A varredura aplica essas imagens antes das imagens
+correspondentes do TMDB.
+
 ---
 
 ## 📱 Como Conectar no Moonfin / Swiftfin
