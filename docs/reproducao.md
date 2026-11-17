@@ -90,7 +90,8 @@ com baixa distância entre as assinaturas. Permanece disponível a confirmação
 **Indexar cenas SRT** registra falas e tempos de um título. Em `/cenas`, entre com o seu perfil.
 A busca limita as prévias às bibliotecas permitidas e aos trechos que terminam até a posição
 assistida. Títulos marcados como assistidos têm todas as falas disponíveis. É possível liberar
-spoilers explicitamente. Ao alternar esse filtro, a página refaz a busca preenchida. Reindexe
+spoilers explicitamente. Ao alternar esse filtro, a página refaz a busca preenchida. Cada resultado
+mostra o horário à esquerda e a fala abaixo do título. Reindexe
 depois de trocar a legenda ou seu ajuste.
 
 Em **Diagnóstico → Versões recomendadas**, o servidor recomenda MP4 progressivo após duas

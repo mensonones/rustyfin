@@ -6,8 +6,8 @@
 <meta name="description" content="Pesquise falas nas legendas locais e filtre cenas pelo seu progresso.">
 <title>Busca de cenas · Rustyfin</title>
 <style>
-/* Hallmark · v2.0.0 · theme: Terrazzo · shape: app screen · genre: modern-minimal */
-/* Hallmark · critique: make the query and spoiler setting visible before the first result */
+/* Hallmark · v2.0.0 · custom · shape: app screen · genre: modern-minimal */
+/* Hallmark · critique: use the timestamp as the reading rail and let the subtitle take the foreground */
 :root {
   color-scheme: light dark; --font: system-ui, sans-serif; --bg: #f5f1ea; --paper: #fffdf9;
   --text: #29231e; --muted: #645950; --line: #d9cec1; --accent: #943d24;
@@ -69,16 +69,67 @@ time { color: var(--accent); font-variant-numeric: tabular-nums; white-space: no
   button:not(:disabled):active { transform: none; }
   #resultados:not(:empty), #busca:not([hidden]) { animation: none; }
 }
+:root {
+  --bg: #f3f5f6; --paper: #fff; --text: #172932; --muted: #526870; --line: #cad5d9;
+  --accent: #005c53; --on-accent: #fff; --selected: #dbede6;
+  --mast: #172932; --mast-ink: #f0f7f5; --signal: #a7efcd; --transparent: transparent;
+  --font: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --quote: Georgia, serif; --clock: "Cascadia Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101b21; --paper: #18272e; --text: #e8f0f2; --muted: #a5bac3; --line: #354b55;
+    --accent: #a7efcd; --on-accent: #122820; --selected: #213d38; --mast: #0b151a;
+  }
+}
+.topbar { background: var(--mast); color: var(--mast-ink); }
+.mast, main { width: min(100% - 32px, 70rem); }
+.mast { border: 0; min-height: 60px; }
+.mast button { min-height: 36px; background: var(--mast); color: var(--mast-ink); border-color: var(--signal); }
+.mast button:hover { color: var(--text); }
+.mast button:focus-visible { outline-color: var(--signal); }
+main { padding-block: clamp(36px, 8vw, 96px) 64px; }
+.scene-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+  align-items: start; gap: 24px clamp(24px, 6vw, 88px); }
+h1 { font: 400 clamp(3rem, 7vw, 6rem)/.98 var(--quote); letter-spacing: -.065em; max-width: 13ch; }
+.intro { font-size: 1.0625rem; margin: 16px 0 0; }
+form { border-radius: 8px; }
+#entrada { max-width: none; border-block-start: 4px solid var(--accent); }
+#entrada button { justify-self: stretch; }
+#estado { margin: 0; grid-column: 2; }
+#estado:empty { position: absolute; }
+main:has(#busca:not([hidden])) .scene-workspace { grid-template-columns: minmax(0, 1fr); }
+main:has(#busca:not([hidden])) h1 { max-width: none; font-size: clamp(2.75rem, 6vw, 4.5rem); }
+#busca { border: 0; padding: 0; background: var(--transparent); }
+#busca input[type=search] { background: var(--paper); }
+#busca .query { gap: 4px; }
+.spoilers { margin-top: 8px; }
+#busca:not([hidden]) ~ #estado { grid-column: 1; margin: 0; }
+#resultados { grid-column: 1 / -1; }
+article { display: grid; grid-template-columns: minmax(4.5rem, 12%) minmax(0, 1fr);
+  gap: 16px; padding-block: 24px; }
+.excerpt { border-inline-start: 1px solid var(--line); padding-inline-start: clamp(12px, 3vw, 32px); min-width: 0; }
+article strong { display: block; color: var(--muted); font-size: .875rem; }
+article blockquote { font: 400 clamp(1.2rem, 3vw, 1.75rem)/1.35 var(--quote);
+  margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+time { font-family: var(--clock); padding-top: 4px; }
+@media (max-width: 640px) {
+  .scene-workspace { grid-template-columns: minmax(0, 1fr); }
+  #estado { grid-column: 1; }
+}
 </style>
 </head>
 <body>
-<header class="mast">
+<header class="topbar"><div class="mast">
   <span class="brand">Rustyfin</span>
   <button id="sair" type="button" hidden>Sair</button>
-</header>
+</div></header>
 <main>
+<div class="scene-workspace">
+<div class="scene-heading">
 <h1>Busca de cenas</h1>
 <p class="intro" id="intro">Entre com seu perfil para pesquisar falas da biblioteca.</p>
+</div>
 <form id="entrada" method="post" aria-label="Entrar no Rustyfin">
   <label for="usuario">Usuário</label>
   <input id="usuario" name="usuario" autocomplete="username" required>
@@ -96,6 +147,7 @@ time { color: var(--accent); font-variant-numeric: tabular-nums; white-space: no
 </form>
 <p id="estado" role="status"></p>
 <div id="resultados"></div>
+</div>
 </main>
 <script>
 const entrada = document.getElementById('entrada');
@@ -150,11 +202,12 @@ busca.onsubmit = async (evento) => {
     for (const c of cenas) {
       const sec = Math.floor(c.inicioTicks / 10000000);
       const artigo = document.createElement('article');
-      const cabecalho = document.createElement('header');
+      const trecho = document.createElement('div');
+      trecho.className = 'excerpt';
       const tempo = el('time', Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'));
       tempo.dateTime = 'PT' + sec + 'S';
-      cabecalho.append(el('strong', c.titulo), tempo);
-      artigo.append(cabecalho, el('p', c.previa));
+      trecho.append(el('strong', c.titulo), el('blockquote', c.previa));
+      artigo.append(tempo, trecho);
       lista.append(artigo);
     }
     resultados.append(lista);

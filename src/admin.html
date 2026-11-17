@@ -8,8 +8,8 @@
 <link rel="icon" type="image/png" href="/admin/favicon.png">
 <link rel="icon" type="image/png" href="/admin/favicon-dark.png" media="(prefers-color-scheme: dark)">
 <style>
-  /* Hallmark · v2.0.0 · theme: Terrazzo · shape: app screen · genre: modern-minimal */
-  /* Hallmark · critique: give navigation a fixed place and put the library list before maintenance */
+  /* Hallmark · v2.0.0 · custom · shape: app screen · genre: modern-minimal */
+  /* Hallmark · critique: replace the tall cards with compact records and give operations their own column */
   /* Hallmark · waive 28b · preview video is below the fold · local subtitle previews have no poster */
   :root {
     color-scheme: light dark;
@@ -211,16 +211,89 @@
     :root { --motion: 0s; }
     [role="tabpanel"]:not([hidden]) { animation: none; }
   }
+  :root {
+    --bg: #f3f5f6; --panel: #fff; --text: #172932; --muted: #526870; --line: #cad5d9;
+    --accent: #005c53; --accent-text: #fff; --selected: #dbede6;
+    --mast: #172932; --mast-ink: #f0f7f5; --mast-muted: #bdcfce; --signal: #a7efcd;
+    --font: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101b21; --panel: #18272e; --text: #e8f0f2; --muted: #a5bac3; --line: #354b55;
+      --accent: #a7efcd; --accent-text: #122820; --selected: #213d38;
+      --mast: #0b151a; --mast-ink: #f0f7f5; --mast-muted: #bdcfce;
+    }
+  }
+  .shell { display: block; max-width: none; }
+  .sidebar { position: static; display: block; padding: 0; background: var(--mast); color: var(--mast-ink); }
+  .mast-inner { max-width: 80rem; margin-inline: auto; padding: 12px 24px 0; display: grid;
+    grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; align-items: center; }
+  header { display: flex; align-items: center; gap: 16px; padding: 0; }
+  header .sub { color: var(--mast-muted); margin: 0; }
+  .scene-link { grid-column: 2; grid-row: 1; margin: 0; padding: 8px 0; border: 0; color: var(--signal); }
+  .sidebar :focus-visible { outline-color: var(--signal); }
+  nav { display: flex; grid-column: 1 / -1; margin-top: 8px; width: auto; max-width: none; margin-inline: 0; }
+  nav button, nav button:hover { color: var(--mast-muted); background: var(--transparent); border-radius: 0; }
+  nav button[aria-selected="true"], nav button:hover { color: var(--mast-ink); }
+  nav button[aria-selected="true"] { background: var(--transparent); }
+  nav button[aria-selected="true"]::before { inset: auto 12px 0; width: auto; height: 3px; background: var(--signal); }
+  main { max-width: 80rem; padding: clamp(24px, 4vw, 48px) 24px 64px; border: 0; }
+  h2 { letter-spacing: -.055em; }
+  button.btn { border-radius: 6px; }
+  .library-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(17rem, 30%); gap: 24px; align-items: start; }
+  .library-directory { min-width: 0; }
+  .directory-heading { padding: 12px 16px; border: 1px solid var(--line); border-bottom: 0; background: var(--panel); border-radius: 8px 8px 0 0; }
+  .library-directory .records { border-inline: 1px solid var(--line); }
+  .library-directory .empty { padding-inline: 16px; }
+  .library { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px;
+    align-items: center; padding: 12px 16px; }
+  .library-identity { min-width: 0; }
+  .library-identity h3 { font-size: .9375rem; }
+  .library-tools { justify-content: end; gap: 8px; }
+  .library > details { margin: 0; display: contents; }
+  .library > details:not([open]) > .paths { display: none; }
+  .library > details > summary { grid-column: 2; grid-row: 1; font-size: .875rem; color: var(--accent); }
+  .library .paths { grid-column: 1 / -1; margin: 0; }
+  .library-tools .btn { border-color: var(--transparent); background: var(--transparent); }
+  .library-tools .actions summary { list-style: none; text-align: center; min-width: 36px; border-radius: 6px; }
+  .library-tools .actions summary::-webkit-details-marker { display: none; }
+  .library-tools .actions summary:hover { background: var(--selected); }
+  .library-tools .actions > div { z-index: 2; box-shadow: 0 8px 24px var(--overlay); }
+  .operations { border-inline-start: 1px solid var(--line); padding-inline-start: 24px; min-width: 0; }
+  .scan { display: block; background: var(--selected); margin: 0; }
+  .scan .row { margin-top: 12px; gap: 8px; }
+  .maintenance { margin-top: 24px; }
+  .maintenance > details { background: var(--transparent); padding-inline: 0; }
+  .maintenance > details > summary { padding-inline: 0; }
+  @media (max-width: 820px) {
+    .library-workspace { grid-template-columns: minmax(0, 1fr); }
+    .operations { border-inline-start: 0; padding-inline-start: 0; }
+  }
+  @media (max-width: 720px) {
+    .sidebar { padding: 0; }
+    .mast-inner { padding: 12px 16px; }
+    header { display: block; }
+    header .sub { margin-top: 4px; }
+    nav { display: none; }
+    .mobile-nav select { background: var(--mast); color: var(--mast-ink); }
+    main { padding-inline: 16px; }
+  }
+  @media (max-width: 475px) {
+    .library { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
+    .library-tools { grid-column: 2; grid-row: 1 / 3; }
+    .library > details > summary { grid-column: 1; grid-row: 2; }
+  }
 </style>
 </head>
 <body>
 <div class="shell">
 <aside class="sidebar">
+<div class="mast-inner">
 <header>
   <h1><picture><source media="(prefers-color-scheme: dark)" srcset="/admin/logo-dark.png"><img src="/admin/logo.png" alt="" width="32" height="32"></picture> Rustyfin</h1>
   <span class="sub" id="srv"></span>
 </header>
-<nav role="tablist" aria-label="Administração" aria-orientation="vertical">
+<nav role="tablist" aria-label="Administração" aria-orientation="horizontal">
   <button id="nav-libs" role="tab" aria-controls="tab-libs" data-tab="libs" aria-selected="true" tabindex="0">Bibliotecas</button>
   <button id="nav-users" role="tab" aria-controls="tab-users" data-tab="users" aria-selected="false" tabindex="-1">Usuários</button>
   <button id="nav-sessions" role="tab" aria-controls="tab-sessions" data-tab="sessions" aria-selected="false" tabindex="-1">Sessões</button>
@@ -238,6 +311,7 @@
     <option value="status">Diagnóstico</option>
   </select>
 </div>
+</div>
 </aside>
 <main>
   <section id="tab-libs" role="tabpanel" aria-label="Bibliotecas">
@@ -248,12 +322,19 @@
       </div>
       <button class="btn primary" id="newLib">Nova biblioteca</button>
     </div>
-    <div class="row between scan">
+    <div class="library-workspace">
+    <section class="library-directory" aria-labelledby="libraryDirectoryTitle">
+      <h3 class="directory-heading" id="libraryDirectoryTitle">Bibliotecas cadastradas</h3>
+      <div id="libs" class="records"></div>
+    </section>
+    <div class="operations">
+    <div class="scan">
       <div><strong>Varredura do acervo</strong><p id="scanState" role="status">Consultando estado…</p></div>
+      <div class="row">
       <button class="btn" id="scanBtn" disabled>Iniciar varredura</button>
       <button class="btn" id="retryScan" hidden>Tentar novamente</button>
+      </div>
     </div>
-    <div id="libs" class="records"></div>
     <section class="maintenance" aria-labelledby="maintenanceTitle">
     <h3 id="maintenanceTitle">Manutenção do acervo</h3>
     <details id="revisoesAcervo" class="card revisoes">
@@ -284,6 +365,8 @@
       <p id="mensagemIndices" role="status" class="hint"></p>
     </details>
     </section>
+    </div>
+    </div>
   </section>
 
   <section id="tab-users" role="tabpanel" aria-label="Usuários" hidden>
@@ -616,7 +699,7 @@ function navegar(aba) {
 for (const [i, aba] of abas.entries()) {
   aba.onclick = () => navegar(aba.dataset.tab);
   aba.onkeydown = (evento) => {
-    const destinos = { ArrowUp: i - 1, ArrowDown: i + 1, Home: 0, End: abas.length - 1 };
+    const destinos = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: abas.length - 1 };
     if (!Object.hasOwn(destinos, evento.key)) return;
     evento.preventDefault();
     const destino = abas[(destinos[evento.key] + abas.length) % abas.length];
@@ -943,7 +1026,7 @@ async function loadLibs() {
           setTimeout(poll, 500);
         }, 'Pasta adicionada. Escaneando…');
       }) });
-    const acoes = el('details', { className: 'actions' }, el('summary', { textContent: 'Mais ações' }));
+    const acoes = el('details', { className: 'actions' }, el('summary', { textContent: '⋯', title: 'Mais ações' }));
     acoes.firstChild.setAttribute('aria-label', 'Mais ações para ' + lib.Name);
     acoes.append(el('div', {},
       el('button', { className: 'btn small', textContent: 'Renomear', onclick: () => {
@@ -970,10 +1053,9 @@ async function loadLibs() {
     const pastas = el('details', { open: abertas.has(lib.Name) },
       el('summary', { textContent: quantidade + (quantidade === 1 ? ' pasta' : ' pastas') }), list);
     const linha = el('article', { className: 'library' },
-      el('div', { className: 'row between' },
-        el('div', {}, el('h3', { textContent: lib.Name }),
-          el('p', { className: 'hint', textContent: typeLabel[lib.CollectionType] || lib.CollectionType })),
-        el('div', { className: 'row' }, adicionar, acoes)),
+      el('div', { className: 'library-identity' }, el('h3', { textContent: lib.Name }),
+        el('p', { className: 'hint', textContent: typeLabel[lib.CollectionType] || lib.CollectionType })),
+      el('div', { className: 'row library-tools' }, adicionar, acoes),
       pastas);
     linha.dataset.library = lib.Name;
     root.append(linha);

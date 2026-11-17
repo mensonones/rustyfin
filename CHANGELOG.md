@@ -5,6 +5,12 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.17.2] - 2026-11-17
+
+### Alterado
+- Painel com diretório compacto de bibliotecas e coluna de operações.
+- Busca de cenas com falas em destaque e resultados organizados em uma linha do tempo.
+
 ## [0.17.1] - 2026-11-17
 
 ### Alterado
