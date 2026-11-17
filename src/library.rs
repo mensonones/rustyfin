@@ -139,7 +139,7 @@ pub fn spawn_autoscan(pool: DbPool, config: Arc<AppConfig>, trigger: ScanTrigger
             tokio::spawn(crate::api::images::pregenerate(pool.clone(), config.clone()));
             LAST_FILES.store(files, Ordering::Relaxed);
             LAST_FINISHED.store(
-                SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0),
+                SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64),
                 Ordering::Relaxed,
             );
             RUNNING.store(false, Ordering::Relaxed);
@@ -160,8 +160,8 @@ pub fn spawn_autoscan(pool: DbPool, config: Arc<AppConfig>, trigger: ScanTrigger
                 trigger.notified().await;
             } else {
                 tokio::select! {
-                    _ = trigger.notified() => {}
-                    _ = tokio::time::sleep(Duration::from_secs(interval)) => {}
+                    () = trigger.notified() => {}
+                    () = tokio::time::sleep(Duration::from_secs(interval)) => {}
                 }
             }
 

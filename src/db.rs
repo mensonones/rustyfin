@@ -19,7 +19,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
         .await?;
 
     sqlx::query(
-        r#"
+        r"
         CREATE TABLE IF NOT EXISTS items (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -43,7 +43,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
             last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (user_id, item_id)
         );
-        "#,
+        ",
     )
     .execute(&pool)
     .await?;
@@ -90,7 +90,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
         .await?;
     // Metadados por série (TMDB). O ID é o mesmo `series_id` dos episódios.
     sqlx::query(
-        r#"
+        r"
         CREATE TABLE IF NOT EXISTS series (
             id TEXT PRIMARY KEY,
             tmdb_id INTEGER,
@@ -102,13 +102,13 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
             poster TEXT,
             backdrop TEXT
         )
-        "#,
+        ",
     )
     .execute(&pool)
     .await?;
     // Bibliotecas, pastas e configurações editáveis pelo painel /admin.
     sqlx::query(
-        r#"
+        r"
         CREATE TABLE IF NOT EXISTS libraries (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -124,7 +124,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
-        "#,
+        ",
     )
     .execute(&pool)
     .await?;
@@ -139,7 +139,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
         .await?;
     // Usuários, permissões por biblioteca e tokens de acesso (um por dispositivo/login).
     sqlx::query(
-        r#"
+        r"
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -163,7 +163,7 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
             created_at INTEGER NOT NULL,
             last_used INTEGER NOT NULL
         );
-        "#,
+        ",
     )
     .execute(&pool)
     .await?;

@@ -239,7 +239,7 @@ async fn save_position(
     let stored_position = if completed { 0 } else { position_ticks.max(0) };
 
     sqlx::query(
-        r#"
+        r"
         INSERT INTO playback_state (user_id, item_id, position_ticks, is_played, play_count, last_updated)
         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(user_id, item_id) DO UPDATE SET
@@ -247,13 +247,13 @@ async fn save_position(
             is_played = CASE WHEN excluded.is_played = 1 THEN 1 ELSE playback_state.is_played END,
             play_count = playback_state.play_count + excluded.play_count,
             last_updated = CURRENT_TIMESTAMP
-        "#,
+        ",
     )
     .bind(user_id)
     .bind(item_id)
     .bind(stored_position)
     .bind(completed)
-    .bind(if completed { 1 } else { 0 })
+    .bind(i32::from(completed))
     .execute(pool)
     .await?;
     Ok(())

@@ -85,7 +85,7 @@ pub fn filter_conds(q: &ItemQuery, genres_col: &str, year_col: &str, rating_expr
     }
     if !q.years.is_empty() {
         conds.push(format!("{year_col} IN ({})", vec!["?"; q.years.len()].join(",")));
-        binds.extend(q.years.iter().map(|y| y.to_string()));
+        binds.extend(q.years.iter().map(std::string::ToString::to_string));
     }
     if !q.official_ratings.is_empty() {
         conds.push(format!("{rating_expr} IN ({})", vec!["?"; q.official_ratings.len()].join(",")));

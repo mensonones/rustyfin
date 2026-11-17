@@ -107,7 +107,7 @@ impl AuthUser {
 }
 
 fn now_secs() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
 }
 
 // ---------------------------------------------------------------- senhas
@@ -128,8 +128,7 @@ pub fn verify_password(hash: &str, password: &str) -> bool {
         return false;
     }
     PasswordHash::new(hash)
-        .map(|p| Argon2::default().verify_password(password.as_bytes(), &p).is_ok())
-        .unwrap_or(false)
+        .is_ok_and(|p| Argon2::default().verify_password(password.as_bytes(), &p).is_ok())
 }
 
 /// Hash/verificação custam ~dezenas de ms: fora do runtime async.
@@ -163,20 +162,20 @@ fn limiter() -> &'static Mutex<HashMap<String, (u32, Instant)>> {
 
 /// `Err(segundos)` se a chave estiver bloqueada.
 pub fn limiter_check(key: &str) -> Result<(), u64> {
-    let mut map = limiter().lock().unwrap_or_else(|e| e.into_inner());
+    let mut map = limiter().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some((count, first)) = map.get(key).copied() {
         let elapsed = first.elapsed();
         if elapsed >= LOCK_WINDOW {
             map.remove(key);
         } else if count >= MAX_FAILURES {
-            return Err((LOCK_WINDOW - elapsed).as_secs().max(1));
+            return Err(LOCK_WINDOW.checked_sub(elapsed).unwrap().as_secs().max(1));
         }
     }
     Ok(())
 }
 
 pub fn limiter_fail(key: &str) {
-    let mut map = limiter().lock().unwrap_or_else(|e| e.into_inner());
+    let mut map = limiter().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let entry = map.entry(key.to_string()).or_insert((0, Instant::now()));
     entry.0 += 1;
     if map.len() > 10_000 {
@@ -185,7 +184,7 @@ pub fn limiter_fail(key: &str) {
 }
 
 pub fn limiter_ok(key: &str) {
-    limiter().lock().unwrap_or_else(|e| e.into_inner()).remove(key);
+    limiter().lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(key);
 }
 
 // ---------------------------------------------------------------- consultas
@@ -264,7 +263,7 @@ pub async fn ensure_seed_admin(pool: &DbPool) -> Result<(), sqlx::Error> {
 
 fn validate_name(name: &str) -> Result<&str, UserError> {
     let n = name.trim();
-    if n.is_empty() || n.chars().count() > MAX_NAME_LEN || n.chars().any(|c| c.is_control()) {
+    if n.is_empty() || n.chars().count() > MAX_NAME_LEN || n.chars().any(char::is_control) {
         return Err(UserError::InvalidName);
     }
     Ok(n)
@@ -431,8 +430,7 @@ pub async fn any_admin_has_password(pool: &DbPool) -> bool {
     )
     .fetch_one(pool)
     .await
-    .map(|r| r.0 > 0)
-    .unwrap_or(false)
+    .is_ok_and(|r| r.0 > 0)
 }
 
 // ---------------------------------------------------------------- autenticação e tokens
@@ -466,25 +464,22 @@ pub async fn authenticate_from(
     limiter_check(limiter_key).map_err(AuthError::Locked)?;
 
     let row = get_row_by_name(pool, name).await.map_err(|_| AuthError::Internal)?;
-    let result = match row {
-        Some((r,)) => {
-            let (id, _, hash, _, is_disabled, ..) = &r;
-            let ok = match hash {
-                Some(h) => verify_blocking(h.clone(), password.to_string()).await,
-                None => from_lan, // sem senha: entra direto, mas só da rede local
-            };
-            if !ok {
-                Err(AuthError::BadCredentials)
-            } else if *is_disabled {
-                Err(AuthError::Disabled)
-            } else {
-                get(pool, id).await.ok().flatten().ok_or(AuthError::Internal)
-            }
-        }
-        None => {
-            verify_blocking(dummy_hash().to_string(), password.to_string()).await;
+    let result = if let Some((r,)) = row {
+        let (id, _, hash, _, is_disabled, ..) = &r;
+        let ok = match hash {
+            Some(h) => verify_blocking(h.clone(), password.to_string()).await,
+            None => from_lan, // sem senha: entra direto, mas só da rede local
+        };
+        if !ok {
             Err(AuthError::BadCredentials)
+        } else if *is_disabled {
+            Err(AuthError::Disabled)
+        } else {
+            get(pool, id).await.ok().flatten().ok_or(AuthError::Internal)
         }
+    } else {
+        verify_blocking(dummy_hash().to_string(), password.to_string()).await;
+        Err(AuthError::BadCredentials)
     };
 
     match &result {
@@ -523,8 +518,7 @@ fn token_ttl_secs() -> i64 {
             .ok()
             .and_then(|v| v.trim().parse::<i64>().ok())
             .filter(|d| *d > 0)
-            .map(|d| d.saturating_mul(86_400))
-            .unwrap_or(0)
+            .map_or(0, |d| d.saturating_mul(86_400))
     })
 }
 

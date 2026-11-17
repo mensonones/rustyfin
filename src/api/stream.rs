@@ -114,13 +114,12 @@ async fn stream_media_by_id(
         .modified()
         .ok()
         .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_secs());
     let last_modified = http_date(mtime_secs);
     let etag = format!("\"{total_size:x}-{mtime_secs:x}\"");
 
     let mime_type = match container.as_deref() {
-        Some("mp4") | Some("m4v") => "video/mp4",
+        Some("mp4" | "m4v") => "video/mp4",
         Some("mov") => "video/quicktime",
         Some("webm") => "video/webm",
         Some("mkv") => "video/x-matroska",
@@ -136,8 +135,7 @@ async fn stream_media_by_id(
     let if_range_ok = headers
         .get(header::IF_RANGE)
         .and_then(|h| h.to_str().ok())
-        .map(|v| v.trim() == etag || v.trim() == last_modified)
-        .unwrap_or(true);
+        .is_none_or(|v| v.trim() == etag || v.trim() == last_modified);
     let range_header = headers
         .get(header::RANGE)
         .and_then(|h| h.to_str().ok())
@@ -161,7 +159,7 @@ async fn stream_media_by_id(
                     .header(header::CONTENT_LENGTH, chunk_size.to_string())
                     .header(
                         header::CONTENT_RANGE,
-                        format!("bytes {}-{}/{}", start, end, total_size),
+                        format!("bytes {start}-{end}/{total_size}"),
                     )
                     .body(body)
                     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR);
@@ -170,7 +168,7 @@ async fn stream_media_by_id(
                 return Response::builder()
                     .status(StatusCode::RANGE_NOT_SATISFIABLE)
                     .header(header::ACCEPT_RANGES, "bytes")
-                    .header(header::CONTENT_RANGE, format!("bytes */{}", total_size))
+                    .header(header::CONTENT_RANGE, format!("bytes */{total_size}"))
                     .body(Body::empty())
                     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR);
             }

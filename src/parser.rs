@@ -99,10 +99,10 @@ pub fn artwork_dirs<'a>(video: &'a Path, series: &str, season: i32) -> Option<(&
 fn normalize(raw: &str) -> String {
     let mut s = raw.to_string();
     // "Nome.Do.Filme.2020" → espaços. Só trocamos "." se não houver espaços (nome estilo release).
-    if !s.contains(' ') {
-        s = s.replace(['.', '_'], " ");
-    } else {
+    if s.contains(' ') {
         s = s.replace('_', " ");
+    } else {
+        s = s.replace(['.', '_'], " ");
     }
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -153,14 +153,14 @@ pub fn parse_name(stem: &str, parent: Option<&str>, grandparent: Option<&str>) -
         let after = clean_title(&normalized[end..]);
 
         // Série: texto antes do SxxExx; senão a pasta (ignorando "Season 1").
-        let series = if !before.is_empty() {
-            before
-        } else {
+        let series = if before.is_empty() {
             let folder = match parent {
                 Some(p) if !season_dir_re().is_match(p.trim()) => Some(p),
                 _ => grandparent,
             };
             folder.map(clean_title).unwrap_or_default()
+        } else {
+            before
         };
         let series = if series.is_empty() { "Série Desconhecida".to_string() } else { series };
 

@@ -309,7 +309,7 @@ mod tests {
             id: id.into(),
             name: id.into(),
             collection_type: ctype.into(),
-            paths: paths.iter().map(|p| p.to_string()).collect(),
+            paths: paths.iter().map(ToString::to_string).collect(),
         }
     }
 

@@ -135,7 +135,7 @@ async fn fetch_virtual(
     }
 
     let base = format!(
-        r#"
+        r"
         SELECT {key} AS id, i.series_id AS series_id, MAX(i.series_name) AS series_name,
                MAX(i.season_number) AS season_number,
                COUNT(*) AS episode_count, COUNT(DISTINCT i.season_number) AS season_count,
@@ -154,7 +154,7 @@ async fn fetch_virtual(
         LEFT JOIN playback_state f ON f.item_id = {key} AND f.user_id = ?
         WHERE i.media_type = 'Episode' AND i.series_id IS NOT NULL{conds}
         GROUP BY {key}
-        "#
+        "
     );
 
     // Ordenação: lista branca (nunca interpola entrada do cliente).
@@ -459,8 +459,7 @@ pub fn pick_next_up(rows: Vec<(String, String, bool, String)>) -> Vec<String> {
         let end = rows[start..]
             .iter()
             .position(|r| &r.0 != series)
-            .map(|p| start + p)
-            .unwrap_or(rows.len());
+            .map_or(rows.len(), |p| start + p);
         let group = &rows[start..end];
         start = end;
 

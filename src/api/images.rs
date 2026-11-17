@@ -121,17 +121,14 @@ async fn serve_image(
             row = fetch_image_row(pool, &target).await?;
         }
     }
-    let (video_path, duration_ticks, poster, backdrop) = match row {
-        Some(r) => r,
-        None => {
-            // Pessoa do elenco: foto do TMDB, baixada na primeira requisição e guardada em cache.
-            if kind == ImageKind::Primary {
-                if let Some(path) = person_photo(config, pool, &item_id).await {
-                    return respond_file(config, path, q, req_headers).await;
-                }
+    let Some((video_path, duration_ticks, poster, backdrop)) = row else {
+        // Pessoa do elenco: foto do TMDB, baixada na primeira requisição e guardada em cache.
+        if kind == ImageKind::Primary {
+            if let Some(path) = person_photo(config, pool, &item_id).await {
+                return respond_file(config, path, q, req_headers).await;
             }
-            return Err(StatusCode::NOT_FOUND);
         }
+        return Err(StatusCode::NOT_FOUND);
     };
 
     candidates.extend(match kind {
@@ -199,8 +196,7 @@ async fn respond_file(
         .modified()
         .ok()
         .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_nanos());
     let mut tag = DefaultHasher::new();
     (&image_path, len, mtime).hash(&mut tag);
     let etag = format!("\"{:016x}\"", tag.finish());
@@ -209,8 +205,7 @@ async fn respond_file(
     let not_modified = req_headers
         .get(header::IF_NONE_MATCH)
         .and_then(|v| v.to_str().ok())
-        .map(|v| v.split(',').any(|t| t.trim() == etag || t.trim() == "*"))
-        .unwrap_or(false);
+        .is_some_and(|v| v.split(',').any(|t| t.trim() == etag || t.trim() == "*"));
     if not_modified {
         return Response::builder()
             .status(StatusCode::NOT_MODIFIED)
@@ -266,8 +261,7 @@ async fn resized_for(config: &AppConfig, src: &FsPath, o: ResizeOpts) -> Option<
         .modified()
         .ok()
         .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_nanos());
     let mut h = DefaultHasher::new();
     (src.to_string_lossy().as_ref(), meta.len(), mtime, o.max_w, o.max_h, o.quality / 5).hash(&mut h);
     let key = h.finish();
@@ -358,8 +352,7 @@ async fn thumbnail_for(
         .ok()
         .and_then(|m| m.modified().ok())
         .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_secs());
     let out = dir.join(format!("{item_id}{suffix}-{rev}.jpg"));
     if tokio::fs::metadata(&out).await.is_ok() {
         return Some(out);

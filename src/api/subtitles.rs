@@ -142,8 +142,7 @@ async fn render(
         .modified()
         .ok()
         .and_then(|m| m.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_nanos());
     let source = match embedded_index {
         Some(index) => index.to_string(),
         None => Uuid::new_v5(&Uuid::NAMESPACE_URL, input.as_os_str().as_encoded_bytes())

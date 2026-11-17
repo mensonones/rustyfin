@@ -65,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("===========================================================");
     println!("  🦀 Rustyfin rodando com sucesso!");
     println!("  URL Local:   http://localhost:{}", config.port);
-    println!("  Escutando em: http://{}", bind_addr);
+    println!("  Escutando em: http://{bind_addr}");
     println!("  Compatível com: Moonfin, Swiftfin, Findroid, Web");
     println!("  Usuários:    gerencie em /admin (Admin criado sem senha)");
     println!("  Painel:      http://localhost:{}/admin", config.port);

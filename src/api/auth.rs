@@ -33,7 +33,7 @@ pub struct ClientCreds {
 /// `Esquema k1="v1", k2="v2"` → mapa com chaves em minúsculas.
 pub fn parse_kv_header(value: &str) -> HashMap<String, String> {
     let rest = value.trim();
-    let rest = rest.split_once(char::is_whitespace).map(|(_, r)| r).unwrap_or(rest);
+    let rest = rest.split_once(char::is_whitespace).map_or(rest, |(_, r)| r);
     let mut out = HashMap::new();
     let mut chars = rest.chars().peekable();
     loop {
@@ -286,7 +286,7 @@ pub async fn authenticate_by_name(
             "Muitas tentativas. Aguarde antes de tentar de novo.",
         )
             .into_response(),
-        Err(AuthError::BadCredentials) | Err(AuthError::Disabled) => {
+        Err(AuthError::BadCredentials | AuthError::Disabled) => {
             (StatusCode::UNAUTHORIZED, "Usuário ou senha inválidos.").into_response()
         }
         Err(AuthError::Internal) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -391,10 +391,10 @@ pub async fn delete_user(
 /// Converte o corpo `UserPolicy` do Jellyfin em atualização parcial.
 pub fn policy_from_json(body: &Value) -> PolicyUpdate {
     PolicyUpdate {
-        is_admin: body.get("IsAdministrator").and_then(|v| v.as_bool()),
-        is_disabled: body.get("IsDisabled").and_then(|v| v.as_bool()),
-        is_hidden: body.get("IsHidden").and_then(|v| v.as_bool()),
-        all_libraries: body.get("EnableAllFolders").and_then(|v| v.as_bool()),
+        is_admin: body.get("IsAdministrator").and_then(serde_json::Value::as_bool),
+        is_disabled: body.get("IsDisabled").and_then(serde_json::Value::as_bool),
+        is_hidden: body.get("IsHidden").and_then(serde_json::Value::as_bool),
+        all_libraries: body.get("EnableAllFolders").and_then(serde_json::Value::as_bool),
         libraries: body.get("EnabledFolders").and_then(|v| v.as_array()).map(|a| {
             a.iter().filter_map(|v| v.as_str()).map(|s| s.replace('-', "").to_lowercase()).collect()
         }),
@@ -432,7 +432,7 @@ pub async fn change_password(
     }
     let new_pw = body.get("NewPw").and_then(|v| v.as_str()).unwrap_or("");
     let current_pw = body.get("CurrentPw").and_then(|v| v.as_str()).unwrap_or("");
-    let reset = body.get("ResetPassword").and_then(|v| v.as_bool()).unwrap_or(false);
+    let reset = body.get("ResetPassword").and_then(serde_json::Value::as_bool).unwrap_or(false);
 
     if is_self && !reset {
         match users::check_password(&pool, &id, current_pw).await {

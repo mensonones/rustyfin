@@ -104,7 +104,7 @@ pub fn basic_password_ok(header_value: Option<&str>, password: &str) -> bool {
         return false;
     };
     let text = String::from_utf8_lossy(&decoded);
-    let given = text.split_once(':').map(|(_, p)| p).unwrap_or("");
+    let given = text.split_once(':').map_or("", |(_, p)| p);
     constant_time_eq(given.as_bytes(), password.as_bytes())
 }
 
@@ -298,7 +298,7 @@ async fn add_path(
     body: Option<Json<Value>>,
 ) -> Response {
     let pairs = query_pairs(raw);
-    let b = body.map(|Json(v)| v).unwrap_or(Value::Null);
+    let b = body.map_or(Value::Null, |Json(v)| v);
     let name = param(&pairs, "name").or_else(|| body_str(&b, &["/Name"])).unwrap_or("");
     let path = param(&pairs, "path")
         .or_else(|| body_str(&b, &["/PathInfo/Path", "/Path"]))
@@ -401,7 +401,7 @@ async fn users_list(State(st): State<AdminState>) -> Response {
 async fn users_create(State(st): State<AdminState>, Json(body): Json<Value>) -> Response {
     let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("");
     let password = body.get("password").and_then(|v| v.as_str());
-    let is_admin = body.get("isAdmin").and_then(|v| v.as_bool()).unwrap_or(false);
+    let is_admin = body.get("isAdmin").and_then(serde_json::Value::as_bool).unwrap_or(false);
     match users::create(&st.pool, name, password, is_admin).await {
         Ok(u) => Json(user_json(&u)).into_response(),
         Err(e) => crate::api::auth::user_error_response(e),
@@ -457,10 +457,10 @@ async fn users_policy(
     Json(body): Json<Value>,
 ) -> Response {
     let upd = PolicyUpdate {
-        is_admin: body.get("isAdmin").and_then(|v| v.as_bool()),
-        is_disabled: body.get("isDisabled").and_then(|v| v.as_bool()),
-        is_hidden: body.get("isHidden").and_then(|v| v.as_bool()),
-        all_libraries: body.get("allLibraries").and_then(|v| v.as_bool()),
+        is_admin: body.get("isAdmin").and_then(serde_json::Value::as_bool),
+        is_disabled: body.get("isDisabled").and_then(serde_json::Value::as_bool),
+        is_hidden: body.get("isHidden").and_then(serde_json::Value::as_bool),
+        all_libraries: body.get("allLibraries").and_then(serde_json::Value::as_bool),
         libraries: body
             .get("libraries")
             .and_then(|v| v.as_array())
@@ -506,14 +506,14 @@ async fn status(State(st): State<AdminState>) -> Response {
             Ok(c) => c,
             Err(e) => return db_error(e),
         };
-    let count_of = |kind: &str| counts.iter().find(|(k, _)| k == kind).map(|(_, n)| *n).unwrap_or(0);
+    let count_of = |kind: &str| counts.iter().find(|(k, _)| k == kind).map_or(0, |(_, n)| *n);
     let series: (i64,) = sqlx::query_as(
         "SELECT COUNT(DISTINCT series_id) FROM items WHERE media_type = 'Episode' AND series_id IS NOT NULL",
     )
     .fetch_one(&st.pool)
     .await
     .unwrap_or((0,));
-    let libs = libraries::list(&st.pool).await.map(|l| l.len()).unwrap_or(0);
+    let libs = libraries::list(&st.pool).await.map_or(0, |l| l.len());
     let (running, pending, last_finished, last_files) = library::scan_status();
     let rt = settings::snapshot();
 
@@ -525,7 +525,7 @@ async fn status(State(st): State<AdminState>) -> Response {
         "publicUrl": st.config.public_url,
         "discovery": st.config.discovery_enabled,
         "passwordProtected": st.config.admin_password.is_some() || users::any_admin_has_password(&st.pool).await,
-        "users": users::list(&st.pool).await.map(|u| u.len()).unwrap_or(0),
+        "users": users::list(&st.pool).await.map_or(0, |u| u.len()),
         "ffmpeg": {
             "available": transcode::can_transcode(),
             "path": st.config.ffmpeg_path,
@@ -569,8 +569,8 @@ async fn put_settings(State(st): State<AdminState>, Json(body): Json<Value>) -> 
         }
     }
     let name = body.get("serverName").and_then(|v| v.as_str());
-    let interval = body.get("scanIntervalSecs").and_then(|v| v.as_u64());
-    let max_tx = body.get("maxTranscodes").and_then(|v| v.as_u64()).map(|v| v as usize);
+    let interval = body.get("scanIntervalSecs").and_then(serde_json::Value::as_u64);
+    let max_tx = body.get("maxTranscodes").and_then(serde_json::Value::as_u64).map(|v| v as usize);
     match settings::update_server(&st.pool, &st.config, name, interval, max_tx).await {
         Ok(Ok(())) => {}
         Ok(Err(msg)) => return (StatusCode::BAD_REQUEST, Json(json!({ "Message": msg }))).into_response(),
@@ -625,8 +625,8 @@ fn list_dirs(dir: &Path) -> Result<Value, String> {
     }
     let entries = std::fs::read_dir(dir).map_err(|e| format!("Não foi possível abrir {}: {}", dir.display(), e))?;
     let mut dirs: Vec<(String, String)> = entries
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        .filter_map(std::result::Result::ok)
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().to_string();
             (!name.starts_with('.')).then(|| (name, e.path().to_string_lossy().to_string()))

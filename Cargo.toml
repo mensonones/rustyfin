@@ -1,10 +1,30 @@
 [package]
 name = "rustyfin"
 version = "0.10.0"
-edition = "2021"
+edition = "2024"
+rust-version = "1.85"
 license = "MIT"
 readme = "README.md"
 description = "Lightweight localhost media server in Rust compatible with Jellyfin clients"
+
+[lints.rust]
+unsafe_code = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Exceções ao pedantic, com motivo (o resto segue como aviso):
+cast_possible_truncation = "allow" # ticks, tamanhos e bitrates: conversões numéricas controladas pelo domínio
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+struct_excessive_bools = "allow"   # os DTOs espelham o contrato da API do Jellyfin (várias flags)
+needless_pass_by_value = "allow"   # extratores do axum (State, Path, Query) são recebidos por valor
+too_many_lines = "allow"
+items_after_statements = "allow"
+format_push_string = "allow"
+similar_names = "allow"
+assert_is_empty = "allow"        # nos testes
 
 [dependencies]
 hyper = "1"

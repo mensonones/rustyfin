@@ -81,11 +81,11 @@ fn sessions() -> &'static Mutex<HashMap<String, HlsSession>> {
 }
 
 pub fn ffmpeg_path() -> &'static str {
-    SETTINGS.get().map(|s| s.ffmpeg.as_str()).unwrap_or("ffmpeg")
+    SETTINGS.get().map_or("ffmpeg", |s| s.ffmpeg.as_str())
 }
 
 pub fn can_transcode() -> bool {
-    SETTINGS.get().map(|s| s.available).unwrap_or(false)
+    SETTINGS.get().is_some_and(|s| s.available)
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -107,7 +107,7 @@ impl HdrToneMap {
     }
 }
 
-/// Seleciona vídeo PQ ou HLG quando o FFmpeg oferece os filtros necessários.
+/// Seleciona vídeo PQ ou HLG quando o `FFmpeg` oferece os filtros necessários.
 pub fn tone_map_hdr(streams_json: Option<&str>) -> Option<HdrToneMap> {
     if !SETTINGS.get().is_some_and(|s| s.tone_mapping) {
         return None;
@@ -228,7 +228,7 @@ pub struct TranscodePlan {
 
 impl TranscodePlan {
     pub fn enable_abr(&mut self, height: Option<i32>, source_bitrate: Option<i64>) {
-        if !self.hls || self.video_copy || !height.is_some_and(|h| h >= 360) {
+        if !self.hls || self.video_copy || height.is_none_or(|h| h < 360) {
             return;
         }
         let budget = self.video_bitrate.or_else(|| source_bitrate.map(|b| b - AUDIO_BITRATE));
@@ -292,8 +292,8 @@ fn norm_container(c: &str) -> String {
 }
 
 /// Lista de perfil ("h264,hevc"): vazia/ausente = qualquer valor.
-fn list_allows(list: &Option<String>, value: &str, norm: fn(&str) -> String) -> bool {
-    match list.as_deref().map(str::trim) {
+fn list_allows(list: Option<&str>, value: &str, norm: fn(&str) -> String) -> bool {
+    match list.map(str::trim) {
         None | Some("") => true,
         Some(l) => {
             let v = norm(value);
@@ -302,13 +302,13 @@ fn list_allows(list: &Option<String>, value: &str, norm: fn(&str) -> String) -> 
     }
 }
 
-fn is_video(kind: &Option<String>) -> bool {
-    kind.as_deref().map(|k| k.eq_ignore_ascii_case("Video")).unwrap_or(true)
+fn is_video(kind: Option<&str>) -> bool {
+    kind.is_none_or(|k| k.eq_ignore_ascii_case("Video"))
 }
 
 /// Contêiner/protocolo de saída segundo os perfis de transcodificação do cliente.
 fn pick_output(profile: &DeviceProfile) -> (Container, bool) {
-    for tp in profile.transcoding_profiles.iter().filter(|t| is_video(&t.r#type)) {
+    for tp in profile.transcoding_profiles.iter().filter(|t| is_video(t.r#type.as_deref())) {
         let proto = tp.protocol.as_deref().unwrap_or("").to_lowercase();
         let cont = tp.container.as_deref().unwrap_or("").to_lowercase();
         if proto == "hls" || cont == "m3u8" {
@@ -337,7 +337,7 @@ pub fn decide(
     let video_profiles: Vec<_> = profile
         .direct_play_profiles
         .iter()
-        .filter(|p| is_video(&p.r#type))
+        .filter(|p| is_video(p.r#type.as_deref()))
         .collect();
     // Sem informação suficiente (perfil vazio, ffprobe ausente) ou sem como transcodificar.
     let Some(video) = src.video_codec else {
@@ -360,19 +360,18 @@ pub fn decide(
     let audio = src.audio_codec;
     let container = src.container.unwrap_or("");
     let direct_ok = video_profiles.iter().any(|p| {
-        (container.is_empty() || list_allows(&p.container, container, norm_container))
-            && list_allows(&p.video_codec, video, norm_codec)
-            && audio.map(|a| list_allows(&p.audio_codec, a, norm_codec)).unwrap_or(true)
+        (container.is_empty() || list_allows(p.container.as_deref(), container, norm_container))
+            && list_allows(p.video_codec.as_deref(), video, norm_codec)
+            && audio.is_none_or(|a| list_allows(p.audio_codec.as_deref(), a, norm_codec))
     });
 
     if opts.enable_direct_play && direct_ok && bitrate_ok {
         return Plan::Direct;
     }
 
-    let video_ok = video_profiles.iter().any(|p| list_allows(&p.video_codec, video, norm_codec));
+    let video_ok = video_profiles.iter().any(|p| list_allows(p.video_codec.as_deref(), video, norm_codec));
     let audio_ok = audio
-        .map(|a| video_profiles.iter().any(|p| list_allows(&p.audio_codec, a, norm_codec)))
-        .unwrap_or(true);
+        .is_none_or(|a| video_profiles.iter().any(|p| list_allows(p.audio_codec.as_deref(), a, norm_codec)));
 
     let (container, hls) = pick_output(profile);
     let fragmented = hls && container == Container::Mp4;
@@ -503,17 +502,16 @@ impl TranscodeParams {
         };
         Some(Self {
             video_copy,
-            audio_copy: get("audioCodec").map(|a| a.eq_ignore_ascii_case("copy")).unwrap_or(false),
+            audio_copy: get("audioCodec").is_some_and(|a| a.eq_ignore_ascii_case("copy")),
             container,
             hls,
             audio_index: get("audioStreamIndex").and_then(|v| v.parse().ok()).filter(|i: &i32| *i >= 0),
             start_secs: get("startTimeTicks")
                 .and_then(|v| v.parse::<i64>().ok())
                 .filter(|t| *t > 0)
-                .map(|t| t as f64 / 10_000_000.0)
-                .unwrap_or(0.0),
+                .map_or(0.0, |t| t as f64 / 10_000_000.0),
             video_bitrate,
-            burn_subtitle: if get("subtitleMethod").map(|m| m.eq_ignore_ascii_case("encode")).unwrap_or(false) {
+            burn_subtitle: if get("subtitleMethod").is_some_and(|m| m.eq_ignore_ascii_case("encode")) {
                 get("subtitleStreamIndex").and_then(|v| v.parse().ok()).filter(|i: &i32| *i >= 0)
             } else {
                 None

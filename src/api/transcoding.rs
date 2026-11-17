@@ -106,7 +106,7 @@ fn text_response(mime: &'static str, body: String) -> Result<Response, StatusCod
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-/// A mesma query nas variantes permite compartilhar a sessão FFmpeg.
+/// A mesma query nas variantes permite compartilhar a sessão `FFmpeg`.
 pub async fn hls_master(
     Path(_id): Path<String>,
     Query(q): Query<HashMap<String, String>>,
@@ -115,7 +115,7 @@ pub async fn hls_master(
     let params = TranscodeParams::from_query(&q, Container::Ts, true).ok_or(StatusCode::BAD_REQUEST)?;
     let query = raw.unwrap_or_default();
     let with_audio = |video: i64| video.saturating_add(transcode::AUDIO_BITRATE);
-    let bandwidth = params.abr.map(|ladder| ladder.high).or(params.video_bitrate).map(with_audio).unwrap_or(8_000_000);
+    let bandwidth = params.abr.map(|ladder| ladder.high).or(params.video_bitrate).map_or(8_000_000, with_audio);
     let version = if params.container == Container::Mp4 { "#EXT-X-VERSION:7\n" } else { "" };
     let mut body = format!("#EXTM3U\n{version}#EXT-X-STREAM-INF:BANDWIDTH={bandwidth}\nmain.m3u8?{query}\n");
     if let Some(ladder) = params.abr {

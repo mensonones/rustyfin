@@ -56,7 +56,7 @@ async fn handle_socket(mut socket: WebSocket) {
                         break;
                     }
                 }
-                Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+                Some(Ok(Message::Close(_)) | Err(_)) | None => break,
                 _ => {}
             },
             _ = tick.tick() => {
@@ -153,7 +153,7 @@ async fn set_played(pool: &DbPool, user: &AuthUser, raw_id: &str, played: bool) 
     let mut tx = pool.begin().await.map_err(db_err)?;
     for id in &ids {
         sqlx::query(
-            r#"
+            r"
             INSERT INTO playback_state (user_id, item_id, position_ticks, is_played, play_count, last_updated)
             VALUES (?, ?, 0, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(user_id, item_id) DO UPDATE SET
@@ -161,12 +161,12 @@ async fn set_played(pool: &DbPool, user: &AuthUser, raw_id: &str, played: bool) 
                 position_ticks = 0,
                 play_count = playback_state.play_count + excluded.play_count,
                 last_updated = CURRENT_TIMESTAMP
-            "#,
+            ",
         )
         .bind(&user.id)
         .bind(id)
         .bind(played)
-        .bind(if played { 1 } else { 0 })
+        .bind(i32::from(played))
         .execute(&mut *tx)
         .await
         .map_err(db_err)?;
@@ -174,7 +174,7 @@ async fn set_played(pool: &DbPool, user: &AuthUser, raw_id: &str, played: bool) 
     tx.commit().await.map_err(db_err)?;
 
     Ok(UserItemDataDto {
-        play_count: if played { 1 } else { 0 },
+        play_count: i32::from(played),
         played,
         ..Default::default()
     })
@@ -220,11 +220,11 @@ async fn set_favorite(pool: &DbPool, user: &AuthUser, raw_id: &str, favorite: bo
         return Err(StatusCode::NOT_FOUND);
     }
     sqlx::query(
-        r#"
+        r"
         INSERT INTO playback_state (user_id, item_id, position_ticks, is_played, is_favorite)
         VALUES (?, ?, 0, 0, ?)
         ON CONFLICT(user_id, item_id) DO UPDATE SET is_favorite = excluded.is_favorite
-        "#,
+        ",
     )
     .bind(&user.id)
     .bind(&id)

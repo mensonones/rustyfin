@@ -74,7 +74,7 @@ fn find_local_assets(video: &Path) -> LocalAssets {
     let mut folder_backdrop: Option<(u8, PathBuf)> = None;
     let mut subtitle: Option<(bool, PathBuf)> = None;
 
-    for entry in entries.filter_map(|e| e.ok()) {
+    for entry in entries.filter_map(std::result::Result::ok) {
         let p = entry.path();
         let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
         if ext.eq_ignore_ascii_case("srt") {
@@ -107,7 +107,7 @@ fn find_local_assets(video: &Path) -> LocalAssets {
             .to_lowercase();
 
         let consider = |slot: &mut Option<(u8, PathBuf)>, prio: u8| {
-            if slot.as_ref().map(|(p0, _)| prio < *p0).unwrap_or(true) {
+            if slot.as_ref().is_none_or(|(p0, _)| prio < *p0) {
                 *slot = Some((prio, p.clone()));
             }
         };
@@ -254,8 +254,7 @@ fn scan_concurrency() -> usize {
         .filter(|n| *n > 0)
         .unwrap_or_else(|| {
             std::thread::available_parallelism()
-                .map(|n| n.get())
-                .unwrap_or(2)
+                .map_or(2, std::num::NonZero::get)
                 .clamp(2, 8)
         })
 }
@@ -369,8 +368,7 @@ async fn process_media_file(
         .modified()
         .ok()
         .and_then(|m| m.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_secs() as i64);
 
     let mut assets = {
         let p = path.to_path_buf();
@@ -400,9 +398,7 @@ async fn process_media_file(
         }
     }
 
-    let item_id = existing
-        .map(|(id, ..)| id)
-        .unwrap_or_else(|| item_id_for_path(&path_str));
+    let item_id = existing.map_or_else(|| item_id_for_path(&path_str), |(id, ..)| id);
 
     // Sem ffprobe não inventamos codecs: ficam NULL e `probed = 0` (nova tentativa no próximo scan).
     let probed_meta = probe_file(path).await;
@@ -422,7 +418,7 @@ async fn process_media_file(
     };
 
     sqlx::query(
-        r#"
+        r"
         INSERT INTO items (id, name, path, media_type, container, duration_ticks, size_bytes,
                            width, height, video_codec, audio_codec, modified_at, probed, streams_json)
         VALUES (?, ?, ?, 'Movie', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -437,7 +433,7 @@ async fn process_media_file(
             modified_at = excluded.modified_at,
             probed = excluded.probed,
             streams_json = excluded.streams_json
-        "#,
+        ",
     )
     .bind(&item_id)
     .bind(&parsed.title)
@@ -481,7 +477,7 @@ async fn update_parsed(
         migrate_legacy_series(pool, name, year, season).await?;
     }
     sqlx::query(
-        r#"
+        r"
         UPDATE items SET
             name = ?, media_type = ?, production_year = COALESCE(?, production_year),
             series_name = ?, season_number = ?, episode_number = ?,
@@ -489,7 +485,7 @@ async fn update_parsed(
             poster_path = ?, backdrop_path = ?, subtitle_path = ?, library_id = ?,
             series_poster_path = ?, series_backdrop_path = ?, season_poster_path = ?
         WHERE path = ?
-        "#,
+        ",
     )
     .bind(&parsed.title)
     .bind(kind)
@@ -559,7 +555,7 @@ fn parse_ffprobe(stdout: &[u8]) -> Option<MediaMetadata> {
             // Capas embutidas (mjpeg/png) aparecem como "video" com disposition attached_pic.
             let is_pic = stream
                 .pointer("/disposition/attached_pic")
-                .and_then(|v| v.as_i64())
+                .and_then(serde_json::Value::as_i64)
                 .unwrap_or(0)
                 == 1;
             if kind == "Video" && is_pic {
@@ -573,11 +569,11 @@ fn parse_ffprobe(stdout: &[u8]) -> Option<MediaMetadata> {
                 .to_string();
             let index = stream
                 .get("index")
-                .and_then(|i| i.as_i64())
+                .and_then(serde_json::Value::as_i64)
                 .unwrap_or(pos as i64) as i32;
-            let w = stream.get("width").and_then(|v| v.as_i64()).map(|v| v as i32);
-            let h = stream.get("height").and_then(|v| v.as_i64()).map(|v| v as i32);
-            let channels = stream.get("channels").and_then(|v| v.as_i64()).map(|v| v as i32);
+            let w = stream.get("width").and_then(serde_json::Value::as_i64).map(|v| v as i32);
+            let h = stream.get("height").and_then(serde_json::Value::as_i64).map(|v| v as i32);
+            let channels = stream.get("channels").and_then(serde_json::Value::as_i64).map(|v| v as i32);
             let sample_rate = stream
                 .get("sample_rate")
                 .and_then(|v| v.as_str())
@@ -589,12 +585,12 @@ fn parse_ffprobe(stdout: &[u8]) -> Option<MediaMetadata> {
             let title = stream.pointer("/tags/title").and_then(|v| v.as_str());
             let is_forced = stream
                 .pointer("/disposition/forced")
-                .and_then(|v| v.as_i64())
+                .and_then(serde_json::Value::as_i64)
                 .unwrap_or(0)
                 == 1;
             let is_default = stream
                 .pointer("/disposition/default")
-                .and_then(|v| v.as_i64())
+                .and_then(serde_json::Value::as_i64)
                 .unwrap_or(0)
                 == 1;
 
@@ -608,7 +604,7 @@ fn parse_ffprobe(stdout: &[u8]) -> Option<MediaMetadata> {
 
             let display_title = Some(match (title, &language) {
                 (Some(t), _) => t.to_string(),
-                (None, Some(l)) => format!("{} ({})", l, codec),
+                (None, Some(l)) => format!("{l} ({codec})"),
                 (None, None) => codec.clone(),
             });
 

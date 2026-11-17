@@ -71,8 +71,7 @@ pub async fn save(config: &AppConfig, pool: &DbPool, user_id: &str, body: &[u8])
     tokio::fs::create_dir_all(&dir).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let stamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_millis());
     let name = format!("{user_id}-{stamp}.{ext}");
     let tmp = dir.join(format!("{name}.part"));
     tokio::fs::write(&tmp, &bytes).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -110,7 +109,7 @@ pub async fn clear(config: &AppConfig, pool: &DbPool, user_id: &str) -> Result<(
 
 /// Tag de cache enviada em `PrimaryImageTag`: muda a cada troca de foto.
 pub fn image_tag(avatar: &str) -> String {
-    avatar.rsplit_once('-').map(|(_, rest)| rest.split('.').next().unwrap_or(rest)).unwrap_or(avatar).to_string()
+    avatar.rsplit_once('-').map_or(avatar, |(_, rest)| rest.split('.').next().unwrap_or(rest)).to_string()
 }
 
 /// `GET /Users/{id}/Images/Primary`: pública (a tela de login mostra as fotos antes do login).
@@ -121,7 +120,7 @@ pub async fn get_avatar(State((config, pool)): St, Path((id, _kind)): Path<(Stri
         .ok_or(StatusCode::NOT_FOUND)?;
     let name = user.avatar.ok_or(StatusCode::NOT_FOUND)?;
     let bytes = tokio::fs::read(avatars_dir(&config).join(&name)).await.map_err(|_| StatusCode::NOT_FOUND)?;
-    let mime = sniff(&bytes).map(|(_, m)| m).unwrap_or("application/octet-stream");
+    let mime = sniff(&bytes).map_or("application/octet-stream", |(_, m)| m);
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, mime)

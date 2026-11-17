@@ -78,7 +78,7 @@ fn certification_regions() -> Vec<String> {
     regions
 }
 
-/// Elenco (até 20), diretores/roteiristas (até 6), estúdios, classificação e trailer do YouTube.
+/// Elenco (até 20), diretores/roteiristas (até 6), estúdios, classificação e trailer do `YouTube`.
 fn parse_extra(v: &Value, regions: &[String]) -> Extra {
     let studios: Vec<String> = ["production_companies", "networks"]
         .iter()
@@ -193,8 +193,7 @@ enum FetchError {
 fn now_secs() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_secs() as i64)
 }
 
 fn percent_encode(s: &str) -> String {
@@ -319,7 +318,7 @@ pub fn parse_details(v: &Value) -> Option<Info> {
         id,
         title: non_empty(v.get("title")).or_else(|| non_empty(v.get("name"))),
         overview: non_empty(v.get("overview")),
-        rating: v.get("vote_average").and_then(|r| r.as_f64()).filter(|r| *r > 0.0),
+        rating: v.get("vote_average").and_then(serde_json::Value::as_f64).filter(|r| *r > 0.0),
         genres,
         year: year_from(
             non_empty(v.get("release_date"))
@@ -413,12 +412,9 @@ pub async fn enrich_pending(pool: &DbPool, config: &AppConfig) {
     for row in rows {
         if row.1 == "Episode" {
             let key = row.4.clone().unwrap_or_default().to_lowercase();
-            match by_series.get(&key) {
-                Some(&i) => batches[i].push(row),
-                None => {
-                    by_series.insert(key, batches.len());
-                    batches.push(vec![row]);
-                }
+            if let Some(&i) = by_series.get(&key) { batches[i].push(row) } else {
+                by_series.insert(key, batches.len());
+                batches.push(vec![row]);
             }
         } else {
             batches.push(vec![row]);
@@ -451,7 +447,7 @@ pub async fn enrich_pending(pool: &DbPool, config: &AppConfig) {
     info!("TMDB: {} itens enriquecidos.", found);
 }
 
-/// Processa um lote sequencialmente. Devolve (enriquecidos, abortar_ciclo).
+/// Processa um lote sequencialmente. Devolve (enriquecidos, `abortar_ciclo`).
 async fn process_batch(
     pool: &DbPool,
     config: &AppConfig,
@@ -708,7 +704,7 @@ async fn lookup_episode(
             info.overview = non_empty(ep.get("overview"));
             info.rating = ep
                 .get("vote_average")
-                .and_then(|r| r.as_f64())
+                .and_then(serde_json::Value::as_f64)
                 .filter(|r| *r > 0.0);
             if let Some(still) = non_empty(ep.get("still_path")) {
                 info.poster = Some(still);
@@ -766,13 +762,13 @@ async fn store(pool: &DbPool, config: &AppConfig, id: &str, info: &Info) -> Resu
     let genres = serde_json::to_string(&info.genres).unwrap_or_else(|_| "[]".to_string());
 
     sqlx::query(
-        r#"
+        r"
         UPDATE items SET
             tmdb_id = ?, tmdb_title = ?, overview = ?, rating = ?, genres = ?,
             production_year = COALESCE(production_year, ?),
             tmdb_poster = ?, tmdb_backdrop = ?, tmdb_checked_at = ?, extra = ?
         WHERE id = ?
-        "#,
+        ",
     )
     .bind(info.id)
     .bind(&info.title)

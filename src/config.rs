@@ -55,17 +55,14 @@ impl AppConfig {
         let database_url = std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "sqlite://rustyfin.db?mode=rwc".to_string());
 
-        let cache_dir = std::env::var("RUSTYFIN_CACHE_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("./cache"));
+        let cache_dir = std::env::var("RUSTYFIN_CACHE_DIR").map_or_else(|_| PathBuf::from("./cache"), PathBuf::from);
 
         let scan_interval_secs = std::env::var("RUSTYFIN_SCAN_INTERVAL_SECS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(300);
         let watch_enabled = std::env::var("RUSTYFIN_WATCH")
-            .map(|v| !matches!(v.trim().to_lowercase().as_str(), "0" | "false" | "no" | "off"))
-            .unwrap_or(true);
+            .map_or(true, |v| !matches!(v.trim().to_lowercase().as_str(), "0" | "false" | "no" | "off"));
         let ffmpeg_path = std::env::var("RUSTYFIN_FFMPEG").unwrap_or_else(|_| "ffmpeg".to_string());
         let max_transcodes = std::env::var("RUSTYFIN_MAX_TRANSCODES")
             .ok()
@@ -74,8 +71,7 @@ impl AppConfig {
         let video_encoder =
             std::env::var("RUSTYFIN_VIDEO_ENCODER").unwrap_or_else(|_| "libx264".to_string());
         let discovery_enabled = std::env::var("RUSTYFIN_DISCOVERY")
-            .map(|v| !matches!(v.trim().to_lowercase().as_str(), "0" | "false" | "no" | "off"))
-            .unwrap_or(true);
+            .map_or(true, |v| !matches!(v.trim().to_lowercase().as_str(), "0" | "false" | "no" | "off"));
         let admin_password = std::env::var("RUSTYFIN_ADMIN_PASSWORD")
             .ok()
             .filter(|p| !p.is_empty());

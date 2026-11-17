@@ -69,8 +69,7 @@ impl ItemQuery {
             sort_by: list("sortby"),
             descending: p
                 .get("sortorder")
-                .map(|v| v.to_lowercase().contains("descending"))
-                .unwrap_or(false),
+                .is_some_and(|v| v.to_lowercase().contains("descending")),
             filters: list("filters"),
             is_played: p.get("isplayed").and_then(|v| v.parse().ok()),
             search_term: p.get("searchterm").filter(|s| !s.is_empty()).cloned(),
@@ -124,7 +123,7 @@ struct DbItemRow {
     is_favorite: Option<bool>,
 }
 
-const SELECT_ITEM: &str = r#"
+const SELECT_ITEM: &str = r"
     SELECT
         i.id, i.name, i.path, i.media_type, i.container, i.duration_ticks, i.size_bytes,
         i.width, i.height, i.video_codec, i.audio_codec, i.streams_json, i.subtitle_path,
@@ -138,7 +137,7 @@ const SELECT_ITEM: &str = r#"
         p.position_ticks, p.is_played, p.play_count, p.is_favorite
     FROM items i
     LEFT JOIN playback_state p ON i.id = p.item_id AND p.user_id = ?
-"#;
+";
 
 // O `userId` das rotas é ignorado: vale sempre o usuário do token (cada um vê só o que é seu).
 pub async fn get_user_items(
@@ -177,7 +176,7 @@ pub async fn get_resume_items_no_user(
     fetch_items_response(&config, &pool, &user, ItemQuery::from_params(params), true).await
 }
 
-/// "Adicionados recentemente": devolve um array simples, não um QueryResult.
+/// "Adicionados recentemente": devolve um array simples, não um `QueryResult`.
 /// Em views de séries devolve as séries mais recentes; em filmes, só filmes.
 async fn latest_response(
     config: &AppConfig,
@@ -355,7 +354,10 @@ pub async fn fetch_scoped(
         }
     }
     if !query.include_item_types.is_empty()
-        && !(want_movie || want_episode || want_series || want_season)
+        && !want_movie
+        && !want_episode
+        && !want_series
+        && !want_season
     {
         return Ok(empty_result());
     }
@@ -365,13 +367,13 @@ pub async fn fetch_scoped(
         Scope::Unknown => return Ok(empty_result()),
         Scope::Library { id, tv: true } => {
             // "Continuar assistindo" é sempre de episódios, nunca das séries agrupadas.
-            if !resume_only && !(want_episode && !want_series && !want_season) {
+            if !resume_only && (!want_episode || want_series || want_season) {
                 let kind = if want_season && !want_series { VKind::Season } else { VKind::Series };
                 return shows::list_virtual(config, pool, user, kind, None, Some(id.clone()), &query).await;
             }
         }
         Scope::Series(sid) => {
-            if !(want_episode && !want_season) {
+            if !want_episode || want_season {
                 return shows::list_virtual(config, pool, user, VKind::Season, Some(sid.clone()), None, &query).await;
             }
         }
@@ -558,7 +560,7 @@ pub async fn get_item_by_id(
     }
 }
 
-/// Busca itens por ID preservando a ordem pedida (usado por NextUp).
+/// Busca itens por ID preservando a ordem pedida (usado por `NextUp`).
 pub async fn fetch_dtos_by_ids(
     config: &AppConfig,
     pool: &DbPool,
@@ -737,7 +739,7 @@ fn map_db_item_to_dto(config: &AppConfig, row: DbItemRow) -> BaseItemDto {
         is_folder: false,
         user_data: Some(UserItemDataDto {
             playback_position_ticks: row.position_ticks.unwrap_or(0),
-            play_count: row.play_count.unwrap_or(if played { 1 } else { 0 }),
+            play_count: row.play_count.unwrap_or(i32::from(played)),
             is_favorite: row.is_favorite.unwrap_or(false),
             played,
             unplayed_item_count: None,
