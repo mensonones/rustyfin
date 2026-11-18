@@ -4,7 +4,8 @@
 
 .DESCRIPTION
   Usado pelo fluxo "Setup do Windows" do GitHub Actions e útil na sua máquina. Instala numa pasta de teste, na porta
-  informada, e falha (código de saída 1) se qualquer conferência não passar.
+  informada, valida a inicialização pela tarefa agendada sem bandeja e falha (código de saída 1)
+  se qualquer conferência não passar. O executável da bandeja é verificado como parte do pacote.
 
 .EXAMPLE
   .\testar-setup.ps1 -Setup .\dist\Rustyfin-Setup-0.25.0-x64.exe
@@ -38,6 +39,7 @@ function Esperar-Servidor([bool]$no_ar, [int]$segundos = 40) {
     return $false
 }
 function Instalar([string]$ffmpeg) {
+    # Seleciona só o início automático para o teste funcionar sem área de notificação.
     $argumentos = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$Pasta", "/PORTA=$Porta", "/MIDIAS=$Midia",
         "/FFMPEG=$ffmpeg", "/TASKS=inicio", "/LOG=$Log")
     $p = Start-Process -FilePath $Setup -ArgumentList $argumentos -Wait -PassThru
@@ -74,14 +76,21 @@ if (Test-Path $env_) {
     Conferir "a porta escolhida está no rustyfin.env" ($conteudo -match "RUSTYFIN_PORT=$Porta")
     Conferir "a pasta de mídia está no rustyfin.env" ($conteudo.Contains($Midia))
 }
-Conferir "a tarefa agendada existe" ($null -ne (Get-ScheduledTask -TaskName Rustyfin -ErrorAction SilentlyContinue))
-Conferir "o servidor responde na porta $Porta" (Esperar-Servidor $true)
-$bandeja_rodando = $null -ne (Get-Process -Name rustyfin-tray -ErrorAction SilentlyContinue)
-Conferir "o ícone da bandeja está em execução" $bandeja_rodando
-if (-not $bandeja_rodando) {
-    Write-Host "  --- rustyfin.log (últimas linhas), para entender por que o ícone não ficou de pé:"
-    $registro_bandeja = Join-Path $Pasta "rustyfin.log"
-    if (Test-Path $registro_bandeja) { Get-Content $registro_bandeja -Tail 25 | ForEach-Object { "      $_" } } else { "      (sem rustyfin.log)" }
+$tarefa = Get-ScheduledTask -TaskName Rustyfin -ErrorAction SilentlyContinue
+Conferir "a tarefa agendada existe" ($null -ne $tarefa)
+if ($tarefa) {
+    $script_inicio = [regex]::Escape((Join-Path $Pasta "iniciar.ps1"))
+    $acoes = @($tarefa.Actions)
+    $usa_script = $acoes.Count -eq 1 -and $acoes[0].Execute -eq "powershell.exe" -and
+        $acoes[0].Arguments -match ('(?:^|\s)-File "' + $script_inicio + '"$')
+    Conferir "a tarefa agendada inicia o servidor sem bandeja" $usa_script
+}
+$servidor_no_ar = Esperar-Servidor $true
+Conferir "o servidor responde na porta $Porta" $servidor_no_ar
+if (-not $servidor_no_ar) {
+    Write-Host "  --- rustyfin.log (últimas linhas):"
+    $registro = Join-Path $Pasta "rustyfin.log"
+    if (Test-Path $registro) { Get-Content $registro -Tail 25 } else { Write-Host "      (sem rustyfin.log)" }
 }
 if ($BaixarFfmpeg) {
     Conferir "o ffmpeg foi baixado e extraído" (Test-Path (Join-Path $Pasta "ffmpeg\bin\ffmpeg.exe"))
@@ -108,7 +117,6 @@ if ($desinstalador) {
     Start-Sleep -Seconds 3
 }
 Conferir "o servidor parou" (Esperar-Servidor $false 15)
-Conferir "o ícone da bandeja foi encerrado" ($null -eq (Get-Process -Name rustyfin-tray -ErrorAction SilentlyContinue))
 Conferir "a tarefa agendada foi removida" ($null -eq (Get-ScheduledTask -TaskName Rustyfin -ErrorAction SilentlyContinue))
 Conferir "a pasta de instalação foi apagada" (-not (Test-Path (Join-Path $Pasta "rustyfin.exe")))
 Remove-Item -Recurse -Force $Midia -ErrorAction SilentlyContinue
