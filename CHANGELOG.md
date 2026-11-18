@@ -5,6 +5,14 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.25.2] - 2026-11-18
+
+### Corrigido
+- Ícone da bandeja: se a criação do ícone ou o laço de eventos falhar (por exemplo, numa sessão sem área de notificação),
+  o erro vai para o `rustyfin.log` e o programa continua como supervisor do servidor, em vez de morrer e deixar o servidor
+  sem supervisão. O log registra "Ícone da bandeja criado." quando tudo dá certo.
+- O teste do setup mostra as últimas linhas do `rustyfin.log` quando o ícone da bandeja não está em execução.
+
 ## [0.25.1] - 2026-11-18
 
 ### Adicionado

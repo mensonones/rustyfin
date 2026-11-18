@@ -76,7 +76,13 @@ if (Test-Path $env_) {
 }
 Conferir "a tarefa agendada existe" ($null -ne (Get-ScheduledTask -TaskName Rustyfin -ErrorAction SilentlyContinue))
 Conferir "o servidor responde na porta $Porta" (Esperar-Servidor $true)
-Conferir "o ícone da bandeja está em execução" ($null -ne (Get-Process -Name rustyfin-tray -ErrorAction SilentlyContinue))
+$bandeja_rodando = $null -ne (Get-Process -Name rustyfin-tray -ErrorAction SilentlyContinue)
+Conferir "o ícone da bandeja está em execução" $bandeja_rodando
+if (-not $bandeja_rodando) {
+    Write-Host "  --- rustyfin.log (últimas linhas), para entender por que o ícone não ficou de pé:"
+    $registro_bandeja = Join-Path $Pasta "rustyfin.log"
+    if (Test-Path $registro_bandeja) { Get-Content $registro_bandeja -Tail 25 | ForEach-Object { "      $_" } } else { "      (sem rustyfin.log)" }
+}
 if ($BaixarFfmpeg) {
     Conferir "o ffmpeg foi baixado e extraído" (Test-Path (Join-Path $Pasta "ffmpeg\bin\ffmpeg.exe"))
     Conferir "o ffprobe veio junto" (Test-Path (Join-Path $Pasta "ffmpeg\bin\ffprobe.exe"))

@@ -26,7 +26,7 @@ mod bandeja {
         io::{Read, Write},
         net::{SocketAddr, TcpListener, TcpStream},
         os::windows::process::CommandExt,
-        path::Path,
+        path::{Path, PathBuf},
         process::{Child, Command, Stdio},
         sync::{
             Arc,
@@ -86,6 +86,32 @@ mod bandeja {
             thread::spawn(move || supervisor(&estado, &pasta, &configuracao, porta));
         }
 
+        // Um programa sem console não mostra pânico nenhum: registra no log e segue sem o ícone, em vez de morrer
+        // e deixar o servidor sem supervisão.
+        let pasta_do_aviso = pasta.clone();
+        std::panic::set_hook(Box::new(move |info| {
+            registrar(&pasta_do_aviso, &format!("Erro inesperado no ícone da bandeja: {info}"));
+        }));
+        let da_bandeja = trava.try_clone().ok();
+        let resultado = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            bandeja(estado.clone(), pasta.clone(), configuracao.clone(), porta, da_bandeja);
+        }));
+        if resultado.is_err() {
+            registrar(&pasta, "A bandeja falhou; o servidor segue no ar, sem o ícone.");
+        }
+        // Só chega aqui se a bandeja não pôde ser criada (ou falhou): o programa vira só o supervisor do servidor.
+        sem_bandeja(&estado);
+        drop(trava);
+    }
+
+    /// Monta o ícone e o menu e roda o laço de eventos. Volta (sem rodar o laço) se a bandeja não puder ser criada.
+    fn bandeja(
+        estado: Arc<Estado>,
+        pasta: PathBuf,
+        configuracao: HashMap<String, String>,
+        porta: u16,
+        trava: Option<TcpListener>,
+    ) {
         let evento = EventLoopBuilder::new().build();
         let abrir_painel = MenuItem::new("Abrir o painel", true, None);
         let ver_log = MenuItem::new("Ver o log", true, None);
@@ -103,19 +129,23 @@ mod bandeja {
         ]);
         let icone = Icon::from_resource(1, Some((32, 32)));
         let (Ok(()), Ok(icone)) = (montado, icone) else {
-            registrar(&pasta, "Não foi possível montar o menu da bandeja; o servidor segue sem o ícone.");
-            return sem_bandeja(&estado);
+            registrar(&pasta, "Não foi possível montar o menu ou carregar o ícone da bandeja; o servidor segue sem o ícone.");
+            return;
         };
-        let Ok(bandeja) = TrayIconBuilder::new()
+        let bandeja = match TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_tooltip(format!("Rustyfin (porta {porta})"))
             .with_icon(icone)
             .build()
-        else {
-            // Sem área de notificação (por exemplo, sessão sem desktop): o servidor continua no ar, sem o ícone.
-            registrar(&pasta, "Não foi possível criar o ícone na bandeja; o servidor segue sem ele.");
-            return sem_bandeja(&estado);
+        {
+            Ok(b) => b,
+            Err(erro) => {
+                // Sem área de notificação (por exemplo, sessão sem desktop): o servidor continua no ar, sem o ícone.
+                registrar(&pasta, &format!("Não foi possível criar o ícone na bandeja ({erro}); o servidor segue sem ele."));
+                return;
+            }
         };
+        registrar(&pasta, "Ícone da bandeja criado.");
 
         let url = format!("http://localhost:{porta}/admin");
         let mut bandeja = Some(bandeja);
