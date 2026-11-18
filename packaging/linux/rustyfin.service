@@ -18,6 +18,10 @@ RestartSec=3
 KillSignal=SIGTERM
 TimeoutStopSec=20
 StateDirectory=rustyfin
+# O banco guarda hashes de senha e tokens de sessão: só o usuário do serviço pode entrar na pasta e ler os arquivos.
+# Sem isto o systemd aplica 0755 à pasta e o SQLite cria o banco em 0644, legível por qualquer conta local.
+StateDirectoryMode=0750
+UMask=0077
 WorkingDirectory=/var/lib/rustyfin
 
 # Endurecimento que nao atrapalha a leitura das midias nem o acesso a GPU (/dev/dri).

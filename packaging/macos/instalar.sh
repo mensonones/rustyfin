@@ -51,9 +51,20 @@ cat > "$PASTA/iniciar.sh" <<EOF
 #!/bin/sh
 export PATH="/opt/homebrew/bin:/usr/local/bin:\$PATH"
 export RUSTYFIN_DATA_DIR="$PASTA/dados"
-set -a
-[ -f "$PASTA/rustyfin.env" ] && . "$PASTA/rustyfin.env"
-set +a
+# Lê o rustyfin.env como CHAVE=VALOR (e não como código de shell): valores com espaços, como caminhos, funcionam sem
+# aspas e nada do arquivo é executado. Aspas ao redor do valor são opcionais.
+if [ -f "$PASTA/rustyfin.env" ]; then
+    while IFS= read -r linha || [ -n "\$linha" ]; do
+        case "\$linha" in ''|'#'*) continue ;; esac
+        chave=\${linha%%=*}
+        valor=\${linha#*=}
+        [ "\$chave" = "\$linha" ] && continue
+        chave=\$(printf '%s' "\$chave" | tr -d '[:space:]')
+        case "\$chave" in ''|[0-9]*|*[!A-Za-z0-9_]*) continue ;; esac
+        valor=\$(printf '%s' "\$valor" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*\$//' -e 's/^"\\(.*\\)"\$/\\1/')
+        export "\$chave=\$valor"
+    done < "$PASTA/rustyfin.env"
+fi
 exec "$PASTA/rustyfin"
 EOF
 chmod 755 "$PASTA/iniciar.sh"

@@ -61,7 +61,6 @@ Source: "{#ExePath}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#TrayPath}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "iniciar.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "tarefa.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "firewall.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "porta.ps1"; Flags: dontcopy
 Source: "..\rustyfin.env.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
@@ -493,6 +492,59 @@ begin
   SaveStringsToUTF8File(Arquivo, Linhas, False);
 end;
 
+{ A porta que o servidor de fato usa: a do rustyfin.env já existente (numa atualização ela é preservada) ou, na primeira
+  instalação, a escolhida no assistente. O firewall e o link do painel precisam seguir a porta efetiva. }
+procedure AtualizarPortaEfetiva;
+var
+  Linhas: TArrayOfString;
+  I, Valor: Integer;
+  Linha: string;
+begin
+  if not LoadStringsFromFile(ExpandConstant('{app}\rustyfin.env'), Linhas) then
+    Exit;
+  for I := 0 to GetArrayLength(Linhas) - 1 do
+  begin
+    Linha := Trim(Linhas[I]);
+    StringChangeEx(Linha, ' ', '', True);
+    if Pos('RUSTYFIN_PORT=', Linha) = 1 then
+    begin
+      Valor := StrToIntDef(Copy(Linha, Length('RUSTYFIN_PORT=') + 1, 10), 0);
+      if (Valor >= 1) and (Valor <= 65535) then
+        PortaEscolhida := IntToStr(Valor);
+    end;
+  end;
+end;
+
+procedure AvisarFalha(const Texto: string);
+begin
+  Log(Texto);
+  SuppressibleMsgBox(Texto, mbError, MB_OK, IDOK);
+end;
+
+{ Regras do Firewall (rede privada) numa única elevação. Só roda programas do próprio Windows (cmd.exe e netsh.exe, em
+  System32) com argumentos que o setup monta: nada que o usuário possa alterar é executado como administrador. A porta
+  vem sempre de um número validado. }
+function ComandoFirewall(Adicionar: Boolean; const Porta: string): string;
+var
+  Netsh: string;
+begin
+  Netsh := '"' + ExpandConstant('{sys}\netsh.exe') + '" advfirewall firewall ';
+  Result := Netsh + 'delete rule name="Rustyfin (HTTP)" & ' + Netsh + 'delete rule name="Rustyfin (descoberta)"';
+  if Adicionar then
+    Result := Result + ' & ' + Netsh + 'add rule name="Rustyfin (HTTP)" dir=in action=allow protocol=TCP localport='
+      + Porta + ' profile=private & ' + Netsh
+      + 'add rule name="Rustyfin (descoberta)" dir=in action=allow protocol=UDP localport=7359 profile=private';
+end;
+
+{ `runas` mostra o pedido de permissão do Windows. Devolve False se você recusar ou se o comando falhar. }
+function AplicarFirewall(Adicionar: Boolean; const Porta: string): Boolean;
+var
+  Codigo: Integer;
+begin
+  Result := ShellExec('runas', ExpandConstant('{sys}\cmd.exe'), '/s /c "' + ComandoFirewall(Adicionar, Porta) + '"', '',
+    SW_HIDE, ewWaitUntilTerminated, Codigo) and (Codigo = 0);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Codigo: Integer;
@@ -500,27 +552,38 @@ var
 begin
   if CurStep = ssInstall then
   begin
-    { Atualização: para o servidor antes de trocar os arquivos. }
+    { Atualização: para o servidor antes de trocar os arquivos e segue a porta que já estava configurada. }
+    AtualizarPortaEfetiva;
     if FileExists(ExpandConstant('{app}\tarefa.ps1')) then
       ExecutarPS('tarefa.ps1', ArgumentosTarefa('Parar'));
   end;
   if CurStep = ssPostInstall then
   begin
     EscreverConfiguracao;
+    AtualizarPortaEfetiva;
     Argumentos := ArgumentosTarefa('Registrar');
     if not WizardIsTaskSelected('inicio') then
       Argumentos := Argumentos + ' -SemGatilho';
     if not WizardIsTaskSelected('bandeja') then
       Argumentos := Argumentos + ' -SemBandeja';
-    ExecutarPS('tarefa.ps1', Argumentos);
-    ExecutarPS('tarefa.ps1', ArgumentosTarefa('Iniciar'));
+    Codigo := ExecutarPS('tarefa.ps1', Argumentos);
+    if Codigo <> 0 then
+      AvisarFalha('Não foi possível registrar a tarefa agendada do Rustyfin (código ' + IntToStr(Codigo) + '). O servidor '
+        + 'não vai subir sozinho. Abra o Rustyfin pelo menu Iniciar, ou rode o setup de novo.')
+    else
+    begin
+      Codigo := ExecutarPS('tarefa.ps1', ArgumentosTarefa('Iniciar'));
+      if Codigo <> 0 then
+        AvisarFalha('A tarefa do Rustyfin foi criada, mas não foi possível iniciá-la agora (código ' + IntToStr(Codigo)
+          + '). Abra o Rustyfin pelo menu Iniciar ou saia e entre no Windows de novo.');
+    end;
     if WizardIsTaskSelected('firewall') then
     begin
-      { `runas` mostra o pedido de permissão do Windows; se você recusar, o resto da instalação segue. }
-      if ShellExec('runas', 'powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "'
-          + ExpandConstant('{app}\firewall.ps1') + '" -Porta ' + PortaEscolhida, '', SW_HIDE, ewWaitUntilTerminated, Codigo)
-          and (Codigo = 0) then
-        SaveStringToFile(ExpandConstant('{app}\firewall.flag'), 'regras criadas', False);
+      if AplicarFirewall(True, PortaEscolhida) then
+        SaveStringToFile(ExpandConstant('{app}\firewall.flag'), 'regras criadas', False)
+      else
+        AvisarFalha('As regras do Firewall não foram criadas (a permissão foi negada ou o comando falhou). O celular e a TV '
+          + 'podem não encontrar o servidor: rode o setup de novo e aceite o pedido de permissão.');
     end;
   end;
 end;
@@ -536,9 +599,9 @@ begin
   begin
     Exec('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\tarefa.ps1') + '" '
       + ArgumentosTarefa('Remover'), '', SW_HIDE, ewWaitUntilTerminated, Codigo);
+    { Remove as regras do Firewall (um pedido de permissão), também só com programas do Windows. }
     if FileExists(ExpandConstant('{app}\firewall.flag')) then
-      ShellExec('runas', 'powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "'
-        + ExpandConstant('{app}\firewall.ps1') + '" -Remover', '', SW_HIDE, ewWaitUntilTerminated, Codigo);
+      AplicarFirewall(False, '0');
   end;
   if CurUninstallStep = usPostUninstall then
   begin

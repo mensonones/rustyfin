@@ -57,7 +57,17 @@ done
 
 systemctl stop rustyfin 2>/dev/null || true
 install -m 0755 "$BIN_ORIGEM" "$BIN_DESTINO"
+# Instalações antigas (antes da 0.25.4) deixaram a pasta em 0755 e o banco em 0644: fecha as permissões agora.
+MODO_ANTES=$(stat -c %a "$DADOS" 2>/dev/null || echo "")
 install -d -o rustyfin -g rustyfin -m 0750 "$DADOS"
+chown -R rustyfin:rustyfin "$DADOS"
+chmod 0750 "$DADOS"
+find "$DADOS" -type f -exec chmod 0600 {} +
+find "$DADOS" -mindepth 1 -type d -exec chmod 0700 {} +
+if [ -n "$MODO_ANTES" ] && [ "$MODO_ANTES" != "750" ] && [ "$MODO_ANTES" != "700" ] && [ -f "$DADOS/rustyfin.db" ]; then
+    echo "Aviso: a pasta de dados estava legível por outras contas deste computador, e o banco guarda tokens de sessão."
+    echo "  Encerre as sessões em /admin -> Sessões (Encerrar todas) e troque as senhas, por precaução."
+fi
 install -d -m 0755 "$CONFIG"
 if [ ! -f "$CONFIG/rustyfin.env" ]; then
     install -m 0640 -o root -g rustyfin "$AQUI/../rustyfin.env.example" "$CONFIG/rustyfin.env"
