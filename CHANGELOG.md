@@ -5,6 +5,24 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.18.0] - 2026-11-18
+
+### Adicionado
+- Aceleração por hardware com GPU Intel (e AMD) no Linux. O encoder padrão passa a ser `auto`: se o container enxerga a
+  GPU (`/dev/dri`) e um quadro de teste codifica, o transcode usa `h264_vaapi`; senão segue em software (`libx264`).
+  Também aceita `h264_vaapi` e `h264_qsv` (Quick Sync, experimental) escolhidos à mão; se o escolhido não funcionar, o
+  servidor avisa no log e usa `libx264` em vez de quebrar a reprodução. O painel mostra o encoder realmente em uso.
+- Os filtros (legendas queimadas, HDR para SDR, ABR) rodam na CPU e só o resultado sobe para a GPU, então todos os modos de
+  transcode funcionam com o encoder de hardware. O vídeo copiado (remux) nunca abre a GPU.
+- `RUSTYFIN_HWACCEL_DEVICE` (padrão `/dev/dri/renderD128`) escolhe o dispositivo de renderização.
+- A imagem Docker (amd64) inclui os drivers Intel (`intel-media-va-driver-non-free`, `i965-va-driver`), as bibliotecas do
+  Quick Sync e o `vainfo` (+69 MB). O `docker-compose.yml` traz o exemplo comentado para repassar a GPU.
+
+### Observação
+- Esta versão foi validada por testes dos argumentos do ffmpeg e dos fallbacks, mas **não numa GPU Intel real**: o Docker
+  Desktop no Windows não repassa `/dev/dri` ao container. Quem testar numa máquina Linux com GPU Intel, por favor relate o
+  resultado.
+
 ## [0.17.5] - 2026-11-18
 
 ### Corrigido
