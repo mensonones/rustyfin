@@ -12,6 +12,13 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::collections::HashMap;
+
+/// Quantas falas a busca devolve, no máximo.
+const LIMITE_RESULTADOS: usize = 80;
+/// Candidatos lidos por vez, e o teto de candidatos examinados numa busca (a latência não cresce sem limite).
+const LOTE_CANDIDATAS: i64 = 160;
+const MAX_CANDIDATAS: i64 = 4000;
 
 async fn alterada(path: Option<&str>) -> Option<i64> {
     let Some(path) = path else {
@@ -172,25 +179,56 @@ pub(super) async fn buscar(
         sql.push_str(" AND ");
         sql.push_str(condicao);
     }
-    sql.push_str(" ORDER BY i.name, c.inicio LIMIT 80");
-    let mut consulta = sqlx::query_as::<_, Cena>(&sql)
-        .bind(&user.id)
-        .bind(termo.to_lowercase())
-        .bind(q.spoilers);
-    if let Some((_, valores)) = filtro {
-        for valor in valores {
-            consulta = consulta.bind(valor);
-        }
-    }
-    let linhas = consulta.fetch_all(&pool).await.map_err(erro_db)?;
+    // Ordem estável (o desempate pelo rowid) para paginar os candidatos sem repetir nem pular linhas.
+    sql.push_str(" ORDER BY i.name, c.inicio, c.rowid LIMIT ? OFFSET ?");
+    let termo_baixo = termo.to_lowercase();
+
+    // O limite vale para os resultados **válidos**: as falas cuja legenda mudou desde a indexação (esperando
+    // reindexar) são descartadas, e os candidatos seguintes entram no lugar, em vez de a busca devolver menos ou nada.
     let mut resposta = Vec::new();
-    for c in linhas {
-        if alterada(c.subtitle_path.as_deref()).await == Some(c.alterada) {
-            resposta.push(json!({
-                "itemId": normalize_id(&c.id), "titulo": c.name, "faixa": c.faixa,
-                "inicioTicks": c.inicio, "fimTicks": c.fim, "previa": c.texto,
-            }));
+    let mut mudancas: HashMap<Option<String>, Option<i64>> = HashMap::new();
+    let mut deslocamento = 0_i64;
+    while resposta.len() < LIMITE_RESULTADOS && deslocamento < MAX_CANDIDATAS {
+        let mut consulta = sqlx::query_as::<_, Cena>(&sql)
+            .bind(&user.id)
+            .bind(&termo_baixo)
+            .bind(q.spoilers);
+        if let Some((_, valores)) = &filtro {
+            for valor in valores {
+                consulta = consulta.bind(valor.clone());
+            }
         }
+        let linhas = consulta
+            .bind(LOTE_CANDIDATAS)
+            .bind(deslocamento)
+            .fetch_all(&pool)
+            .await
+            .map_err(erro_db)?;
+        let recebidas = i64::try_from(linhas.len()).unwrap_or(LOTE_CANDIDATAS);
+        for c in linhas {
+            // Cada arquivo de legenda é conferido uma vez por busca, não uma vez por fala.
+            let chave = c.subtitle_path.clone();
+            let atual = if let Some(valor) = mudancas.get(&chave) {
+                *valor
+            } else {
+                let valor = alterada(c.subtitle_path.as_deref()).await;
+                mudancas.insert(chave, valor);
+                valor
+            };
+            if atual == Some(c.alterada) {
+                resposta.push(json!({
+                    "itemId": normalize_id(&c.id), "titulo": c.name, "faixa": c.faixa,
+                    "inicioTicks": c.inicio, "fimTicks": c.fim, "previa": c.texto,
+                }));
+                if resposta.len() >= LIMITE_RESULTADOS {
+                    break;
+                }
+            }
+        }
+        if recebidas < LOTE_CANDIDATAS {
+            break;
+        }
+        deslocamento += LOTE_CANDIDATAS;
     }
     Ok(Json(resposta))
 }

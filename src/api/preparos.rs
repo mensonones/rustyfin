@@ -238,7 +238,39 @@ pub(super) async fn iniciar(
     Ok(StatusCode::ACCEPTED)
 }
 
-async fn disponivel(dir: &std::path::Path) -> Option<u64> {
+/// Tira do cache o que não pode mais ser servido, para que não consuma a cota: versões finalizadas cujo título mudou de
+/// conteúdo (o hash do catálogo já é outro) ou sumiu, e as linhas do catálogo nessa situação. Os temporários de um
+/// preparo em andamento (`.tmp`) e as versões ainda válidas ficam como estão.
+async fn reconciliar(pool: &DbPool, dir: &std::path::Path) {
+    let _ = sqlx::query(
+        "DELETE FROM versoes_preparadas WHERE NOT EXISTS
+         (SELECT 1 FROM items i WHERE i.id = versoes_preparadas.item_id AND i.content_sha256 = versoes_preparadas.hash)",
+    )
+    .execute(pool)
+    .await;
+    let Ok(mut arquivos) = tokio::fs::read_dir(dir).await else {
+        return;
+    };
+    while let Ok(Some(entrada)) = arquivos.next_entry().await {
+        let nome = entrada.file_name().to_string_lossy().into_owned();
+        let Some(chave) = nome.strip_suffix(".mp4") else {
+            continue;
+        };
+        let valida = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM versoes_preparadas WHERE chave = ?)")
+            .bind(chave)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(true); // na dúvida, não apaga
+        if !valida {
+            if let Err(erro) = tokio::fs::remove_file(entrada.path()).await {
+                tracing::warn!("Falha ao remover a versão preparada obsoleta {nome}: {erro}");
+            }
+        }
+    }
+}
+
+async fn disponivel(pool: &DbPool, dir: &std::path::Path) -> Option<u64> {
+    reconciliar(pool, dir).await;
     let mut arquivos = tokio::fs::read_dir(dir).await.ok()?;
     let mut usados = 0_u64;
     while let Some(entrada) = arquivos.next_entry().await.ok()? {
@@ -337,7 +369,7 @@ async fn preparar(st: &AdminState, preparos: &Preparos, chave: &str, s: &Sugesta
         while preparos.ocupado().await {
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
-        let Some(restante) = disponivel(dir).await.filter(|b| *b > 1024 * 1024) else {
+        let Some(restante) = disponivel(&st.pool, dir).await.filter(|b| *b > 1024 * 1024) else {
             return false;
         };
         let estimado = i128::from(ticks) * i128::from(s.bitrate + 128_000) / 80_000_000;
@@ -364,7 +396,7 @@ async fn preparar(st: &AdminState, preparos: &Preparos, chave: &str, s: &Sugesta
                 .ok()
                 .and_then(|m| m.modified().ok())
         || tamanho == 0
-        || disponivel(dir).await == Some(0)
+        || disponivel(&st.pool, dir).await == Some(0)
     {
         return false;
     }
@@ -510,6 +542,34 @@ mod tests {
             estado.ativos.insert("ana/s1".into(), antiga);
         }
         assert!(!preparos.ocupado().await, "um relato mais velho que a janela não segura o preparo");
+    }
+
+    #[tokio::test]
+    async fn versoes_obsoletas_nao_consomem_a_cota() {
+        let pool = pool_com_item(Some(&[1, 2, 3])).await;
+        let dir = std::env::temp_dir().join(format!("rustyfin-preparos-cota-{}", std::process::id()));
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        // "valida" aponta para o hash atual do título; "velha" para um hash que o catálogo já trocou.
+        for (chave, hash) in [("valida", [1_u8, 2, 3]), ("velha", [9, 9, 9])] {
+            sqlx::query("INSERT INTO versoes_preparadas VALUES (?, 'filme', ?, 1000)")
+                .bind(chave)
+                .bind(&hash[..])
+                .execute(&pool)
+                .await
+                .unwrap();
+            tokio::fs::write(dir.join(format!("{chave}.mp4")), vec![0_u8; 1000]).await.unwrap();
+        }
+        tokio::fs::write(dir.join("solta.mp4"), vec![0_u8; 1000]).await.unwrap();
+        tokio::fs::write(dir.join("emandamento.tmp"), vec![0_u8; 500]).await.unwrap();
+
+        let livre = disponivel(&pool, &dir).await.unwrap();
+        assert_eq!(livre, limite().saturating_sub(1500), "só a versão válida e o temporário contam");
+        assert!(dir.join("valida.mp4").exists() && dir.join("emandamento.tmp").exists());
+        assert!(!dir.join("velha.mp4").exists() && !dir.join("solta.mp4").exists());
+        let linhas: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM versoes_preparadas").fetch_one(&pool).await.unwrap();
+        assert_eq!(linhas, 1);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
     #[test]

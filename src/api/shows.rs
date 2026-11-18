@@ -125,7 +125,7 @@ async fn fetch_virtual(
         let (fc, fb) = crate::api::facets::filter_conds(
             &facet_query,
             "s.genres",
-            "s.year",
+            "COALESCE(i.production_year, s.year)",
             "json_extract(s.extra, '$.official_rating')",
         );
         for c in fc {
@@ -140,7 +140,7 @@ async fn fetch_virtual(
                MAX(i.season_number) AS season_number,
                COUNT(*) AS episode_count, COUNT(DISTINCT i.season_number) AS season_count,
                SUM(CASE WHEN IFNULL(p.is_played, 0) = 0 THEN 1 ELSE 0 END) AS unplayed,
-               MAX(i.production_year) AS year, MAX(i.created_at) AS added,
+               COALESCE(MAX(i.production_year), MAX(s.year)) AS year, MAX(i.created_at) AS added,
                MAX(s.tmdb_title) AS st_title, MAX(s.overview) AS st_overview,
                MAX(s.rating) AS st_rating, MAX(s.genres) AS st_genres, MAX(s.extra) AS st_extra,
                COALESCE(MIN(i.series_poster_path), MAX(s.poster)) AS st_poster,

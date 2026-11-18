@@ -133,6 +133,8 @@ pub async fn stop_play_session(play_session: &str) {
 
 static RECIPES: OnceLock<Mutex<HashMap<String, Recipe>>> = OnceLock::new();
 const RECIPE_TTL: Duration = Duration::from_secs(6 * 3600);
+/// Teto de receitas guardadas ao mesmo tempo (cada uma é pequena, mas o conjunto não pode crescer sem limite).
+const RECIPE_MAX: usize = 256;
 /// Quantos segmentos à frente do que o ffmpeg já gerou ainda valem a espera (senão, reinicia).
 const VOD_LOOKAHEAD: u32 = 4;
 
@@ -149,28 +151,39 @@ pub async fn start_vod(
     play_session: Option<&str>,
 ) -> Result<(), SpawnError> {
     let s = settings()?;
-    {
-        let mut r = recipes().lock().await;
-        r.retain(|_, v| v.created.elapsed() < RECIPE_TTL);
-        r.insert(
-            key.to_string(),
-            Recipe {
-                input: input.to_path_buf(),
-                params: params.clone(),
-                created: Instant::now(),
-                play_session: play_session.map(str::to_owned),
-                software: false,
-            },
-        );
-    }
-    let recipe = recipes().lock().await.get(key).cloned();
+    let recipe = Recipe {
+        input: input.to_path_buf(),
+        params: params.clone(),
+        created: Instant::now(),
+        play_session: play_session.map(str::to_owned),
+        software: false,
+    };
     let mut map = sessions().lock().await;
-    match (map.get_mut(key), recipe) {
-        (Some(sess), _) => sess.last_access = Instant::now(),
-        (None, Some(r)) => restart_vod(&mut map, key, &r, start_seg, s).await?,
-        (None, None) => {}
+    if let Some(sess) = map.get_mut(key) {
+        sess.last_access = Instant::now();
+    } else {
+        // A receita só entra depois que a sessão ganhou a vaga: um 503 por limite cheio não deixa receita órfã.
+        restart_vod(&mut map, key, &recipe, start_seg, s).await?;
     }
+    registrar_receita(&mut *recipes().lock().await, key, recipe, RECIPE_MAX);
     Ok(())
+}
+
+/// Guarda a receita mantendo o conjunto limitado: expira as velhas, troca as da mesma reprodução (`PlaySessionId`: um
+/// app só assiste a um fluxo por vez, e trocar de qualidade ou de faixa gera outra chave) e, passando de `max`,
+/// descarta as mais antigas. O tamanho não depende de quantos clientes cheguem nem de quão rápido.
+fn registrar_receita(r: &mut HashMap<String, Recipe>, key: &str, nova: Recipe, max: usize) {
+    r.retain(|_, v| v.created.elapsed() < RECIPE_TTL);
+    if let Some(ps) = &nova.play_session {
+        r.retain(|k, v| k == key || v.play_session.as_ref() != Some(ps));
+    }
+    r.insert(key.to_string(), nova);
+    while r.len() > max {
+        let Some(velha) = r.iter().min_by_key(|(_, v)| v.created).map(|(k, _)| k.clone()) else {
+            break;
+        };
+        r.remove(&velha);
+    }
 }
 
 async fn restart_vod(
@@ -508,6 +521,8 @@ pub async fn wait_for_file(key: &str, name: &str, timeout: Duration) -> Option<P
 pub(super) async fn reaper() {
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
+        // A validade das receitas corre mesmo sem pedidos novos (antes só era conferida ao registrar uma).
+        recipes().lock().await.retain(|_, v| v.created.elapsed() < RECIPE_TTL);
         {
             let mut map = sessions().lock().await;
             for sess in map.values_mut() {
@@ -543,6 +558,37 @@ mod tests {
         assert!(!should_fall_back_to_software(true, "h264_qsv", true));
         // sem falha, nada muda
         assert!(!should_fall_back_to_software(false, "h264_qsv", false));
+    }
+
+    fn receita(play_session: Option<&str>) -> Recipe {
+        Recipe {
+            input: PathBuf::from("x.mkv"),
+            params: TranscodeParams::from_query(
+                &HashMap::from([("transcode".to_string(), "1".to_string())]),
+                super::Container::Mkv,
+                true,
+            )
+            .unwrap(),
+            created: Instant::now(),
+            play_session: play_session.map(str::to_owned),
+            software: false,
+        }
+    }
+
+    #[test]
+    fn as_receitas_ficam_limitadas_e_a_reproducao_substitui_a_sua() {
+        let mut r = HashMap::new();
+        registrar_receita(&mut r, "a", receita(Some("p1")), 3);
+        // Mesma reprodução, outra chave (trocou a qualidade): a antiga sai.
+        registrar_receita(&mut r, "b", receita(Some("p1")), 3);
+        assert_eq!(r.keys().collect::<Vec<_>>(), ["b"]);
+        // Reproduções diferentes convivem até o teto; passando dele, a mais antiga é descartada.
+        for (k, p) in [("c", "p2"), ("d", "p3"), ("e", "p4")] {
+            std::thread::sleep(Duration::from_millis(2));
+            registrar_receita(&mut r, k, receita(Some(p)), 3);
+        }
+        assert_eq!(r.len(), 3);
+        assert!(!r.contains_key("b"));
     }
 
     #[test]

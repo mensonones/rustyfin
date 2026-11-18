@@ -873,3 +873,33 @@ async fn desligar_so_aceita_o_proprio_computador() {
     assert_eq!(pedir("203.0.113.9").await, StatusCode::FORBIDDEN, "fora da rede local");
     assert_eq!(pedir("127.0.0.1").await, StatusCode::ACCEPTED, "o próprio computador");
 }
+
+#[tokio::test]
+async fn legendas_desatualizadas_nao_gastam_o_limite_da_busca_de_cenas() {
+    let s = server("cenas-limite").await;
+    let config = Arc::new(test_config(&s.dir));
+    let pool = db::init_db(&config.database_url).await.unwrap();
+    // O título A tem 100 falas com o termo, todas antes das do B na ordem da busca, mas a legenda dele muda depois de
+    // indexada. Antes, as 80 primeiras linhas eram todas do A, descartadas, e a busca devolvia zero resultados.
+    let (a, b) = ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    let mut legenda_a = String::new();
+    for n in 0..100 {
+        legenda_a.push_str(&format!("{}\n00:{:02}:00,000 --> 00:{:02}:02,000\nA espada {n}\n\n", n + 1, n % 60, n % 60));
+    }
+    let (_, srt_a) = item_com_legenda(&pool, &s.dir, a, &legenda_a).await;
+    item_com_legenda(&pool, &s.dir, b, "1\n02:00:00,000 --> 02:00:03,000\nA espada do outro titulo\n").await;
+    for id in [a, b] {
+        let (status, _) = call(&s.app, Method::POST, &format!("/admin/api/cenas/{id}"), None, None).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    let token = login(&s.app, "Admin").await;
+    let (_, antes) = call(&s.app, Method::GET, "/api/cenas?q=espada&spoilers=true", Some(&token), None).await;
+    assert_eq!(antes.as_array().unwrap().len(), 80, "com as duas legendas em dia o limite é de 80 falas");
+
+    tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+    std::fs::write(&srt_a, "1\n00:00:01,000 --> 00:00:02,000\nLegenda trocada\n").unwrap();
+    let (_, depois) = call(&s.app, Method::GET, "/api/cenas?q=espada&spoilers=true", Some(&token), None).await;
+    let depois = depois.as_array().unwrap();
+    assert_eq!(depois.len(), 1, "as falas do título desatualizado saem, e as do outro título continuam");
+    assert_eq!(depois[0]["previa"], "A espada do outro titulo");
+}

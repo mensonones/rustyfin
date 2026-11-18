@@ -724,13 +724,18 @@ async fn put_settings(State(st): State<AdminState>, Json(body): Json<Value>) -> 
     let name = body.get("serverName").and_then(|v| v.as_str());
     let interval = body.get("scanIntervalSecs").and_then(serde_json::Value::as_u64);
     let max_tx = body.get("maxTranscodes").and_then(serde_json::Value::as_u64).map(|v| v as usize);
-    match settings::update_server(&st.pool, &st.config, name, interval, max_tx).await {
+    let alteracoes = settings::Alteracoes {
+        server_name: name,
+        scan_interval_secs: interval,
+        max_transcodes: max_tx,
+        tmdb_api_key: key,
+        tmdb_language: lang,
+    };
+    // Tudo numa gravação só: um pedido inválido ou uma falha do banco não aplica metade das configurações.
+    match settings::update(&st.pool, &st.config, &alteracoes).await {
         Ok(Ok(())) => {}
         Ok(Err(msg)) => return (StatusCode::BAD_REQUEST, Json(json!({ "Message": msg }))).into_response(),
         Err(e) => return db_error(e),
-    }
-    if let Err(e) = settings::update_tmdb(&st.pool, &st.config, key, lang).await {
-        return db_error(e);
     }
     // Com chave nova, itens ainda sem metadados são buscados no próximo ciclo.
     library::request_scan_now(&st.scan);

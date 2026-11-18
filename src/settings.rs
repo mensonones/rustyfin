@@ -77,7 +77,7 @@ async fn read(pool: &DbPool, key: &str) -> Option<String> {
         .map(|r| r.0)
 }
 
-async fn write(pool: &DbPool, key: &str, value: Option<&str>) -> Result<(), sqlx::Error> {
+async fn write(conn: &mut sqlx::SqliteConnection, key: &str, value: Option<&str>) -> Result<(), sqlx::Error> {
     match value {
         Some(v) => {
             sqlx::query(
@@ -86,11 +86,11 @@ async fn write(pool: &DbPool, key: &str, value: Option<&str>) -> Result<(), sqlx
             )
             .bind(key)
             .bind(v)
-            .execute(pool)
+            .execute(&mut *conn)
             .await?;
         }
         None => {
-            sqlx::query("DELETE FROM settings WHERE key = ?").bind(key).execute(pool).await?;
+            sqlx::query("DELETE FROM settings WHERE key = ?").bind(key).execute(&mut *conn).await?;
         }
     }
     Ok(())
@@ -128,62 +128,58 @@ pub async fn load(pool: &DbPool, config: &AppConfig) {
 
 pub const MAX_TRANSCODES_LIMIT: usize = 16;
 
-/// Valida e grava nome do servidor, intervalo do scan e limite de transcodificações (aplicados na hora).
-/// Devolve a mensagem de erro de um valor inválido, sem gravar nada.
-pub async fn update_server(
+/// Alterações pedidas pelo painel; `None` deixa o valor como está.
+#[derive(Default)]
+pub struct Alteracoes<'a> {
+    pub server_name: Option<&'a str>,
+    pub scan_interval_secs: Option<u64>,
+    pub max_transcodes: Option<usize>,
+    /// `Some("")` apaga a chave salva (volta ao valor do ambiente, se houver).
+    pub tmdb_api_key: Option<&'a str>,
+    pub tmdb_language: Option<&'a str>,
+}
+
+/// Valida e grava todas as alterações numa única transação, e publica o estado efetivo uma vez. A trava cobre a
+/// gravação e a publicação juntas: duas requisições simultâneas não se intercalam, e uma falha no meio não deixa
+/// metade das configurações aplicadas.
+pub async fn update(
     pool: &DbPool,
     config: &AppConfig,
-    name: Option<&str>,
-    scan_interval_secs: Option<u64>,
-    max_transcodes: Option<usize>,
+    alteracoes: &Alteracoes<'_>,
 ) -> Result<Result<(), &'static str>, sqlx::Error> {
-    let name = name.map(str::trim);
+    let name = alteracoes.server_name.map(str::trim);
     if let Some(n) = name {
         if n.is_empty() || n.chars().count() > 64 || n.chars().any(char::is_control) {
             return Ok(Err("Nome do servidor inválido (1 a 64 caracteres)."));
         }
     }
-    if scan_interval_secs.is_some_and(|s| s != 0 && !(10..=86_400).contains(&s)) {
+    if alteracoes.scan_interval_secs.is_some_and(|s| s != 0 && !(10..=86_400).contains(&s)) {
         return Ok(Err("Intervalo do scan: 0 (desligado) ou de 10 a 86400 segundos."));
     }
-    if max_transcodes.is_some_and(|m| !(1..=MAX_TRANSCODES_LIMIT).contains(&m)) {
+    if alteracoes.max_transcodes.is_some_and(|m| !(1..=MAX_TRANSCODES_LIMIT).contains(&m)) {
         return Ok(Err("Transcodificações simultâneas: de 1 a 16."));
     }
     static GUARD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _guard = GUARD.lock().await;
+    let mut tx = pool.begin().await?;
     if let Some(n) = name {
-        write(pool, "server_name", Some(n)).await?;
+        write(&mut tx, "server_name", Some(n)).await?;
     }
-    if let Some(s) = scan_interval_secs {
-        write(pool, "scan_interval_secs", Some(&s.to_string())).await?;
+    if let Some(s) = alteracoes.scan_interval_secs {
+        write(&mut tx, "scan_interval_secs", Some(&s.to_string())).await?;
     }
-    if let Some(m) = max_transcodes {
-        write(pool, "max_transcodes", Some(&m.to_string())).await?;
+    if let Some(m) = alteracoes.max_transcodes {
+        write(&mut tx, "max_transcodes", Some(&m.to_string())).await?;
     }
+    if let Some(k) = alteracoes.tmdb_api_key.map(str::trim) {
+        write(&mut tx, "tmdb_api_key", if k.is_empty() { None } else { Some(k) }).await?;
+    }
+    if let Some(l) = alteracoes.tmdb_language.map(str::trim) {
+        write(&mut tx, "tmdb_language", if l.is_empty() { None } else { Some(l) }).await?;
+    }
+    tx.commit().await?;
     load(pool, config).await;
     Ok(Ok(()))
-}
-
-/// `key`: `Some("")` apaga a chave salva (volta ao valor do ambiente, se houver).
-pub async fn update_tmdb(
-    pool: &DbPool,
-    config: &AppConfig,
-    key: Option<&str>,
-    language: Option<&str>,
-) -> Result<(), sqlx::Error> {
-    // Gravação e publicação do cache como uma operação só: duas requisições não se invertem.
-    static UPDATE_GUARD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    let _guard = UPDATE_GUARD.lock().await;
-    if let Some(k) = key {
-        let k = k.trim();
-        write(pool, "tmdb_api_key", if k.is_empty() { None } else { Some(k) }).await?;
-    }
-    if let Some(l) = language {
-        let l = l.trim();
-        write(pool, "tmdb_language", if l.is_empty() { None } else { Some(l) }).await?;
-    }
-    load(pool, config).await;
-    Ok(())
 }
 
 /// Chave para exibir sem revelar: só os 4 últimos caracteres.
