@@ -5,6 +5,19 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.24.2] - 2026-11-18
+
+### Adicionado
+- O `rustyfin.exe` do Windows agora traz informações de versão (produto, versão, descrição, direitos e licença), embutidas
+  por um `build.rs` próprio, sem depender do SDK do Windows (`link.exe` no MSVC; `windres` no MinGW). Pré-requisito da
+  assinatura de código e útil contra falsos positivos de antivírus. O CI confere o resultado.
+- [Assinatura de código e antivírus](docs/assinatura-de-codigo.md): por que o Windows pode bloquear o `.exe` (SmartScreen e
+  Smart App Control), como conferir o SHA-256, o que fazer com um falso positivo e o plano de assinatura gratuita pela
+  SignPath Foundation, com o texto da política de assinatura.
+
+### Alterado
+- No fluxo de release, o setup do Windows (Inno Setup) não bloqueia os demais pacotes se falhar.
+
 ## [0.24.1] - 2026-11-18
 
 ### Corrigido

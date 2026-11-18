@@ -173,6 +173,7 @@ e o minuto, e esconde o que você ainda não assistiu. Como indexar as legendas:
 | [Migrando do Jellyfin](docs/migrando-do-jellyfin.md) | O que você ganha, o que perde e como testar lado a lado |
 | [Configuração](docs/configuracao.md) | Variáveis de ambiente, configurações do painel, pastas, TMDB e nomes de arquivo |
 | [Usuários e segurança](docs/usuarios-e-seguranca.md) | Contas, senhas, tokens, sessões, acesso por biblioteca e o que é público |
+| [Assinatura e antivírus](docs/assinatura-de-codigo.md) | Por que o Windows pode bloquear o `.exe`, como conferir o arquivo e o plano de assinatura |
 | [Instalação direta no sistema](docs/instalacao-nativa.md) | Windows, Linux e macOS sem Docker: binário, ffmpeg, serviço, GPU e portas |
 | [Qual perfil escolher](docs/escolher-perfil.md) | Docker ou nativo, com ou sem GPU: o que medir, o que escolher e o script que decide |
 | [Guia para LLM](docs/guia-llm.md) | Procedimento para um assistente de IA medir a máquina e recomendar o perfil |

@@ -27,6 +27,12 @@ jobs:
           persist-credentials: false
       - name: Compila o servidor
         run: cargo build --locked
+      - name: Confere as informações de versão do .exe
+        shell: pwsh
+        run: |
+          $v = (Get-Item "target/debug/rustyfin.exe").VersionInfo
+          if ($v.ProductName -ne "Rustyfin" -or [string]::IsNullOrEmpty($v.ProductVersion)) { throw "O rustyfin.exe está sem as informações de versão" }
+          "Produto: $($v.ProductName) $($v.ProductVersion)"
       - name: Instala o Inno Setup
         run: choco install innosetup --version=6.7.4 --no-progress -y
       - name: Compila o setup

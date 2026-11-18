@@ -84,6 +84,9 @@ Os instaladores vêm no pacote (e em [`packaging/`](../packaging/)). Todos leem 
 
 Sem administrador: o servidor sobe **quando você entra na conta** (tarefa agendada) e reinicia sozinho se cair.
 
+> Os executáveis do Windows ainda **não são assinados**: o SmartScreen pode avisar e o Smart App Control pode bloquear.
+> Veja [assinatura e antivírus](assinatura-de-codigo.md) para as saídas.
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\windows\instalar.ps1 -Binario .\rustyfin.exe
 ```
