@@ -403,7 +403,8 @@ async fn thumbnail_for(
     };
 
     if !output.status.success() || tokio::fs::metadata(&tmp).await.is_err() {
-        warn!("ffmpeg falhou ao gerar miniatura de {}", video.display());
+        let detalhe = String::from_utf8_lossy(&output.stderr);
+        warn!("ffmpeg falhou ao gerar miniatura de {}: {}", video.display(), detalhe.trim());
         let _ = tokio::fs::remove_file(&tmp).await;
         return None;
     }

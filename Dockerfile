@@ -45,6 +45,8 @@ WORKDIR /app
 
 # Copia o executável compilado da etapa de build
 COPY --from=builder /app/target/release/rustyfin /app/rustyfin
+# Diagnóstico da GPU: docker compose exec rustyfin sh /app/gpu-check.sh
+COPY tools/gpu-check.sh /app/gpu-check.sh
 
 # Cria diretórios de volume padrão
 RUN mkdir -p /media /data

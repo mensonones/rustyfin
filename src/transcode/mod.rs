@@ -209,6 +209,12 @@ async fn resolve_encoder(ffmpeg: &str, requested: &str, device: &str) -> Escolha
         if explicit {
             warn!("Encoder {encoder} pedido, mas {device} não existe (GPU não repassada ao container?). Usando libx264.");
         }
+        // `/dev/dxg` sem `/dev/dri` é o Docker Desktop (WSL2): ele não repassa a GPU Intel ao container.
+        if std::path::Path::new("/dev/dxg").exists() {
+            info!(
+                "Docker Desktop (WSL2) detectado: a GPU Intel não é repassada ao container. Para usar o Quick Sync, rode o Rustyfin direto no Windows (docs/reproducao.md#windows)."
+            );
+        }
         return Escolha::software("libx264");
     }
     if let Some(dica) = device_permission_hint(device) {

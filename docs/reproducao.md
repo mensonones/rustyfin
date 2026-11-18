@@ -95,6 +95,9 @@ A imagem traz os drivers Intel (`iHD` para Gen9 em diante e Arc, `i965` para as 
 Se a GPU existe mas o container não tem permissão (faltou o `group_add`), o log avisa e diz qual grupo adicionar, e o
 servidor segue em software.
 
+**Diagnóstico:** `docker compose exec rustyfin sh /app/gpu-check.sh` testa o dispositivo, a permissão, o `vainfo`, a codificação
+e a decodificação na GPU e mede a velocidade contra o `libx264`, e imprime um resumo para colar numa issue. Não altera nada.
+
 **Limite de sessões:** sem `RUSTYFIN_MAX_TRANSCODES` definido, o servidor escolhe quantas transcodificações simultâneas
 aceitar pelo hardware: 4 com GPU, senão metade das CPUs (de 2 a 8). O valor em uso aparece no log e no painel.
 
@@ -116,9 +119,27 @@ NVIDIA (`h264_nvenc`) pode ser usada pelo mesmo mecanismo de encoder, mas não �
 | Quick Sync, só codifica na GPU | ≈ 6,7× | ≈ 52% |
 | Quick Sync, decodifica e codifica na GPU | ≈ 11,5× | ≈ 21% |
 
-> **Estado da validação:** o Quick Sync foi exercitado numa GPU Intel real (no Windows, com o Rustyfin nativo). O VAAPI no
-> Linux é coberto por testes dos comandos e dos fallbacks, mas ainda não foi exercitado numa GPU real (o Docker Desktop no
-> Windows não repassa `/dev/dri`). Se você testar numa máquina Linux com GPU Intel ou AMD, relate o resultado.
+### Windows
+
+- **Docker Desktop (WSL2):** a GPU Intel não é repassada ao container (só o `/dev/dxg`, que serve à NVIDIA). O Rustyfin
+  detecta isso, avisa no log e transcodifica em software. O Jellyfin tem a mesma limitação.
+- **Rustyfin direto no Windows:** o Quick Sync funciona. Você precisa de uma GPU Intel com o driver atualizado, de um
+  `ffmpeg` com QSV (por exemplo os builds `win64-gpl` do projeto `FFmpeg-Builds`, usados nos testes) com o `ffprobe` na mesma
+  pasta, e de:
+
+  ```powershell
+  $env:RUSTYFIN_FFMPEG = "C:\ffmpeg\bin\ffmpeg.exe"
+  $env:PATH = "C:\ffmpeg\bin;" + $env:PATH      # o scanner chama o ffprobe pelo PATH
+  $env:RUSTYFIN_MEDIA_DIRS = "D:\Filmes"
+  .\rustyfin.exe
+  ```
+
+  O encoder `auto` escolhe `h264_qsv` e o log mostra `Aceleração por hardware ativa: h264_qsv`. O dispositivo vem do D3D11
+  (`vendor_id=0x8086`), então em notebooks com GPU Intel e NVIDIA o Quick Sync usa a Intel.
+
+> **Estado da validação:** o Quick Sync foi exercitado numa GPU Intel real (Rustyfin nativo no Windows). O VAAPI no Linux é
+> coberto por testes dos comandos e dos fallbacks e ainda não foi exercitado numa GPU real. Se você testar numa máquina Linux
+> com GPU Intel ou AMD, rode `docker compose exec rustyfin sh /app/gpu-check.sh` e relate o resumo numa issue.
 
 ## HDR
 
