@@ -5,6 +5,14 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.24.1] - 2026-11-18
+
+### Corrigido
+- Instalador do Windows, achados ao instalar de verdade: o log saía em UTF-16 e com códigos de cor (agora UTF-8 limpo), a
+  mensagem final mostrava sempre a porta 8096 (agora lê `RUSTYFIN_PORT`) e o servidor não subia de novo depois de uma queda
+  (a tarefa agendada considerava o script bem-sucedido; o script agora reinicia o servidor depois de 5 segundos). O guia
+  avisa que, dentro de aplicativos MSIX, `%LOCALAPPDATA%` pode ser virtualizado e que `-Pasta` resolve.
+
 ## [0.24.0] - 2026-11-18
 
 ### Adicionado

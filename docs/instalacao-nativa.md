@@ -89,6 +89,8 @@ powershell -ExecutionPolicy Bypass -File packaging\windows\instalar.ps1 -Binario
 ```
 
 - Tudo fica em `%LOCALAPPDATA%\Rustyfin`: o `rustyfin.exe`, o `rustyfin.env` (a configuração), os `dados` e o `rustyfin.log`.
+  Para outra pasta, use `-Pasta C:\Rustyfin`. Se o servidor cair, ele sobe de novo depois de 5 segundos. Para trocar a
+  porta ou outras opções, edite o `rustyfin.env` e reinicie (`Stop-ScheduledTask Rustyfin; Start-ScheduledTask Rustyfin`).
 - Se o celular ou a TV não encontrarem o servidor, libere as portas na rede privada (precisa de um PowerShell **como
   administrador**): `.\packaging\windows\instalar.ps1 -Binario .\rustyfin.exe -Firewall`.
 - `-SomenteMostrar` lista o que o instalador faria, sem alterar nada. `-Remover` tira a tarefa e o binário e mantém os
@@ -97,6 +99,10 @@ powershell -ExecutionPolicy Bypass -File packaging\windows\instalar.ps1 -Binario
   escolhe o Quick Sync e o log mostra `Aceleração por hardware ativa: h264_qsv`. Veja [reprodução → Windows](reproducao.md#windows).
 
 Para atualizar, rode o instalador de novo com o binário novo.
+
+> Se o PowerShell for aberto de dentro de um aplicativo empacotado (MSIX), o Windows pode redirecionar
+> `%LOCALAPPDATA%` para uma pasta privada do aplicativo, que a tarefa agendada não enxerga. Nesse caso use `-Pasta` com um
+> caminho fora de `AppData`, como `C:\Rustyfin`.
 
 ### Linux (systemd)
 
@@ -153,6 +159,6 @@ de rede errada). No Windows, o Firewall pergunta na primeira vez: permita na **r
 | Mais ajuda | [Solução de problemas](solucao-de-problemas.md) |
 
 > **Estado da validação:** o servidor foi exercitado direto no **Windows** (inclusive o Quick Sync, com `RUSTYFIN_DATA_DIR`) e
-> no Linux dentro do Docker. O instalador do Windows foi conferido na simulação (`-SomenteMostrar`) e na sintaxe, e os de
-> Linux e de macOS só na sintaxe; os pacotes por sistema são montados pelo GitHub Actions e ainda não tiveram uma rodada
+> no Linux dentro do Docker. O instalador do Windows foi exercitado de verdade (instalar, atualizar, reiniciar depois de uma queda e
+> remover), e os de Linux e de macOS só na sintaxe; os pacotes por sistema são montados pelo GitHub Actions e ainda não tiveram uma rodada
 > real. Se algo falhar, abra uma *issue* com o sistema, a versão e o trecho do log.
