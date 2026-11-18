@@ -39,7 +39,8 @@ Para as configurações que existem nos dois lugares, **o valor salvo no painel 
 | `RUSTYFIN_FFMPEG` | `ffmpeg` | Executável do ffmpeg |
 | `RUSTYFIN_MAX_TRANSCODES` | `2` | Transcodificações simultâneas; as excedentes recebem 503. Editável no painel |
 | `RUSTYFIN_VIDEO_ENCODER` | `auto` | Encoder de vídeo: `auto` (GPU Intel/AMD via VAAPI se houver, senão `libx264`), `libx264`, `h264_vaapi`, `h264_qsv` (experimental). Veja [aceleração por hardware](reproducao.md#aceleração-por-hardware) |
-| `RUSTYFIN_HWACCEL_DEVICE` | `/dev/dri/renderD128` | Dispositivo de renderização da GPU para `h264_vaapi` e `h264_qsv` |
+| `RUSTYFIN_HWACCEL_DEVICE` | `/dev/dri/renderD128` | Dispositivo de renderização da GPU para `h264_vaapi` e `h264_qsv` (Linux) |
+| `RUSTYFIN_HWACCEL_DECODE` | `true` | A GPU também decodifica H.264 e HEVC. `false` deixa a decodificação na CPU |
 
 ### Acesso
 

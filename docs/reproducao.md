@@ -66,14 +66,20 @@ preserva o arquivo e ignora o ajuste se a assinatura da origem mudar. O editor a
 
 ## Aceleração por hardware
 
-O transcode usa `libx264` (processador) por padrão. Com uma **GPU Intel** (Quick Sync) ou **AMD** no Linux, o Rustyfin
-pode usar a GPU para codificar, o que libera a CPU e atende mais sessões ao mesmo tempo.
+O transcode usa `libx264` (processador) por padrão. Com uma **GPU Intel** (Quick Sync) ou **AMD**, o Rustyfin usa a GPU
+para decodificar e codificar, o que libera a CPU e atende mais sessões ao mesmo tempo.
 
-O encoder padrão é `auto`: na subida o servidor procura `/dev/dri/renderD128`, codifica um quadro de teste com `h264_vaapi`
-e, se funcionar, usa a GPU; se não, usa `libx264` sem avisar nada de errado. O log mostra a decisão
-(`Aceleração por hardware ativa: h264_vaapi em /dev/dri/renderD128`), e o painel mostra o encoder em uso.
+O encoder padrão é `auto`: na subida o servidor procura a GPU, codifica um quadro de teste e, se funcionar, a usa; se não,
+usa `libx264` sem nada de errado. O log mostra a decisão (por exemplo `Aceleração por hardware ativa: h264_qsv (decodifica e
+codifica na GPU)`), e o painel mostra o encoder em uso.
 
-**Como ativar no Docker:**
+| Onde o Rustyfin roda | Encoder escolhido por `auto` | O que é preciso |
+|---|---|---|
+| **Linux ou Docker no Linux** | `h264_vaapi` | GPU repassada ao container (veja abaixo); a imagem já traz os drivers Intel |
+| **Windows (direto, sem Docker)** | `h264_qsv` (Quick Sync, via D3D11) | um `ffmpeg` com QSV em `RUSTYFIN_FFMPEG` e o `ffprobe` ao lado |
+| **Docker Desktop no Windows ou WSL2** | `libx264` | nada: o Docker Desktop não repassa a GPU Intel (o Jellyfin também não consegue) |
+
+**Como ativar no Docker (Linux):**
 
 1. Descubra o grupo que pode usar a GPU: `getent group render | cut -d: -f3` (costuma ser 104, 105 ou 109).
 2. No `docker-compose.yml`, descomente (ou ponha em um `docker-compose.override.yml`):
@@ -88,19 +94,29 @@ e, se funcionar, usa a GPU; se não, usa `libx264` sem avisar nada de errado. O 
 3. Recrie o container (`docker compose up -d`) e procure no log a linha de aceleração ativa.
 
 Para conferir se a GPU funciona dentro do container: `docker exec rustyfin vainfo --display drm --device /dev/dri/renderD128`.
-A imagem já traz os drivers Intel (`iHD` para Gen9 em diante e Arc, `i965` para as mais antigas).
+A imagem traz os drivers Intel (`iHD` para Gen9 em diante e Arc, `i965` para as mais antigas).
 
-**Como funciona:** o ffmpeg decodifica o vídeo na CPU, aplica os filtros (legendas queimadas, HDR para SDR, ABR) também na CPU
-e só então envia os quadros à GPU (`hwupload`) para codificar. Assim todos os modos de transcode funcionam com a GPU. O vídeo
-copiado (remux) nunca usa a GPU. A decodificação por hardware ainda não é usada, então o ganho é maior em CPUs fracas.
+**Como funciona:** com um vídeo H.264 ou HEVC (8 ou 10 bits, 4:2:0) a GPU decodifica, converte o formato e codifica sem que
+os quadros passem pela CPU. Legendas queimadas, HDR para SDR e ABR precisam dos quadros na CPU: nesses casos o ffmpeg
+decodifica e filtra na CPU e só então envia os quadros à GPU para codificar. O vídeo copiado (remux) nunca usa a GPU. Na
+subida o servidor testa a decodificação com um vídeo de exemplo; se ela falhar, a GPU só codifica.
 
-**Opções:** `RUSTYFIN_VIDEO_ENCODER=h264_vaapi` força o VAAPI, e `h264_qsv` usa o Quick Sync (experimental; o VAAPI é o
-caminho recomendado, com o mesmo resultado na GPU Intel). Se o encoder escolhido não funcionar, o servidor registra o motivo
-e volta para `libx264`. Outro dispositivo se escolhe com `RUSTYFIN_HWACCEL_DEVICE`. NVIDIA (`h264_nvenc`) pode ser usada pelo
-mesmo mecanismo de encoder, mas não é o foco nem está testada.
+**Opções:** `RUSTYFIN_VIDEO_ENCODER=h264_vaapi` força o VAAPI, e `h264_qsv` usa o Quick Sync (no Linux o VAAPI é o caminho mais
+simples, com o mesmo resultado em GPU Intel). Se o encoder escolhido não funcionar, o servidor registra o motivo e volta para
+`libx264`. `RUSTYFIN_HWACCEL_DECODE=false` mantém a decodificação na CPU, e `RUSTYFIN_HWACCEL_DEVICE` escolhe outro dispositivo.
+NVIDIA (`h264_nvenc`) pode ser usada pelo mesmo mecanismo de encoder, mas não é o foco nem está testada.
 
-> **Estado da validação:** a montagem dos comandos e os fallbacks são cobertos por testes, mas o caminho de hardware ainda não
-> foi exercitado numa GPU Intel real (o Docker Desktop no Windows não repassa `/dev/dri`).
+**Resultado medido** (Intel UHD Tiger Lake, Rustyfin nativo no Windows, 3 minutos de um filme 1080p reduzidos a 700 kbps):
+
+| Modo | Velocidade | CPU do sistema |
+|---|---|---|
+| `libx264` | ≈ 7× o tempo real | ≈ 85% |
+| Quick Sync, só codifica na GPU | ≈ 6,7× | ≈ 52% |
+| Quick Sync, decodifica e codifica na GPU | ≈ 11,5× | ≈ 21% |
+
+> **Estado da validação:** o Quick Sync foi exercitado numa GPU Intel real (no Windows, com o Rustyfin nativo). O VAAPI no
+> Linux é coberto por testes dos comandos e dos fallbacks, mas ainda não foi exercitado numa GPU real (o Docker Desktop no
+> Windows não repassa `/dev/dri`). Se você testar numa máquina Linux com GPU Intel ou AMD, relate o resultado.
 
 ## HDR
 

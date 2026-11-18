@@ -5,6 +5,29 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.19.0] - 2026-11-18
+
+### Adicionado
+- **Decodificação por hardware.** Com um encoder de GPU ativo, o Rustyfin agora também decodifica H.264 e HEVC (8 e 10 bits,
+  4:2:0) na GPU e mantém os quadros lá até o encoder (`scale_vaapi`/`vpp_qsv`), como o Jellyfin. Na subida o servidor testa a
+  decodificação com um vídeo de exemplo; se falhar, a GPU só codifica. Legendas queimadas, HDR para SDR e ABR seguem pela
+  CPU (decodifica na CPU e só o encode vai para a GPU). `RUSTYFIN_HWACCEL_DECODE=false` desliga a decodificação na GPU.
+- **Quick Sync no Windows.** Com o Rustyfin rodando direto no Windows (fora do Docker) e um ffmpeg com QSV, o encoder `auto`
+  escolhe `h264_qsv` na GPU Intel (via D3D11), sem `/dev/dri`.
+- Controle de taxa por fabricante, como o Jellyfin: `-rc_mode VBR` no VAAPI (`CBR` com o driver `i965`, detectado na
+  subida) e `maxrate = bitrate + 1` no Quick Sync.
+
+### Corrigido
+- Com o Quick Sync, os segmentos HLS saíam com ~10 s em vez de 6 s (o encoder ignora `-force_key_frames`), então os cortes não
+  batiam com a playlist e a reprodução ficava lenta. Agora o intervalo de quadros-chave vem do fps do vídeo (`-g` e
+  `-keyint_min`), como no Jellyfin.
+- O `hwupload` do Quick Sync não usa mais `extra_hw_frames=64`, que o D3D11 do Windows recusa.
+
+### Medido
+- Numa Intel UHD (Tiger Lake) com o Rustyfin nativo no Windows, transcodificando 3 minutos de um filme 1080p para 700 kbps:
+  `libx264` ≈ 7× o tempo real usando ≈ 85% da CPU do sistema; Quick Sync com decodificação na GPU ≈ 11,5× usando ≈ 21%.
+  O modo "só codifica na GPU" fez 6,7× com ≈ 52%. O VAAPI no Linux ainda não foi exercitado numa GPU real.
+
 ## [0.18.0] - 2026-11-18
 
 ### Adicionado
