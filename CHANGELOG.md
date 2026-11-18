@@ -5,6 +5,39 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.25.4] - 2026-11-18
+
+Correções de uma revisão de código (Argus) sobre a 0.25.3.
+
+### Segurança
+- **Linux:** o banco e os dados do serviço agora ficam acessíveis só ao usuário `rustyfin` (`StateDirectoryMode=0750`,
+  `UMask=0077`; o instalador corrige as permissões de uma instalação existente). Antes, outros usuários locais podiam
+  ler o banco, que guarda os hashes das senhas e os tokens de sessão. Quem atualiza deve **encerrar as sessões e trocar
+  as senhas** se a máquina tem outros usuários.
+- **Windows:** o assistente não instala mais um script de firewall gravável pelo usuário para executar elevado: a regra é
+  criada direto com `netsh`, a partir de binários do System32. Falhas ao registrar a tarefa, iniciar o servidor ou criar a
+  regra agora aparecem no assistente, em vez de passarem em silêncio.
+
+### Corrigido
+- Windows: numa atualização, a regra de firewall e o endereço mostrado usam a porta já configurada no `rustyfin.env`, e
+  não o padrão 8096.
+- macOS: o `iniciar.sh` lê o `rustyfin.env` como `CHAVE=VALOR`, e não como código de shell; valores com espaços funcionam
+  e nada do arquivo é executado.
+- Scanner: um vídeo trocado antes de ganhar o primeiro hash, em um título com histórico (assistido, favorito ou
+  posição), agora vira revisão (`substituido`) em vez de herdar o histórico em silêncio.
+- Scanner: a migração dos IDs antigos de séries copia os favoritos e deixa de rodar de novo a cada varredura.
+- HLS: a limpeza de uma sessão renomeia a pasta de forma atômica e a apaga em segundo plano, então não alcança a
+  sessão recriada com a mesma chave nem segura a trava das sessões durante a remoção. O reinício do VOD olha um único
+  segmento do disco, e não um por segmento gerado.
+- HLS: as receitas de VOD só são guardadas depois que a sessão ganha a vaga, ficam limitadas (256, uma por reprodução) e
+  expiram mesmo sem novos pedidos.
+- Busca de cenas: o limite de 80 resultados vale para as falas válidas; legendas alteradas desde a indexação não
+  esgotam mais o limite e escondem os demais títulos.
+- Séries: o filtro por ano usa o mesmo ano que as listas e as opções de filtro (o do episódio, com o da série como
+  alternativa).
+- Configurações do painel: o `PUT` grava tudo numa transação, sob uma única trava, e publica o estado efetivo uma vez.
+- Versões preparadas: as obsoletas (título trocado ou removido) saem do cache antes do cálculo da cota.
+
 ## [0.25.3] - 2026-11-18
 
 ### Corrigido
