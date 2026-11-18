@@ -5,6 +5,18 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.20.1] - 2026-11-18
+
+### Adicionado
+- `tools/gpu-check.sh` (também em `/app/gpu-check.sh` na imagem): diagnóstico da GPU dentro do container. Testa o
+  dispositivo, a permissão, o `vainfo`, a codificação e a decodificação por hardware e a velocidade contra o `libx264`, e
+  imprime um resumo para colar numa issue.
+- No Docker Desktop (WSL2) o log avisa que a GPU Intel não é repassada ao container e aponta o caminho nativo do Windows.
+- Guia do Rustyfin nativo no Windows com o Quick Sync (`docs/reproducao.md#windows`).
+
+### Alterado
+- O aviso "ffmpeg falhou ao gerar miniatura" agora inclui a mensagem de erro do ffmpeg.
+
 ## [0.20.0] - 2026-11-18
 
 ### Adicionado
