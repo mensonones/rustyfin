@@ -39,6 +39,7 @@ Para as configurações que existem nos dois lugares, **o valor salvo no painel 
 | `RUSTYFIN_FFMPEG` | `ffmpeg` | Executável do ffmpeg |
 | `RUSTYFIN_MAX_TRANSCODES` | automático | Transcodificações simultâneas; as excedentes recebem 503. Sem valor (aqui e no painel) o servidor calcula pelo hardware: **4 com GPU**, senão **metade das CPUs, de 2 a 8** (respeita `--cpus` do Docker). Um valor salvo no painel vale sobre o do ambiente |
 | `RUSTYFIN_VIDEO_ENCODER` | `auto` | Encoder de vídeo: `auto` (GPU Intel/AMD via VAAPI se houver, senão `libx264`), `libx264`, `h264_vaapi`, `h264_qsv` (experimental). Veja [aceleração por hardware](reproducao.md#aceleração-por-hardware) |
+| `RUSTYFIN_PREPARO_MAX_BYTES` | `2147483648` (2 GiB) | Tamanho máximo do cache de [versões preparadas](reproducao.md#áudio-cenas-e-versões-preparadas) (MP4 progressivo gerado a pedido do administrador). `0` impede novos preparos |
 | `RUSTYFIN_HWACCEL_DEVICE` | `/dev/dri/renderD128` | Dispositivo de renderização da GPU para `h264_vaapi` e `h264_qsv` (Linux) |
 | `RUSTYFIN_HWACCEL_DECODE` | `true` | A GPU também decodifica H.264 e HEVC. `false` deixa a decodificação na CPU |
 

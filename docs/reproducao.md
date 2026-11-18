@@ -182,7 +182,9 @@ Progresso, "assistido", favoritos e contagem de reproduções são gravados **po
 
 ## Áudio, cenas e versões preparadas
 
-Em **Bibliotecas → Manutenção do acervo → Indexar áudio e cenas**, selecione um título. Indexe a
+Em **Bibliotecas → Manutenção do acervo → Indexar áudio e cenas**, selecione um título. Essas ações, e o ajuste de legenda,
+só funcionam depois que o hash do arquivo foi calculado em segundo plano (logo após a primeira varredura ele ainda está
+pendente e o painel avisa para tentar de novo). Indexe a
 primeira faixa de áudio **antes de substituir a edição**. Na revisão, escolha **Sugerir pela trilha de áudio**. A comparação
 é local, usa até três horas de áudio por edição e devolve somente correspondências distintas
 com baixa distância entre as assinaturas. Permanece disponível a confirmação por perfil.

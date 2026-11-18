@@ -86,7 +86,7 @@ Usada por `/admin`. O painel abre em Bibliotecas, onde mostra a última varredur
 | Rota | Descrição |
 |---|---|
 | `GET /admin` | Página do painel; `/admin/favicon[-dark].png` e `/admin/logo[-dark].png` são os ícones (claro e escuro) |
-| `GET /admin/api/status` | Contagens, `ffmpeg`, TMDB, descoberta e último scan |
+| `GET /admin/api/status` | Contagens, `ffmpeg`, TMDB, descoberta, último scan e `scan.signaturesPending` (arquivos cujo hash ainda é calculado em segundo plano) |
 | `POST /admin/api/acervo/audio/{id}` | Indexa a primeira faixa de áudio para futuras revisões |
 | `POST /admin/api/cenas/{id}` | Indexa trechos das faixas SRT de um título |
 | `GET /admin/api/preparos` | Lista conversões MP4 sugeridas e estado do preparo |

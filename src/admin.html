@@ -965,7 +965,10 @@ for (const [botao, rota] of [
       $('mensagemIndices').textContent = dados ? dados.trechos + ' trechos indexados.' : 'Áudio indexado.';
     } catch (erro) {
       $('mensagemIndices').textContent = erro.status === 422
-        ? 'Áudio indisponível ou indexação ocupada.' : mensagemErro(erro);
+        ? 'Áudio indisponível ou indexação ocupada.'
+        : erro.status === 409
+          ? 'A assinatura do arquivo ainda está sendo calculada em segundo plano. Tente de novo em alguns minutos.'
+          : mensagemErro(erro);
     } finally { $('indexarAudio').disabled = $('indexarCenas').disabled = false; }
   };
 }
@@ -1399,7 +1402,7 @@ async function operarLegenda(operacao) {
     $('legMensagem').textContent = (await operacao()) || '';
   } catch (erro) {
     $('legMensagem').textContent = ({
-      409: 'A faixa mudou. Atualize a busca e escolha a faixa novamente.',
+      409: 'A faixa mudou ou a assinatura do vídeo ainda está sendo calculada em segundo plano. Atualize a busca e tente de novo em instantes.',
       422: 'Não foi possível gerar uma legenda. Confira o SRT e os tempos informados.',
       413: 'O SRT ultrapassa o limite de 2 MiB.',
       400: 'Confira a ordem dos pontos e o intervalo entre eles.',

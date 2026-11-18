@@ -286,8 +286,8 @@ async fn ajuste_srt_persiste_e_a_faixa_original_pode_ser_restaurada() {
     );
     std::fs::write(&legenda, original).unwrap();
     sqlx::query(
-        "INSERT INTO items (id, name, path, media_type, subtitle_path) \
-         VALUES ('abc', 'Filme', '/media/filme.mp4', 'Movie', ?)",
+        "INSERT INTO items (id, name, path, media_type, subtitle_path, content_sha256) \
+         VALUES ('abc', 'Filme', '/media/filme.mp4', 'Movie', ?, x'0102030405060708')",
     ).bind(legenda.to_str().unwrap()).execute(&pool).await.unwrap();
     let (_, faixas) = call(&s.app, Method::GET, "/admin/api/legendas/abc", None, None).await;
     let indice = faixas[0]["indice"].as_i64().unwrap();
@@ -502,4 +502,31 @@ async fn arquivo_movido_antes_do_hash_vai_para_a_revisao_em_vez_de_perder_o_hist
     assert_eq!(fila.as_array().unwrap().len(), 1, "{fila}");
     assert_eq!(fila[0]["id"], id);
     assert_eq!(fila[0]["motivo"], "possivel_edicao");
+}
+
+
+#[tokio::test]
+async fn ajuste_srt_espera_o_hash_do_video_em_vez_de_salvar_algo_que_seria_descartado() {
+    let s = server("ajuste-srt-sem-hash").await;
+    let config = Arc::new(test_config(&s.dir));
+    let pool = db::init_db(&config.database_url).await.unwrap();
+    let legenda = s.dir.join("filme.srt");
+    std::fs::write(&legenda, "1\n00:00:01,000 --> 00:00:02,000\nPrimeiro\n").unwrap();
+    // Item recém-varrido: o hash do conteúdo ainda não foi calculado em segundo plano.
+    sqlx::query(
+        "INSERT INTO items (id, name, path, media_type, subtitle_path) \
+         VALUES ('semhash', 'Filme', '/media/filme.mp4', 'Movie', ?)",
+    ).bind(legenda.to_str().unwrap()).execute(&pool).await.unwrap();
+    let (_, faixas) = call(&s.app, Method::GET, "/admin/api/legendas/semhash", None, None).await;
+    let indice = faixas[0]["indice"].as_i64().unwrap();
+    let rota = format!("/admin/api/legendas/semhash/{indice}");
+    let (status, _) = call(&s.app, Method::GET, &rota, None, None).await;
+    assert_eq!(status, StatusCode::CONFLICT, "sem o hash do vídeo não há assinatura estável");
+    // O status do painel informa quantas assinaturas ainda estão pendentes.
+    let (_, painel) = call(&s.app, Method::GET, "/admin/api/status", None, None).await;
+    assert_eq!(painel["scan"]["signaturesPending"], 1);
+    // Quando o hash é calculado, a mesma faixa passa a funcionar.
+    sqlx::query("UPDATE items SET content_sha256 = x'0a0b0c0d' WHERE id = 'semhash'").execute(&pool).await.unwrap();
+    let (status, _) = call(&s.app, Method::GET, &rota, None, None).await;
+    assert_eq!(status, StatusCode::OK);
 }

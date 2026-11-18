@@ -639,6 +639,12 @@ async fn status(State(st): State<AdminState>) -> Response {
     .await
     .unwrap_or((0,));
     let libs = libraries::list(&st.pool).await.map_or(0, |l| l.len());
+    // Arquivos cujo hash de conteúdo ainda é calculado em segundo plano: até lá, indexar áudio e cenas e ajustar legendas
+    // respondem 409.
+    let assinaturas_pendentes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE content_sha256 IS NULL")
+        .fetch_one(&st.pool)
+        .await
+        .unwrap_or(0);
     let (running, pending, last_finished, last_files) = library::scan_status();
     let rt = settings::snapshot();
 
@@ -660,7 +666,7 @@ async fn status(State(st): State<AdminState>) -> Response {
         "tmdb": { "configured": rt.tmdb_api_key.is_some(), "language": rt.tmdb_language },
         "items": { "movies": count_of("Movie"), "episodes": count_of("Episode"), "series": series.0 },
         "libraries": libs,
-        "scan": { "running": running, "pending": pending, "lastFinished": last_finished, "lastFiles": last_files }
+        "scan": { "running": running, "pending": pending, "lastFinished": last_finished, "lastFiles": last_files, "signaturesPending": assinaturas_pendentes }
     }))
     .into_response()
 }

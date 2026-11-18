@@ -182,10 +182,11 @@ impl FonteLegenda {
         if bytes.len() as u64 > MAX_SRT_BYTES {
             return Err(StatusCode::PAYLOAD_TOO_LARGE);
         }
+        // A assinatura inclui o hash do vídeo. Logo depois da primeira varredura ele ainda está sendo calculado em segundo
+        // plano; um ajuste salvo agora seria descartado quando o hash aparecesse e a assinatura mudasse. Recusa (409).
+        let video = self.content_sha256.as_ref().ok_or(StatusCode::CONFLICT)?;
         let mut hash = Sha256::new();
-        if let Some(video) = &self.content_sha256 {
-            hash.update(video);
-        }
+        hash.update(video);
         hash.update([0]);
         hash.update(&bytes);
         let assinatura = format!("{:x}", hash.finalize());
