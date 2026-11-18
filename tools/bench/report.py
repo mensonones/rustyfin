@@ -7,9 +7,9 @@ import json
 import sys
 
 
-def f(v, nd=1, unit=""):
+def f(v, nd=1, unit="", nulo="n/d"):
     if v is None:
-        return "n/d"
+        return nulo
     if isinstance(v, str):
         return v
     return f"{v:,.{nd}f}".replace(",", " ").replace(".", ",") + unit
@@ -22,14 +22,14 @@ def ratio(a, b, better="low"):
     return f"{x:.1f}×".replace(".", ",")
 
 
-def row(name, r, j, key, nd=1, unit="", better="low", sub=None):
+def row(name, r, j, key, nd=1, unit="", better="low", sub=None, nulo="n/d"):
     def get(d):
         v = d
         for k in ([sub] if sub else []) + [key]:
             v = (v or {}).get(k) if isinstance(v, dict) else None
         return v
     a, b = get(r), get(j)
-    return f"| {name} | {f(a, nd, unit)} | {f(b, nd, unit)} | {ratio(a, b, better)} |"
+    return f"| {name} | {f(a, nd, unit, nulo)} | {f(b, nd, unit, nulo)} | {ratio(a, b, better)} |"
 
 
 def section(profile, data):
@@ -47,9 +47,9 @@ def section(profile, data):
     out.append(row("Pico de RAM na varredura (MiB)", r.get("B_scan_inicial", {}), j.get("B_scan_inicial", {}), "mem_mib_max", 0))
     out.append(f"| Rescan sem mudanças (s) | {f(r.get('B_rescan_s'), 2)} | {f(j.get('B_rescan_s'), 2)} | {ratio(r.get('B_rescan_s'), j.get('B_rescan_s'))} |")
     for n in sorted({k for d in (r, j) for k in (d.get("B_escala") or {})}, key=int):
-        out.append(row(f"Varredura de {n} clipes (s)", (r.get("B_escala") or {}).get(n, {}), (j.get("B_escala") or {}).get(n, {}), "concluido_s", 1))
+        out.append(row(f"Varredura de {n} clipes (s)", (r.get("B_escala") or {}).get(n, {}), (j.get("B_escala") or {}).get(n, {}), "concluido_s", 1, nulo="não terminou no limite do teste"))
         out.append(row(f"  pico de RAM com {n} clipes (MiB)", (r.get("B_escala") or {}).get(n, {}), (j.get("B_escala") or {}).get(n, {}), "mem_mib_max", 0))
-        out.append(row(f"  listar 50 itens com {n} clipes (ms, p50)", (r.get("B_escala") or {}).get(n, {}), (j.get("B_escala") or {}).get(n, {}), "lista50_p50_ms", 1))
+        out.append(row(f"  listar 50 itens com {n} clipes (ms, p50)", (r.get("B_escala") or {}).get(n, {}), (j.get("B_escala") or {}).get(n, {}), "lista50_p50_ms", 1, nulo="—"))
     first = sorted((r.get("B_escala") or {}).keys(), key=int)[:1]
     for n in first:
         out.append(row(f"Arquivo novo aparece (s, com {n} clipes)", (r.get("B_escala") or {}).get(n, {}), (j.get("B_escala") or {}).get(n, {}), "arquivo_novo_s", 1))
@@ -70,7 +70,7 @@ def section(profile, data):
     for n in (5, 10, 20):
         out.append(row(f"{n} streams simultâneos, vazão agregada (MB/s)", rd, jd, f"mb_s_{n}streams_agg", 0, better="high"))
 
-    out += ["", "**Transcodificação HLS (H.264, uma qualidade; 6 segmentos = 36 s de vídeo)**", "", "| Sessões | Sistema | OK | 1º segmento (s) | Velocidade por sessão (× tempo real) | CPU máx (%) | RAM máx (MiB) |", "|---|---|---|---|---|---|---|"]
+    out += ["", "**Transcodificação HLS (H.264, uma qualidade; 36 s de vídeo)**", "", "| Sessões | Sistema | OK | 1º segmento (s) | Velocidade por sessão (× tempo real) | CPU máx (%) | RAM máx (MiB) |", "|---|---|---|---|---|---|---|"]
     rt, jt = r.get("E_transcode", {}), j.get("E_transcode", {})
     for key in rt or jt:
         for name, d in (("Rustyfin", rt), ("Jellyfin", jt)):
@@ -92,6 +92,7 @@ def section(profile, data):
 
 
 def main():
+    sys.stdout.reconfigure(encoding="utf-8")  # o console do Windows usa cp1252 e quebra com "→" e "×"
     for path in sys.argv[1:]:
         data = json.load(open(path, encoding="utf-8"))
         for profile in (k for k in data if not k.startswith("_")):
