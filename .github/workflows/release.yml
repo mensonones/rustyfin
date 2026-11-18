@@ -33,15 +33,19 @@ jobs:
         if: matrix.nome == 'windows-x86_64'
         shell: pwsh
         run: |
-          $v = (Get-Item "target/${{ matrix.target }}/release/rustyfin.exe").VersionInfo
-          if ($v.ProductName -ne "Rustyfin" -or [string]::IsNullOrEmpty($v.ProductVersion)) { throw "O rustyfin.exe está sem as informações de versão" }
-          "Produto: $($v.ProductName) $($v.ProductVersion)"
+          foreach ($nome in "rustyfin", "rustyfin-tray") {
+            $v = (Get-Item "target/${{ matrix.target }}/release/$nome.exe").VersionInfo
+            if ($v.ProductName -ne "Rustyfin" -or [string]::IsNullOrEmpty($v.ProductVersion)) { throw "O $nome.exe está sem as informações de versão" }
+            "${nome}: $($v.ProductName) $($v.ProductVersion), $($v.FileDescription)"
+          }
       - name: Empacota
         shell: bash
         run: |
           pacote="rustyfin-${GITHUB_REF_NAME}-${{ matrix.nome }}"
           mkdir "$pacote"
           cp "target/${{ matrix.target }}/release/${{ matrix.exe }}" "$pacote/"
+          # No Windows, o ícone da bandeja vai junto com o servidor.
+          if [ "${{ matrix.formato }}" = "zip" ]; then cp "target/${{ matrix.target }}/release/rustyfin-tray.exe" "$pacote/"; fi
           cp -r packaging LICENSE README.md CHANGELOG.md "$pacote/"
           if [ "${{ matrix.formato }}" = "zip" ]; then
             7z a -tzip "$pacote.zip" "$pacote" > /dev/null

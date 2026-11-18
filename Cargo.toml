@@ -1,6 +1,6 @@
 [package]
 name = "rustyfin"
-version = "0.24.2"
+version = "0.25.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
@@ -58,6 +58,11 @@ base64 = "0.22"
 argon2 = "0.5"
 serde_urlencoded = "0.7"
 sha2 = "0.10"
+
+# Ícone da bandeja do sistema (rustyfin-tray, só no Windows): os outros sistemas não compilam estas dependências.
+[target.'cfg(windows)'.dependencies]
+tray-icon = "0.26"
+tao = "0.37"
 
 [dev-dependencies]
 tower = { version = "0.5", default-features = false, features = ["util"] }

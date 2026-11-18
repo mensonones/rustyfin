@@ -5,6 +5,24 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.25.0] - 2026-11-18
+
+### Adicionado
+- **Ícone na bandeja do sistema (Windows):** novo `rustyfin-tray.exe`, com a logo do projeto. Inicia o servidor sem janela de
+  console, o mantém no ar (se cair, sobe de novo, com espera crescente) e traz o menu *Abrir o painel*, *Ver o log*, *Abrir a
+  pasta de dados*, *Reiniciar o servidor* e *Sair*; o duplo clique abre o painel. Só uma instância por vez. Se a área de
+  notificação não existir (sessão sem desktop), o servidor continua no ar, sem o ícone.
+- A logo agora é o **ícone** do `rustyfin.exe`, do `rustyfin-tray.exe` e do setup (`rustyfin.ico`, em sete tamanhos),
+  embutida pelo `build.rs`, junto com as informações de versão de cada executável.
+- `POST /admin/api/desligar`: desligamento gracioso do servidor, **só a partir do próprio computador**. É o que o menu
+  *Sair* e *Reiniciar* usam (com senha do painel configurada, eles forçam o encerramento).
+- O setup e o `instalar.ps1` instalam o ícone da bandeja (opção marcada por padrão; `-SemBandeja` o dispensa), e a tarefa
+  agendada passa a executá-lo. O teste do setup confere que ele sobe e que sai na desinstalação.
+
+### Alterado
+- O servidor Windows e os pacotes do Windows incluem o `rustyfin-tray.exe`; o fluxo de release confere as informações de
+  versão dos dois executáveis.
+
 ## [0.24.2] - 2026-11-18
 
 ### Adicionado

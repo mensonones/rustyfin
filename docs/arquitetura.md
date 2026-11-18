@@ -31,6 +31,9 @@ O Rustyfin é **um único binário** (`rustyfin`) sobre uma biblioteca de mesmo 
 | `src/models.rs` | DTOs do contrato Jellyfin (PascalCase) |
 | `src/transcode/` | Decisão Direct Play/Remux/Transcode, argumentos do ffmpeg (software, VAAPI e Quick Sync), escolha do encoder na subida, processos e sessões HLS |
 | `src/api/` | Rotas: itens, séries, imagens, streaming, transcodificação, legendas, usuários, painel |
+| `src/bin/rustyfin-tray.rs` | Ícone da bandeja do Windows: inicia o servidor sem janela, o mantém no ar e oferece o menu (só no Windows) |
+| `src/shutdown.rs` | Sinal interno de desligamento gracioso, usado pela rota `/admin/api/desligar` |
+| `build.rs` | Embute o ícone (a logo) e as informações de versão nos executáveis do Windows |
 | `packaging/` | Instaladores de serviço (Windows, Linux, macOS) e o modelo `rustyfin.env`; vão dentro dos pacotes de cada versão |
 | `src/admin.html` | Painel de administração (página única, embutida no binário) |
 | `src/assets/fontes/` | Fontes Geist e Geist Mono (OFL), embutidas e servidas em `/assets/fontes/` sem autenticação |

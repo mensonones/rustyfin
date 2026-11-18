@@ -15,6 +15,10 @@
 #ifndef ExePath
   #define ExePath "..\..\target\release\rustyfin.exe"
 #endif
+#ifndef TrayPath
+  ; O ícone da bandeja fica ao lado do servidor: rustyfin-tray.exe.
+  #define TrayPath ExtractFilePath(ExePath) + "rustyfin-tray.exe"
+#endif
 
 [Setup]
 AppId={{6F1D2B7A-3C4E-4A55-9E0B-8D52C1A7B3F4}
@@ -40,6 +44,7 @@ WizardStyle=modern
 LicenseFile=..\..\LICENSE
 UninstallDisplayName=Rustyfin
 UninstallDisplayIcon={app}\rustyfin.exe
+SetupIconFile=rustyfin.ico
 CloseApplications=no
 RestartApplications=no
 
@@ -48,10 +53,12 @@ Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortugue
 
 [Tasks]
 Name: "inicio"; Description: "Iniciar o Rustyfin quando eu entrar no Windows"
+Name: "bandeja"; Description: "Mostrar o ícone do Rustyfin na bandeja do sistema, com o menu para abrir o painel e sair"
 Name: "firewall"; Description: "Liberar o Firewall na rede privada, para o celular e a TV encontrarem o servidor (pede permissão de administrador)"; Flags: unchecked
 
 [Files]
 Source: "{#ExePath}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#TrayPath}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "iniciar.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "tarefa.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "firewall.ps1"; DestDir: "{app}"; Flags: ignoreversion
@@ -59,6 +66,7 @@ Source: "..\rustyfin.env.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 
 [Icons]
+Name: "{autoprograms}\Rustyfin\Rustyfin (bandeja)"; Filename: "{app}\rustyfin-tray.exe"; WorkingDir: "{app}"
 Name: "{autoprograms}\Rustyfin\Painel do Rustyfin"; Filename: "{cmd}"; Parameters: "/c start """" ""{code:UrlPainel}"""; Flags: runminimized
 Name: "{autoprograms}\Rustyfin\Desinstalar o Rustyfin"; Filename: "{uninstallexe}"
 
@@ -437,6 +445,7 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Codigo: Integer;
+  Argumentos: string;
 begin
   if CurStep = ssInstall then
   begin
@@ -447,10 +456,12 @@ begin
   if CurStep = ssPostInstall then
   begin
     EscreverConfiguracao;
-    if WizardIsTaskSelected('inicio') then
-      ExecutarPS('tarefa.ps1', ArgumentosTarefa('Registrar'))
-    else
-      ExecutarPS('tarefa.ps1', ArgumentosTarefa('Registrar') + ' -SemGatilho');
+    Argumentos := ArgumentosTarefa('Registrar');
+    if not WizardIsTaskSelected('inicio') then
+      Argumentos := Argumentos + ' -SemGatilho';
+    if not WizardIsTaskSelected('bandeja') then
+      Argumentos := Argumentos + ' -SemBandeja';
+    ExecutarPS('tarefa.ps1', Argumentos);
     ExecutarPS('tarefa.ps1', ArgumentosTarefa('Iniciar'));
     if WizardIsTaskSelected('firewall') then
     begin

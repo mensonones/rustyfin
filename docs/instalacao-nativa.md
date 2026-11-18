@@ -82,7 +82,21 @@ Os instaladores vêm no pacote (e em [`packaging/`](../packaging/)). Todos leem 
 
 ### Windows
 
-Sem administrador: o servidor sobe **quando você entra na conta** (tarefa agendada) e reinicia sozinho se cair.
+Sem administrador: o servidor sobe **quando você entra na conta** (tarefa agendada) e reinicia sozinho se cair. Quem o
+mantém no ar é o **ícone do Rustyfin na bandeja do sistema** (`rustyfin-tray.exe`, com a logo do projeto): ele inicia o
+servidor sem janela de console, o reinicia se cair e oferece este menu (clique com o botão direito, ou duplo clique para
+abrir o painel):
+
+| Item do menu | O que faz |
+|---|---|
+| Abrir o painel | Abre `http://localhost:<porta>/admin` no navegador |
+| Ver o log | Abre o `rustyfin.log` |
+| Abrir a pasta de dados | Abre a pasta do banco e do cache |
+| Reiniciar o servidor | Para (de forma graciosa) e sobe de novo |
+| Sair | Desliga o servidor e tira o ícone da bandeja |
+
+O passa-mouse sobre o ícone mostra se o servidor está rodando e a porta. Sem o ícone (`-SemBandeja`), o servidor sobe por um
+script oculto, como antes.
 
 > Os executáveis do Windows ainda **não são assinados**: o SmartScreen pode avisar e o Smart App Control pode bloquear.
 > Veja [assinatura e antivírus](assinatura-de-codigo.md) para as saídas.

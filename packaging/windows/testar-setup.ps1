@@ -48,6 +48,7 @@ Write-Host "1. Instalação sem telas (ffmpeg: $modo)"
 $codigo = Instalar $modo
 Conferir "o setup terminou com código 0 (recebido $codigo)" ($codigo -eq 0)
 Conferir "rustyfin.exe foi instalado" (Test-Path (Join-Path $Pasta "rustyfin.exe"))
+Conferir "o ícone da bandeja (rustyfin-tray.exe) foi instalado" (Test-Path (Join-Path $Pasta "rustyfin-tray.exe"))
 Conferir "os scripts de inicialização foram instalados" ((Test-Path (Join-Path $Pasta "iniciar.ps1")) -and (Test-Path (Join-Path $Pasta "tarefa.ps1")))
 $env_ = Join-Path $Pasta "rustyfin.env"
 Conferir "rustyfin.env foi criado" (Test-Path $env_)
@@ -58,6 +59,7 @@ if (Test-Path $env_) {
 }
 Conferir "a tarefa agendada existe" ($null -ne (Get-ScheduledTask -TaskName Rustyfin -ErrorAction SilentlyContinue))
 Conferir "o servidor responde na porta $Porta" (Esperar-Servidor $true)
+Conferir "o ícone da bandeja está em execução" ($null -ne (Get-Process -Name rustyfin-tray -ErrorAction SilentlyContinue))
 if ($BaixarFfmpeg) {
     Conferir "o ffmpeg foi baixado e extraído" (Test-Path (Join-Path $Pasta "ffmpeg\bin\ffmpeg.exe"))
     Conferir "o ffprobe veio junto" (Test-Path (Join-Path $Pasta "ffmpeg\bin\ffprobe.exe"))
@@ -83,6 +85,7 @@ if ($desinstalador) {
     Start-Sleep -Seconds 3
 }
 Conferir "o servidor parou" (Esperar-Servidor $false 15)
+Conferir "o ícone da bandeja foi encerrado" ($null -eq (Get-Process -Name rustyfin-tray -ErrorAction SilentlyContinue))
 Conferir "a tarefa agendada foi removida" ($null -eq (Get-ScheduledTask -TaskName Rustyfin -ErrorAction SilentlyContinue))
 Conferir "a pasta de instalação foi apagada" (-not (Test-Path (Join-Path $Pasta "rustyfin.exe")))
 Remove-Item -Recurse -Force $Midia -ErrorAction SilentlyContinue

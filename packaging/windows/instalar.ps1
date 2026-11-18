@@ -12,6 +12,7 @@
 
 .EXAMPLE
   .\instalar.ps1 -Binario .\rustyfin.exe -Firewall          # também libera as portas na rede privada (como administrador)
+  .\instalar.ps1 -SemBandeja                                # sem o ícone na bandeja (o servidor sobe por um script oculto)
   .\instalar.ps1 -Remover                                   # remove a tarefa e o binário, mantém os dados
   .\instalar.ps1 -Remover -ApagarDados
   .\instalar.ps1 -SomenteMostrar                            # mostra o que faria, sem alterar nada
@@ -21,6 +22,7 @@ param(
     [string]$Binario = ".\rustyfin.exe",
     [string]$Pasta = (Join-Path $env:LOCALAPPDATA "Rustyfin"),
     [switch]$Firewall,
+    [switch]$SemBandeja,
     [switch]$Remover,
     [switch]$ApagarDados,
     [switch]$SomenteMostrar
@@ -42,7 +44,7 @@ if ($Remover) {
         Passo "Apagando $Pasta (binário, configuração e dados)" { Remove-Item -Recurse -Force $Pasta -ErrorAction SilentlyContinue }
     } else {
         Passo "Removendo o binário; dados e configuração ficam em $Pasta" {
-            Remove-Item -Force (Join-Path $Pasta "rustyfin.exe"), (Join-Path $Pasta "iniciar.ps1") -ErrorAction SilentlyContinue
+            Remove-Item -Force (Join-Path $Pasta "rustyfin.exe"), (Join-Path $Pasta "rustyfin-tray.exe"), (Join-Path $Pasta "iniciar.ps1") -ErrorAction SilentlyContinue
         }
     }
     Write-Host "Pronto."
@@ -59,6 +61,8 @@ Passo "Parando a versão em execução, se houver" { & $Tarefa -Pasta $Pasta -Ac
 Passo "Copiando o rustyfin.exe e o script de inicialização" {
     Copy-Item -Force $Binario (Join-Path $Pasta "rustyfin.exe")
     Copy-Item -Force (Join-Path $PSScriptRoot "iniciar.ps1") (Join-Path $Pasta "iniciar.ps1")
+    $bandeja = Join-Path (Split-Path -Parent $Binario) "rustyfin-tray.exe"
+    if (Test-Path $bandeja) { Copy-Item -Force $bandeja (Join-Path $Pasta "rustyfin-tray.exe") }
 }
 
 $ArquivoEnv = Join-Path $Pasta "rustyfin.env"
@@ -67,7 +71,7 @@ if (-not (Test-Path $ArquivoEnv)) {
 }
 
 Passo "Registrando a tarefa agendada 'Rustyfin' (ao entrar na conta)" {
-    & $Tarefa -Pasta $Pasta -Acao Registrar
+    if ($SemBandeja) { & $Tarefa -Pasta $Pasta -Acao Registrar -SemBandeja } else { & $Tarefa -Pasta $Pasta -Acao Registrar }
     & $Tarefa -Pasta $Pasta -Acao Iniciar
 }
 

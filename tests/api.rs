@@ -857,3 +857,19 @@ async fn capas_abrem_para_a_rede_local_sem_token_mas_nao_para_fora_nem_com_a_opc
     let app = api::build_router(Arc::new(fechada), pool.clone(), Arc::new(tokio::sync::Notify::new()));
     assert_eq!(get_anonimo(&app, &uri, "192.168.1.50").await, StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn desligar_so_aceita_o_proprio_computador() {
+    // O ícone da bandeja do Windows pede o desligamento gracioso ao servidor; outro aparelho da rede não pode.
+    let s = server("desligar").await;
+    let pedir = |de: &str| {
+        let mut req = Request::builder().method(Method::POST).uri("/admin/api/desligar").body(Body::empty()).unwrap();
+        let addr: SocketAddr = format!("{de}:40000").parse().unwrap();
+        req.extensions_mut().insert(ConnectInfo(addr));
+        let app = s.app.clone();
+        async move { app.oneshot(req).await.unwrap().status() }
+    };
+    assert_eq!(pedir("192.168.1.50").await, StatusCode::FORBIDDEN, "outro aparelho da rede local");
+    assert_eq!(pedir("203.0.113.9").await, StatusCode::FORBIDDEN, "fora da rede local");
+    assert_eq!(pedir("127.0.0.1").await, StatusCode::ACCEPTED, "o próprio computador");
+}

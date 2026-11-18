@@ -71,6 +71,7 @@ pub fn router(config: Arc<AppConfig>, pool: DbPool, scan: ScanTrigger) -> Router
         .route("/admin/api/settings", get(get_settings).put(put_settings))
         .route("/admin/api/browse", get(browse))
         .route("/admin/api/scan", post(scan_now))
+        .route("/admin/api/desligar", post(desligar))
         .route(
             "/Library/VirtualFolders",
             get(list_folders).post(create_folder).delete(delete_folder),
@@ -626,6 +627,16 @@ async fn indexar_audio(
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
+}
+
+/// Desliga o servidor de forma graciosa. Só aceita o próprio computador (o ícone da bandeja do Windows usa isto), mesmo
+/// com a administração liberada para a rede local: outro aparelho da rede não deve poder desligar o servidor.
+async fn desligar(ConnectInfo(addr): ConnectInfo<SocketAddr>) -> StatusCode {
+    if !addr.ip().is_loopback() {
+        return StatusCode::FORBIDDEN;
+    }
+    crate::shutdown::DESLIGAR.notify_one();
+    StatusCode::ACCEPTED
 }
 
 async fn scan_now(State(st): State<AdminState>) -> StatusCode {

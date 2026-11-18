@@ -72,8 +72,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 }
 
-/// Espera SIGTERM ou SIGINT (Ctrl+C); fora do Unix, só o Ctrl+C.
+/// Espera o pedido de desligamento: SIGTERM, SIGINT (Ctrl+C) ou o pedido interno (`/admin/api/desligar`).
 async fn shutdown_signal() {
+    tokio::select! {
+        () = sinal_do_sistema() => {}
+        () = rustyfin::shutdown::DESLIGAR.notified() => {}
+    }
+}
+
+/// Espera SIGTERM ou SIGINT (Ctrl+C); fora do Unix, só o Ctrl+C.
+async fn sinal_do_sistema() {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{signal, SignalKind};

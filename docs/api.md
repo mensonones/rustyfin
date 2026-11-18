@@ -104,6 +104,7 @@ Usada por `/admin`. O painel abre em Bibliotecas, onde mostra a última varredur
 | `GET /admin/api/reproducao/perfis` | Perfis locais observados no `PlaybackInfo`, com a última decisão por dispositivo |
 | `POST /admin/api/reproducao/simular` | Recebe `itemId`, até dois IDs em `perfis`, `audioIndex` e `legendaIndex` opcionais. Devolve o plano por perfil e as faixas do título |
 | `POST /admin/api/scan` | Inicia uma varredura imediata |
+| `POST /admin/api/desligar` | Desliga o servidor de forma graciosa (para as transcodificações e fecha o banco). **Só aceita o próprio computador** (`127.0.0.1`), mesmo com a administração aberta à rede local; o ícone da bandeja do Windows usa esta rota. Responde `202` |
 | `GET /admin/api/browse?path=...` | Lista as subpastas de um caminho (seletor de pastas) |
 | `GET/PUT /admin/api/settings` | Nome do servidor, intervalo do scan, transcodificações, chave e idioma do TMDB |
 | `GET/POST /admin/api/folders`, `.../folders/paths`, `.../folders/name` | Bibliotecas e pastas |

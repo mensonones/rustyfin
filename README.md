@@ -130,7 +130,8 @@ rodando o Rustyfin direto no Windows o Quick Sync funciona ([como](docs/reproduc
 ### Sem Docker (Windows, Linux, macOS)
 
 O Rustyfin é um binário só: dá para rodar direto no sistema e instalá-lo como serviço, com instaladores para Windows
-(tarefa agendada), Linux (systemd) e macOS (launchd). No Windows com GPU Intel é o caminho mais rápido (Quick Sync).
+(tarefa agendada), Linux (systemd) e macOS (launchd). No Windows, o ícone do Rustyfin fica na bandeja do sistema (abrir o painel, ver o log, reiniciar e sair) e, com GPU Intel, é o
+caminho mais rápido (Quick Sync).
 Veja **[Instalação direta no sistema](docs/instalacao-nativa.md)**.
 
 ### Compilando
