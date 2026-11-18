@@ -143,7 +143,7 @@ O painel só é acessível pela rede local e pode exigir senha. Detalhes em
 
 ![Aba Acervo, com filtros de situação, busca e a lista de títulos](docs/assets/painel-acervo.png)
 
-A aba **Acervo** lista todos os filmes e episódios que a varredura encontrou e mostra o que falta em cada um: metadados,
+A aba **Acervo** lista todos os filmes e episódios que a varredura encontrou, com a capa de cada um, e mostra o que falta: metadados,
 capa, legenda, assinatura e cenas indexadas. Filtre por problema, busque por título ou caminho e rode as ações (indexar
 cenas e áudio, ajustar legenda) direto na linha. Serve para achar um nome mal entendido ou uma capa ausente sem abrir o app.
 

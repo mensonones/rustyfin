@@ -44,7 +44,7 @@ pub async fn get_primary_image(
     Query(q): Params,
     headers: HeaderMap,
 ) -> Result<Response, StatusCode> {
-    serve_image(&config, &pool, &user, &item_id, ImageKind::Primary, &q, &headers).await
+    serve_image(&config, &pool, Some(&user), &item_id, ImageKind::Primary, &q, &headers).await
 }
 
 /// `/Items/:id/Images/Primary/:index` e variantes com índice.
@@ -65,7 +65,7 @@ pub async fn get_backdrop_image(
     Query(q): Params,
     headers: HeaderMap,
 ) -> Result<Response, StatusCode> {
-    serve_image(&config, &pool, &user, &item_id, ImageKind::Backdrop, &q, &headers).await
+    serve_image(&config, &pool, Some(&user), &item_id, ImageKind::Backdrop, &q, &headers).await
 }
 
 pub async fn get_backdrop_image_indexed(
@@ -91,6 +91,18 @@ fn db_error(e: sqlx::Error) -> StatusCode {
     StatusCode::INTERNAL_SERVER_ERROR
 }
 
+/// Capa de um título para o painel (que não tem token de usuário): a imagem local, a do TMDB ou um
+/// quadro do próprio vídeo, com `maxWidth`/`maxHeight` opcionais.
+pub(super) async fn capa_para_painel(
+    config: &AppConfig,
+    pool: &DbPool,
+    item_id: &str,
+    q: &HashMap<String, String>,
+    headers: &HeaderMap,
+) -> Result<Response, StatusCode> {
+    serve_image(config, pool, None, item_id, ImageKind::Primary, q, headers).await
+}
+
 async fn fetch_image_row(pool: &DbPool, id: &str) -> Result<Option<ImageRow>, StatusCode> {
     sqlx::query_as(
         "SELECT path, duration_ticks, COALESCE(poster_path, tmdb_poster), COALESCE(backdrop_path, tmdb_backdrop) FROM items WHERE id = ?",
@@ -104,7 +116,7 @@ async fn fetch_image_row(pool: &DbPool, id: &str) -> Result<Option<ImageRow>, St
 async fn serve_image(
     config: &AppConfig,
     pool: &DbPool,
-    user: &AuthUser,
+    user: Option<&AuthUser>,
     item_id: &str,
     kind: ImageKind,
     q: &HashMap<String, String>,
@@ -116,12 +128,18 @@ async fn serve_image(
     let mut candidates = Vec::new();
     let mut row = fetch_image_row(pool, &target).await?;
 
-    if row.is_some() && !users::item_allowed(pool, user, &item_id).await.map_err(db_error)? {
-        return Err(StatusCode::NOT_FOUND);
+    if let (Some(user), true) = (user, row.is_some()) {
+        if !users::item_allowed(pool, user, &item_id).await.map_err(db_error)? {
+            return Err(StatusCode::NOT_FOUND);
+        }
     }
 
     // Série/temporada não estão em `items`: usam a arte da série ou o primeiro episódio.
     if row.is_none() {
+        // Sem usuário (painel), só os itens do catálogo têm imagem.
+        let Some(user) = user else {
+            return Err(StatusCode::NOT_FOUND);
+        };
         let found = shows::resolve_art(pool, user, &item_id, kind == ImageKind::Backdrop)
             .await
             .map_err(db_error)?;
@@ -544,7 +562,7 @@ mod tests {
             let id = id.to_owned();
             let (pool, config, usuario) = (&pool, &config, &usuario);
             async move {
-                let result = serve_image(config, pool, usuario, &id, kind, &HashMap::new(), &HeaderMap::new())
+                let result = serve_image(config, pool, Some(usuario), &id, kind, &HashMap::new(), &HeaderMap::new())
                     .await.unwrap();
                 axum::body::to_bytes(result.into_body(), 100).await.unwrap()
             }

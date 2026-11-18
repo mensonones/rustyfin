@@ -5,11 +5,13 @@ use super::admin::AdminState;
 use crate::libraries;
 use axum::{
     Json,
-    extract::{Query, State},
-    http::StatusCode,
+    extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode},
+    response::Response,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use std::collections::HashMap;
 
 const POR_PAGINA: i64 = 50;
 const MAX_POR_PAGINA: i64 = 200;
@@ -238,4 +240,14 @@ pub(super) async fn listar(
         .collect();
 
     Ok(Json(Listagem { total, pagina, por_pagina, itens, resumo }))
+}
+
+/// Capa de um título do acervo, para as miniaturas da lista do painel.
+pub(super) async fn capa(
+    State(st): State<AdminState>,
+    Path(id): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Result<Response, StatusCode> {
+    super::images::capa_para_painel(&st.config, &st.pool, &id, &q, &headers).await
 }

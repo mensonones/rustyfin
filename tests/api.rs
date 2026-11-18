@@ -773,6 +773,20 @@ async fn aba_acervo_lista_com_selos_filtros_busca_e_paginacao() {
     let (_, filme) = call(&s.app, Method::GET, &format!("/admin/api/acervo?busca={id}"), None, None).await;
     assert_eq!(filme["itens"][0]["selos"]["cenas"], true);
 
+    // A capa sai por uma rota do painel, sem token: usa a imagem local do título.
+    let capa = s.dir.join("capa.jpg");
+    std::fs::write(&capa, b"imagem-de-teste").unwrap();
+    sqlx::query("UPDATE items SET poster_path = ? WHERE id = ?")
+        .bind(capa.to_str().unwrap())
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (status, bytes) = corpo(&s.app, Method::GET, &format!("/admin/api/acervo/{id}/capa"), None, None).await;
+    assert_eq!((status, bytes.as_ref()), (StatusCode::OK, b"imagem-de-teste".as_ref()));
+    let (status, _) = corpo(&s.app, Method::GET, "/admin/api/acervo/inexistente/capa", None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
     // Filtros de problema e de biblioteca.
     let (_, sem_assinatura) = call(&s.app, Method::GET, "/admin/api/acervo?problema=assinatura", None, None).await;
     assert_eq!(sem_assinatura["total"], 61);

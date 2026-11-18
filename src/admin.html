@@ -278,6 +278,9 @@
   .tabela-acervo td { padding: 12px 16px; border-top: 1px solid var(--rule); vertical-align: top; }
   .tabela-acervo tbody tr:first-child td { border-top: 0; }
   .tabela-acervo tbody tr:hover { background: var(--paper-2); }
+  .col-capa { width: 1%; padding-inline-end: 0 !important; }
+  .capa-acervo { display: block; width: 48px; height: 72px; border-radius: 4px; object-fit: cover; background: var(--paper-3); box-shadow: 0 0 0 1px var(--rule); }
+  .capa-acervo.vazia { display: grid; place-items: center; color: var(--muted); }
   .titulo-acervo { font-weight: 500; overflow-wrap: anywhere; }
   .titulo-acervo small, .caminho-acervo { display: block; color: var(--muted); font-size: var(--text-xs); font-weight: 400; overflow-wrap: anywhere; }
   .caminho-acervo { font-family: var(--mono); margin-top: 4px; }
@@ -2000,7 +2003,10 @@ function linhaAcervo(t) {
     ['Copiar caminho', () => navigator.clipboard?.writeText(t.caminho)
       .then(() => toast('Caminho copiado.'), () => toast('Não foi possível copiar.', true)), false, 'external-link'],
   ]);
-  return el('tr', {}, el('td', {}, nome),
+  const capa = el('img', { className: 'capa-acervo', alt: '', loading: 'lazy', width: 48, height: 72,
+    src: '/admin/api/acervo/' + encodeURIComponent(t.id) + '/capa?maxHeight=144&quality=80' });
+  capa.onerror = () => capa.replaceWith(el('span', { className: 'capa-acervo vazia' }, icone('film')));
+  return el('tr', {}, el('td', { className: 'col-capa' }, capa), el('td', {}, nome),
     el('td', { className: 'col-acervo-biblioteca', textContent: t.biblioteca || '-' }),
     el('td', { className: 'col-acervo-midia' }, midia), el('td', {}, selosDoTitulo(t)), el('td', {}, acoes));
 }
@@ -2038,7 +2044,8 @@ async function carregarAcervo() {
     $('acervoPaginas').hidden = true;
     return;
   }
-  const cabecalho = el('tr', {}, el('th', { textContent: 'Título' }),
+  const cabecalho = el('tr', {}, el('th', { className: 'col-capa' }, el('span', { className: 'sr', textContent: 'Capa' })),
+    el('th', { textContent: 'Título' }),
     el('th', { className: 'col-acervo-biblioteca', textContent: 'Biblioteca' }),
     el('th', { className: 'col-acervo-midia', textContent: 'Mídia' }),
     el('th', { textContent: 'Situação' }), el('th', { textContent: 'Ações' }));

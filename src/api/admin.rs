@@ -60,6 +60,7 @@ pub fn router(config: Arc<AppConfig>, pool: DbPool, scan: ScanTrigger) -> Router
                 .delete(super::legendas_admin::excluir),
         )
         .route("/admin/api/acervo", get(super::acervo_admin::listar))
+        .route("/admin/api/acervo/:id/capa", get(super::acervo_admin::capa))
         .route("/admin/api/acervo/revisoes", get(listar_revisoes))
         .route("/admin/api/acervo/revisoes/:id/previa", post(prever_retomada))
         .route("/admin/api/acervo/revisoes/:id", post(resolver_revisao))

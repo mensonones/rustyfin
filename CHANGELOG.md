@@ -5,6 +5,13 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.22.2] - 2026-11-18
+
+### Adicionado
+- Aba **Acervo**: miniatura da capa de cada título na lista, carregada sob demanda conforme a rolagem. Títulos sem capa
+  local nem do TMDB mostram um quadro do próprio vídeo.
+- Rota `GET /admin/api/acervo/{id}/capa` para o painel (as outras rotas de imagem exigem o token de um usuário).
+
 ## [0.22.1] - 2026-11-18
 
 ### Alterado
