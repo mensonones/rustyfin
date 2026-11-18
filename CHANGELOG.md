@@ -5,6 +5,19 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.20.3] - 2026-11-18
+
+### Corrigido
+- Ajustar uma legenda SRT logo depois da primeira varredura salvava um ajuste que era **descartado em silêncio** quando o hash do
+  vídeo passava a existir (a assinatura do ajuste inclui esse hash, que desde a v0.17.3 é calculado em segundo plano). Agora a
+  prévia e o salvamento respondem 409 até o hash existir.
+- As mensagens do painel para indexar áudio e cenas e para ajustar legendas explicam que a assinatura do arquivo ainda está
+  sendo calculada, em vez de um erro genérico.
+
+### Adicionado
+- `GET /admin/api/status` informa `scan.signaturesPending`, quantos arquivos ainda esperam o hash.
+- `RUSTYFIN_PREPARO_MAX_BYTES` documentado na tabela de variáveis (`0` impede novos preparos).
+
 ### Adicionado
 - `tools/gpu_test/gpu_test.py`: testes do transcode por GPU para rodar fora do Docker (Quick Sync no Windows, VAAPI no Linux). Gera
   vídeos de teste, inclusive uma legenda PGS, e confere formatos, HDR, ABR, avanço, fMP4, 4K, AV1, entrelaçado, legenda de
