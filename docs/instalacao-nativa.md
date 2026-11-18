@@ -110,6 +110,8 @@ powershell -ExecutionPolicy Bypass -File packaging\windows\instalar.ps1 -Binario
   porta ou outras opções, edite o `rustyfin.env` e reinicie (`Stop-ScheduledTask Rustyfin; Start-ScheduledTask Rustyfin`).
 - Se o celular ou a TV não encontrarem o servidor, libere as portas na rede privada (precisa de um PowerShell **como
   administrador**): `.\packaging\windows\instalar.ps1 -Binario .\rustyfin.exe -Firewall`.
+- No assistente com telas, a regra do firewall é criada direto com `netsh`, pedindo elevação só para esse passo, e usa a
+  porta já configurada no `rustyfin.env` numa atualização. Se algum passo falhar, o assistente diz qual.
 - `-SomenteMostrar` lista o que o instalador faria, sem alterar nada. `-Remover` tira a tarefa e o binário e mantém os
   dados; `-Remover -ApagarDados` apaga tudo.
 - **GPU Intel (Quick Sync):** instale um `ffmpeg` com `h264_qsv` (o `winget install Gyan.FFmpeg` serve). O encoder `auto`
@@ -129,6 +131,9 @@ sudo sh packaging/linux/instalar.sh ./rustyfin
 
 - Instala em `/usr/local/bin/rustyfin`, cria o usuário `rustyfin` (sem login), guarda os dados em `/var/lib/rustyfin` e a
   configuração em `/etc/rustyfin/rustyfin.env`, e ativa o serviço. Logs: `journalctl -u rustyfin -f`.
+- **Permissões:** a pasta de dados fica em `0750` e os arquivos em `0600`, só para o usuário `rustyfin`, porque o banco guarda
+  os hashes das senhas e os tokens de sessão. Se você atualiza de uma versão anterior à 0.25.4 numa máquina com outros
+  usuários, o instalador corrige as permissões e avisa; encerre as sessões e troque as senhas por precaução.
 - **O usuário `rustyfin` precisa ler as suas pastas de mídia** (por exemplo, `chmod -R o+rX` na pasta, ou um grupo comum).
 - **GPU Intel ou AMD (VAAPI):** o instalador acrescenta o usuário aos grupos `render` e `video`, e o encoder `auto` usa a
   GPU se ela existir. Teste com `vainfo` (`sudo apt install vainfo`); sem driver, o servidor transcodifica na CPU, sem erro.

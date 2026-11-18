@@ -49,7 +49,7 @@ O `userId` que algumas rotas trazem no caminho é ignorado: vale sempre o usuár
 | `GET /Items/{id}`, `GET /Users/{id}/Items/{id}` | Detalhes de filme, episódio, série, temporada ou biblioteca |
 | `GET /Items/Latest`, `GET /UserItems/Resume` | Adicionados recentemente e "continuar assistindo" |
 | `GET /Items/Filters`, `GET /Items/Filters2` | Gêneros, classificações e anos disponíveis |
-| `GET /Genres`, `GET /Studios`, `GET /Persons` | Listas reais, com `SearchTerm`, `StartIndex`, `Limit` e `PersonTypes` |
+| `GET /Genres`, `GET /Studios`, `GET /Persons` | Listas reais, com `SearchTerm`, `StartIndex`, `Limit` e `PersonTypes` (guardadas por até 60 s por escopo de bibliotecas e refeitas ao fim de cada varredura) |
 | `GET /Shows/{id}/Seasons`, `GET /Shows/{id}/Episodes`, `GET /Shows/NextUp` | Séries |
 | `POST /Items/{id}/Refresh`, `POST /Library/Refresh` | Dispara uma varredura |
 | `GET/POST/DELETE /Library/VirtualFolders...` | Bibliotecas e pastas (rede local; veja [segurança](usuarios-e-seguranca.md#painel-de-administração)) |
