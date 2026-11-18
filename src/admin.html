@@ -30,6 +30,7 @@
     --danger: oklch(48% 0.17 27); --danger-wash: oklch(95% 0.03 25);
     --scrim: oklch(20% 0.01 40 / 0.5);
     --font: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace;
+    --gutter: clamp(16px, 3vw, 48px);
     --radius: 8px; --radius-sm: 6px; --radius-pill: 999px;
     --edge: inset 0 1px 0 oklch(100% 0 0 / 0.9), 0 0 0 1px oklch(32% 0.03 50 / 0.12), 0 1px 2px oklch(20% 0.01 35 / 0.05);
     --lift: 0 8px 24px -8px oklch(32% 0.03 50 / 0.3);
@@ -71,7 +72,7 @@
 
   /* Barra do topo */
   .bar { position: sticky; top: 0; z-index: 20; background: color-mix(in oklab, var(--paper) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--rule); }
-  .bar-in { max-width: 1240px; margin: 0 auto; padding: 0 24px; min-height: 60px; display: flex; align-items: center; gap: 16px; }
+  .bar-in { max-width: 1760px; margin: 0 auto; padding: 0 var(--gutter); min-height: 60px; display: flex; align-items: center; gap: 16px; }
   .brand { display: flex; flex: none; white-space: nowrap; align-items: center; gap: 12px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); text-decoration: none; margin: 0; font-size: var(--text-base); }
   .brand img { display: block; width: 32px; height: 32px; border-radius: 8px; }
   .brand small { display: block; white-space: nowrap; font-weight: 400; font-size: var(--text-xs); color: var(--muted); letter-spacing: 0; line-height: 1.1; }
@@ -120,7 +121,7 @@
   p.hint:last-child { margin-bottom: 0; }
 
   /* Página */
-  main { max-width: 1240px; margin: 0 auto; padding: 32px 24px 96px; }
+  main { max-width: 1760px; margin: 0 auto; padding: 32px var(--gutter) 96px; }
   [role="tabpanel"] { min-width: 0; }
   .page-heading { margin-bottom: 24px; align-items: flex-end; }
   .page-heading h2 { font-size: var(--text-2xl); line-height: 1.15; }
@@ -264,6 +265,22 @@
   .pal-list small { color: var(--muted); }
   noscript p { padding: 24px; }
 
+  /* Telas largas: as listas viram grades de cartões e as abas aproveitam a largura */
+  .library-workspace { grid-template-columns: minmax(0, 1fr) clamp(340px, 24vw, 440px); }
+  .grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr)); gap: 16px; align-items: start; background: none; box-shadow: none; border-radius: 0; }
+  .grade > .library, .grade > .person { background: var(--panel); border-radius: var(--radius); box-shadow: var(--edge); border-top: 0; }
+  .library-directory .records.grade { border-radius: 0; }
+  .directory-heading { background: none; box-shadow: none; padding: 0 0 12px; border-radius: 0; font-size: var(--text-lg); }
+  .settings > #settingsForm:not([hidden]) { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 16px; align-items: start; }
+  .settings .card { max-width: none; margin-bottom: 0; }
+  #tab-status { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 16px; align-items: start; }
+  #tab-status > .page-heading, #tab-status > #statusGrid { grid-column: 1 / -1; }
+  #tab-status .card { max-width: none; margin-bottom: 0; }
+  #tab-status .legendas { grid-column: 1 / -1; }
+  #statusGrid .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  #statusGrid .records { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+  #statusGrid .service { border-top: 0; }
+
   @media (max-width: 100rem) { .brand small { display: none; } }
   @media (max-width: 60rem) {
     .library-workspace { grid-template-columns: minmax(0, 1fr); }
@@ -364,7 +381,7 @@
     <div class="library-workspace">
     <section class="library-directory" aria-labelledby="libraryDirectoryTitle">
       <h3 class="directory-heading" id="libraryDirectoryTitle">Bibliotecas cadastradas</h3>
-      <div id="libs" class="records"></div>
+      <div id="libs" class="records grade"></div>
     </section>
     <div class="operations">
     <div class="scan">
@@ -419,7 +436,7 @@
       <button class="btn primary" id="newUser"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Novo usuário</button>
     </div>
     <div id="usersWarn"></div>
-    <div id="users" class="records"></div>
+    <div id="users" class="records grade"></div>
   </section>
 
   <section id="tab-sessions" role="tabpanel" aria-label="Sessões" hidden>
@@ -430,7 +447,7 @@
       </div>
       <button class="btn danger" id="revokeAll" disabled>Encerrar todas</button>
     </div>
-    <div id="sessions" class="records"></div>
+    <div id="sessions" class="records grade"></div>
   </section>
 
   <section id="tab-settings" role="tabpanel" aria-label="Configurações" class="settings" hidden>

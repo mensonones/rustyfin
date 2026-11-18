@@ -5,6 +5,12 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.21.1] - 2026-11-18
+
+### Alterado
+- O painel aproveita a largura da tela: o conteúdo vai até 1760 px, com margens que crescem com a janela. Bibliotecas,
+  usuários e sessões viram grades de cartões, e Configurações e Diagnóstico passam a usar duas colunas em telas largas.
+
 ## [0.21.0] - 2026-11-18
 
 ### Alterado
