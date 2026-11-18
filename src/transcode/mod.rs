@@ -35,7 +35,7 @@ use tokio::{
 };
 use tracing::{info, warn};
 
-pub use args::{Hw, build_args, hw_probe_args};
+pub use args::{Hw, build_args, hw_decode_probe_args, hw_probe_args};
 pub use decide::*;
 pub use hls::*;
 pub use params::*;
@@ -58,6 +58,10 @@ pub struct Settings {
     pub encoder: String,
     /// Dispositivo DRM usado pelos encoders de hardware (`/dev/dri/renderD128`).
     pub hw_device: String,
+    /// A GPU também decodifica (testado na subida com um vídeo de exemplo).
+    pub hw_decode: bool,
+    /// O driver VAAPI é o `i965` (Intel antiga), que pede CBR em vez de VBR.
+    pub vaapi_i965: bool,
     pub work_dir: PathBuf,
     tone_mapping: bool,
 }
@@ -100,22 +104,86 @@ pub fn active_encoder() -> &'static str {
 
 const DEFAULT_HW_DEVICE: &str = "/dev/dri/renderD128";
 
-/// Escolhe o encoder: `auto` usa VAAPI quando há GPU (`/dev/dri`) e um quadro de teste codifica; um encoder de hardware
-/// pedido explicitamente que não funciona cai para `libx264` em vez de quebrar todas as transcodificações.
-async fn resolve_encoder(ffmpeg: &str, requested: &str, device: &str) -> String {
+/// Resultado da escolha do encoder na subida.
+struct Escolha {
+    encoder: String,
+    decode: bool,
+    i965: bool,
+}
+
+impl Escolha {
+    fn software(encoder: impl Into<String>) -> Self {
+        Self { encoder: encoder.into(), decode: false, i965: false }
+    }
+}
+
+/// O que a GPU precisa saber da origem: se pode decodificá-la e quantos quadros cabem num segmento HLS.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HwSource {
+    pub decode: bool,
+    pub gop: Option<u32>,
+}
+
+/// Lê (com o ffprobe, ~50 ms) o formato de pixel e a taxa de quadros do primeiro vídeo. Só é chamada com um encoder de
+/// hardware ativo; com `libx264` devolve o padrão sem tocar no arquivo.
+///
+/// `decode`: a GPU decodifica este vídeo? Só H.264 e HEVC de 8 ou 10 bits 4:2:0 (o que as GPUs Intel decodificam em
+/// hardware), e só se o teste da subida confirmou a decodificação na GPU. `gop`: `ceil(6 s × fps)`, usado como intervalo
+/// de quadros-chave pelo Quick Sync (o `-force_key_frames` não vale para ele).
+pub async fn hw_source(path: &std::path::Path, streams_json: Option<&str>) -> HwSource {
+    let Some(settings) = SETTINGS.get().filter(|s| Hw::from_encoder(&s.encoder).is_some()) else {
+        return HwSource::default();
+    };
+    let codec = streams_json
+        .and_then(|j| serde_json::from_str::<Vec<MediaStream>>(j).ok())
+        .and_then(|streams| streams.into_iter().find(|s| s.r#type == "Video").map(|s| s.codec.to_ascii_lowercase()));
+    let codec_ok = matches!(codec.as_deref(), Some("h264" | "hevc"));
+    let ffprobe = std::path::Path::new(ffmpeg_path())
+        .parent()
+        .map(|d| d.join(if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" }))
+        .filter(|p| p.exists())
+        .map_or_else(|| "ffprobe".into(), std::path::PathBuf::into_os_string);
+    let out = Command::new(ffprobe)
+        .args(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=pix_fmt,avg_frame_rate", "-of", "json"])
+        .arg(path)
+        .stdin(Stdio::null())
+        .kill_on_drop(true)
+        .output();
+    let Ok(Ok(out)) = tokio::time::timeout(Duration::from_secs(5), out).await else {
+        return HwSource::default();
+    };
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else {
+        return HwSource::default();
+    };
+    let stream = &json["streams"][0];
+    let pix_ok = matches!(stream["pix_fmt"].as_str(), Some("yuv420p" | "yuvj420p" | "yuv420p10le"));
+    let fps = stream["avg_frame_rate"].as_str().and_then(|r| {
+        let (n, d) = r.split_once('/')?;
+        let (n, d) = (n.parse::<f64>().ok()?, d.parse::<f64>().ok()?);
+        (d > 0.0 && n > 0.0).then(|| n / d)
+    });
+    HwSource { decode: settings.hw_decode && codec_ok && pix_ok, gop: fps.map(|f| (f * f64::from(HLS_SEGMENT_SECS)).ceil() as u32) }
+}
+
+/// Escolhe o encoder: `auto` usa a GPU quando há uma e um quadro de teste codifica (VAAPI no Linux, Quick Sync no
+/// Windows); um encoder de hardware pedido explicitamente que não funciona cai para `libx264` em vez de quebrar todas
+/// as transcodificações. Depois confirma, com um vídeo de teste, se a GPU também decodifica.
+async fn resolve_encoder(ffmpeg: &str, requested: &str, device: &str) -> Escolha {
     let requested = requested.trim().to_ascii_lowercase();
+    let auto_encoder = if cfg!(windows) { "h264_qsv" } else { "h264_vaapi" };
     let (encoder, explicit) = match requested.as_str() {
-        "" | "auto" => ("h264_vaapi", false),
+        "" | "auto" => (auto_encoder, false),
         other => (other, true),
     };
     let Some(hw) = Hw::from_encoder(encoder) else {
-        return if explicit { requested } else { "libx264".to_string() };
+        return Escolha::software(if explicit { requested } else { "libx264".to_string() });
     };
-    if !std::path::Path::new(device).exists() {
+    // No Windows não há nó DRM: o dispositivo vem do D3D11.
+    if !cfg!(windows) && !std::path::Path::new(device).exists() {
         if explicit {
             warn!("Encoder {encoder} pedido, mas {device} não existe (GPU não repassada ao container?). Usando libx264.");
         }
-        return "libx264".to_string();
+        return Escolha::software("libx264");
     }
     let probe = Command::new(ffmpeg)
         .args(hw_probe_args(hw, encoder, device))
@@ -124,21 +192,57 @@ async fn resolve_encoder(ffmpeg: &str, requested: &str, device: &str) -> String 
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .output();
-    match tokio::time::timeout(Duration::from_secs(20), probe).await {
-        Ok(Ok(out)) if out.status.success() => {
-            info!("Aceleração por hardware ativa: {encoder} em {device}.");
-            encoder.to_string()
-        }
-        Ok(Ok(out)) => {
-            let erro = String::from_utf8_lossy(&out.stderr);
-            warn!("Encoder {encoder} indisponível em {device} ({}); usando libx264.", erro.lines().last().unwrap_or("falha no teste"));
-            "libx264".to_string()
-        }
-        _ => {
-            warn!("O teste do encoder {encoder} falhou ou demorou demais; usando libx264.");
-            "libx264".to_string()
-        }
+    let Ok(Ok(out)) = tokio::time::timeout(Duration::from_secs(20), probe).await else {
+        warn!("O teste do encoder {encoder} falhou ou demorou demais; usando libx264.");
+        return Escolha::software("libx264");
+    };
+    let log = String::from_utf8_lossy(&out.stderr);
+    if !out.status.success() {
+        let erro = log.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("falha no teste");
+        warn!("Encoder {encoder} indisponível em {device} ({erro}); usando libx264.");
+        return Escolha::software("libx264");
     }
+    let i965 = hw == Hw::Vaapi && log.contains("Intel i965 driver");
+    let decode = std::env::var("RUSTYFIN_HWACCEL_DECODE")
+        .map_or(true, |v| !matches!(v.trim().to_ascii_lowercase().as_str(), "0" | "false" | "no" | "off"))
+        && probe_hw_decode(ffmpeg, hw, encoder, device).await;
+    info!(
+        "Aceleração por hardware ativa: {encoder}{} ({}).",
+        if cfg!(windows) { String::new() } else { format!(" em {device}") },
+        if decode { "decodifica e codifica na GPU" } else { "só codifica na GPU" },
+    );
+    Escolha { encoder: encoder.to_string(), decode, i965 }
+}
+
+/// Gera um vídeo H.264 de 1 s e o decodifica na GPU: se der certo, a decodificação por hardware está disponível.
+async fn probe_hw_decode(ffmpeg: &str, hw: Hw, encoder: &str, device: &str) -> bool {
+    let sample = std::env::temp_dir().join(format!("rustyfin-hwprobe-{}.mp4", std::process::id()));
+    let made = Command::new(ffmpeg)
+        .args(["-nostdin", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=s=640x360:d=1:r=25"])
+        .args(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-y"])
+        .arg(&sample)
+        .stdin(Stdio::null())
+        .kill_on_drop(true)
+        .status();
+    let ok = if matches!(tokio::time::timeout(Duration::from_secs(20), made).await, Ok(Ok(s)) if s.success()) {
+        let test = Command::new(ffmpeg)
+            .args(hw_decode_probe_args(hw, encoder, device, &sample))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .status();
+        matches!(tokio::time::timeout(Duration::from_secs(20), test).await, Ok(Ok(s)) if s.success())
+    } else {
+        false
+    };
+    let _ = tokio::fs::remove_file(&sample).await;
+    ok
+}
+
+/// O driver VAAPI é o `i965` (Intel antiga)?
+pub fn hw_i965() -> bool {
+    SETTINGS.get().is_some_and(|s| s.vaapi_i965)
 }
 
 pub fn ffmpeg_path() -> &'static str {
@@ -215,11 +319,12 @@ pub async fn init(config: &AppConfig) {
     };
 
     let hw_device = std::env::var("RUSTYFIN_HWACCEL_DEVICE").unwrap_or_else(|_| DEFAULT_HW_DEVICE.to_string());
-    let encoder = if available {
+    let escolha = if available {
         resolve_encoder(&config.ffmpeg_path, &config.video_encoder, &hw_device).await
     } else {
-        "libx264".to_string()
+        Escolha::software("libx264")
     };
+    let encoder = escolha.encoder.clone();
 
     let work_dir = config.cache_dir.join("transcodes");
     let _ = tokio::fs::remove_dir_all(&work_dir).await;
@@ -232,6 +337,8 @@ pub async fn init(config: &AppConfig) {
         available,
         encoder: encoder.clone(),
         hw_device,
+        hw_decode: escolha.decode,
+        vaapi_i965: escolha.i965,
         work_dir,
         tone_mapping,
     });

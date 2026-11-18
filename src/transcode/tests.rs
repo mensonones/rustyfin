@@ -145,7 +145,7 @@ fn args_str(p: &TranscodeParams, hls: Option<&Path>) -> String {
 }
 
 fn params(video_copy: bool, audio_copy: bool, container: Container, hls: bool) -> TranscodeParams {
-    TranscodeParams { video_copy, audio_copy, container, hls, audio_index: None, start_secs: 0.0, video_bitrate: None, burn_subtitle: None, tone_map_hdr: None, abr: None, has_audio: false, vod_start: None }
+    TranscodeParams { video_copy, audio_copy, container, hls, audio_index: None, start_secs: 0.0, video_bitrate: None, burn_subtitle: None, tone_map_hdr: None, abr: None, has_audio: false, vod_start: None, hw_decode: false, hw_gop: None }
 }
 
 #[test]
@@ -357,7 +357,7 @@ fn vaapi_sobe_os_quadros_para_a_gpu_antes_do_encoder() {
     assert!(a.contains("-init_hw_device vaapi=hw:/dev/dri/renderD128 -filter_hw_device hw"), "{a}");
     assert!(a.contains("-filter_complex [0:V:0]format=nv12,hwupload[hwv]"), "{a}");
     assert!(a.contains("-map [hwv]"), "{a}");
-    assert!(a.contains("-c:v h264_vaapi -b:v 8000000 -maxrate 8000000 -bufsize 16000000"), "{a}");
+    assert!(a.contains("-c:v h264_vaapi -rc_mode VBR -b:v 8000000 -maxrate 8000000 -bufsize 16000000"), "{a}");
     assert!(!a.contains("-crf") && !a.contains("-x264opts") && !a.contains("-preset"), "{a}");
 }
 
@@ -383,9 +383,13 @@ fn vaapi_abr_envia_as_duas_qualidades_para_a_gpu() {
 #[test]
 fn qsv_deriva_o_dispositivo_do_vaapi() {
     let a = hw_args("h264_qsv", &params(false, true, Container::Mkv, false));
-    assert!(a.contains("-init_hw_device vaapi=va:/dev/dri/renderD128 -init_hw_device qsv=hw@va -filter_hw_device hw"), "{a}");
-    assert!(a.contains("hwupload=extra_hw_frames=64"), "{a}");
-    assert!(a.contains("-c:v h264_qsv"), "{a}");
+    if cfg!(windows) {
+        assert!(a.contains("-init_hw_device d3d11va=d3d11:,vendor_id=0x8086 -init_hw_device qsv=hw@d3d11 -filter_hw_device hw"), "{a}");
+    } else {
+        assert!(a.contains("-init_hw_device vaapi=va:/dev/dri/renderD128,driver=iHD -init_hw_device qsv=hw@va -filter_hw_device hw"), "{a}");
+    }
+    assert!(a.contains("format=nv12,hwupload[hwv]"), "{a}");
+    assert!(a.contains("-c:v h264_qsv -preset veryfast -b:v 8000000 -maxrate 8000001 -rc_init_occupancy 8000000 -bufsize 16000000"), "{a}");
 }
 
 #[test]
@@ -401,4 +405,73 @@ fn o_teste_do_encoder_codifica_um_quadro() {
     let a = a.join(" ");
     assert!(a.contains("-init_hw_device vaapi=hw:/dev/dri/renderD129"), "{a}");
     assert!(a.contains("-vf format=nv12,hwupload -c:v h264_vaapi -frames:v 1 -f null -"), "{a}");
+}
+
+#[test]
+fn decodificacao_na_gpu_mantem_os_quadros_la() {
+    let mut p = params(false, true, Container::Mkv, false);
+    p.hw_decode = true;
+    let v = hw_args("h264_vaapi", &p);
+    assert!(v.contains("-hwaccel vaapi -hwaccel_output_format vaapi -hwaccel_device hw"), "{v}");
+    assert!(v.contains("-filter_complex [0:V:0]scale_vaapi=format=nv12[hwv]"), "{v}");
+    assert!(!v.contains("hwupload"), "{v}");
+    let q = hw_args("h264_qsv", &p);
+    assert!(q.contains("-hwaccel qsv -hwaccel_output_format qsv"), "{q}");
+    assert!(q.contains("-filter_complex [0:V:0]vpp_qsv=format=nv12[hwv]"), "{q}");
+    // a opção de decodificação vem antes do arquivo de entrada
+    assert!(v.find("-hwaccel vaapi").unwrap() < v.find("-i /m/a.mkv").unwrap(), "{v}");
+}
+
+#[test]
+fn filtros_de_software_forcam_a_cpu_a_decodificar() {
+    let mut p = params(false, true, Container::Mkv, false);
+    p.hw_decode = true;
+    p.burn_subtitle = Some(3);
+    let a = hw_args("h264_vaapi", &p);
+    assert!(!a.contains("-hwaccel"), "{a}");
+    assert!(a.contains("hwupload"), "{a}");
+    let mut abr = params(false, false, Container::Mp4, true);
+    abr.hw_decode = true;
+    abr.abr = Some(AbrLadder { high: 6_000_000, low: 1_500_000 });
+    let a = hw_args("h264_vaapi", &abr);
+    assert!(!a.contains("-hwaccel") && a.contains("-rc_mode VBR"), "{a}");
+}
+
+#[test]
+fn o_teste_de_decodificacao_usa_a_gpu_nos_dois_lados() {
+    let a: Vec<String> = hw_decode_probe_args(Hw::Vaapi, "h264_vaapi", "/dev/dri/renderD128", Path::new("/tmp/a.mp4"))
+        .iter()
+        .map(|s| s.to_string_lossy().to_string())
+        .collect();
+    let a = a.join(" ");
+    assert!(a.contains("-hwaccel vaapi -hwaccel_output_format vaapi") && a.contains("-i /tmp/a.mp4"), "{a}");
+    assert!(a.contains("-vf scale_vaapi=format=nv12 -c:v h264_vaapi"), "{a}");
+}
+
+#[test]
+fn qsv_alinha_os_segmentos_com_o_intervalo_de_quadros_chave() {
+    let mut p = params(false, false, Container::Ts, true);
+    p.hw_gop = Some(144);
+    let q = build_args("h264_qsv", Path::new("/m/a.mkv"), &p, Some(Path::new("/w/k")))
+        .iter()
+        .map(|a| a.to_string_lossy().to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(q.contains("-g 144 -keyint_min 144"), "{q}");
+    assert!(!q.contains("force_key_frames"), "{q}");
+    // sem o fps (ffprobe ausente) usa 25 quadros por segundo
+    p.hw_gop = None;
+    let q = build_args("h264_qsv", Path::new("/m/a.mkv"), &p, Some(Path::new("/w/k")))
+        .iter()
+        .map(|a| a.to_string_lossy().to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(q.contains("-g 150 -keyint_min 150"), "{q}");
+    // o VAAPI continua usando quadros-chave forçados
+    let v = build_args("h264_vaapi", Path::new("/m/a.mkv"), &p, Some(Path::new("/w/k")))
+        .iter()
+        .map(|a| a.to_string_lossy().to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(v.contains("-force_key_frames") && !v.contains("-keyint_min"), "{v}");
 }

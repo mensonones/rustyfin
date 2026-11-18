@@ -84,6 +84,8 @@ pub async fn try_progressive(
     let input = item_input(pool, user, id).await?;
     if !params.video_copy {
         params.tone_map_hdr = transcode::tone_map_hdr(input.streams_json.as_deref());
+        let hw = transcode::hw_source(std::path::Path::new(&input.path), input.streams_json.as_deref()).await;
+        (params.hw_decode, params.hw_gop) = (hw.decode, hw.gop);
     }
 
     let stream = transcode::spawn_progressive(std::path::Path::new(&input.path), &params).map_err(spawn_status)?;
@@ -206,6 +208,8 @@ async fn hls_playlist(
     let input = item_input(&pool, &user, &id).await?;
     if !params.video_copy {
         params.tone_map_hdr = transcode::tone_map_hdr(input.streams_json.as_deref());
+        let hw = transcode::hw_source(std::path::Path::new(&input.path), input.streams_json.as_deref()).await;
+        (params.hw_decode, params.hw_gop) = (hw.decode, hw.gop);
     }
     params.has_audio = input.has_audio;
     let play_session = q

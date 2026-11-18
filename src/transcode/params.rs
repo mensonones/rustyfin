@@ -79,6 +79,10 @@ pub struct TranscodeParams {
     /// HLS "VOD": playlist completa já na largada; o ffmpeg roda a partir deste segmento e é
     /// reiniciado quando o cliente pede um ponto fora do que ele vai gerar.
     pub vod_start: Option<u32>,
+    /// A GPU pode decodificar este vídeo (codec e profundidade de cor aceitos): os quadros não passam pela CPU.
+    pub hw_decode: bool,
+    /// Quadros por segmento HLS (arredondado para cima): o Quick Sync ignora `-force_key_frames` e precisa de `-g`.
+    pub hw_gop: Option<u32>,
 }
 
 impl TranscodeParams {
@@ -125,6 +129,8 @@ impl TranscodeParams {
             abr,
             has_audio: false,
             vod_start: None,
+            hw_decode: false,
+            hw_gop: None,
         })
     }
 }

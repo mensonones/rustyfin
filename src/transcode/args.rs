@@ -28,22 +28,51 @@ impl Hw {
         }
     }
 
-    /// Filtro que leva os quadros (decodificados na CPU) para a memória da GPU.
-    fn upload(self) -> &'static str {
+    /// Filtro que leva os quadros (decodificados na CPU) para a memória da GPU. Sem `extra_hw_frames`: o D3D11 do
+    /// Windows recusa o valor 64 que o Jellyfin usa no Linux ("Could not create the texture").
+    fn upload() -> &'static str {
+        "format=nv12,hwupload"
+    }
+
+    /// Opções de entrada que fazem a GPU decodificar e manter os quadros na sua memória.
+    fn decode_in(self) -> &'static [&'static str] {
         match self {
-            Self::Vaapi => "format=nv12,hwupload",
-            Self::Qsv => "format=nv12,hwupload=extra_hw_frames=64",
+            Self::Vaapi => &["-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi", "-hwaccel_device", "hw"],
+            Self::Qsv => &["-hwaccel", "qsv", "-hwaccel_output_format", "qsv"],
         }
     }
+
+    /// Conversão de formato feita na própria GPU, entre o decodificador e o encoder.
+    fn gpu_filter(self) -> &'static str {
+        match self {
+            Self::Vaapi => "scale_vaapi=format=nv12",
+            Self::Qsv => "vpp_qsv=format=nv12",
+        }
+    }
+}
+
+/// Decodifica na GPU (sem passar os quadros pela CPU): só quando nenhum filtro de software precisa deles.
+fn full_hw(p: &TranscodeParams) -> bool {
+    p.hw_decode && !p.video_copy && p.burn_subtitle.is_none() && p.tone_map_hdr.is_none() && p.abr.is_none()
 }
 
 /// Argumentos globais que abrem o dispositivo de hardware (antes do `-i`).
 pub fn hw_init_args(hw: Hw, device: &str) -> Vec<OsString> {
     let args: Vec<String> = match hw {
         Hw::Vaapi => vec!["-init_hw_device".into(), format!("vaapi=hw:{device}"), "-filter_hw_device".into(), "hw".into()],
+        // Windows: o QSV deriva do D3D11 da GPU Intel (vendor 0x8086), sem `/dev/dri`.
+        Hw::Qsv if cfg!(windows) => vec![
+            "-init_hw_device".into(),
+            "d3d11va=d3d11:,vendor_id=0x8086".into(),
+            "-init_hw_device".into(),
+            "qsv=hw@d3d11".into(),
+            "-filter_hw_device".into(),
+            "hw".into(),
+        ],
+        // Linux: o QSV deriva do dispositivo VAAPI com o driver `iHD`, como o Jellyfin.
         Hw::Qsv => vec![
             "-init_hw_device".into(),
-            format!("vaapi=va:{device}"),
+            format!("vaapi=va:{device},driver=iHD"),
             "-init_hw_device".into(),
             "qsv=hw@va".into(),
             "-filter_hw_device".into(),
@@ -55,9 +84,24 @@ pub fn hw_init_args(hw: Hw, device: &str) -> Vec<OsString> {
 
 /// Comando que codifica um quadro de teste no encoder de hardware: se ele falhar, o encoder não serve nesta máquina.
 pub fn hw_probe_args(hw: Hw, encoder: &str, device: &str) -> Vec<OsString> {
+    // `debug` porque o log informa qual driver VAAPI abriu (iHD, i965, Mesa).
+    let mut a: Vec<OsString> = ["-nostdin", "-hide_banner", "-loglevel", "debug"].map(OsString::from).to_vec();
+    a.extend(hw_init_args(hw, device));
+    for s in ["-f", "lavfi", "-i", "color=c=black:s=256x144:d=0.2:r=25", "-vf", Hw::upload(), "-c:v", encoder, "-frames:v", "1", "-f", "null", "-"] {
+        add(&mut a, s);
+    }
+    a
+}
+
+/// Comando que decodifica um vídeo de teste na GPU e o codifica de volta: confirma que a decodificação por hardware
+/// funciona nesta máquina (senão o Rustyfin só usa a GPU para codificar).
+pub fn hw_decode_probe_args(hw: Hw, encoder: &str, device: &str, sample: &Path) -> Vec<OsString> {
     let mut a: Vec<OsString> = ["-nostdin", "-hide_banner", "-loglevel", "error"].map(OsString::from).to_vec();
     a.extend(hw_init_args(hw, device));
-    for s in ["-f", "lavfi", "-i", "color=c=black:s=256x144:d=0.2:r=25", "-vf", hw.upload(), "-c:v", encoder, "-frames:v", "1", "-f", "null", "-"] {
+    a.extend(hw.decode_in().iter().map(OsString::from));
+    add(&mut a, "-i");
+    add(&mut a, sample);
+    for s in ["-frames:v", "5", "-vf", hw.gpu_filter(), "-c:v", encoder, "-f", "null", "-"] {
         add(&mut a, s);
     }
     a
@@ -81,8 +125,10 @@ fn map_video(args: &mut Vec<OsString>, p: &TranscodeParams, hdr_filter: Option<&
     let mut maps: Vec<String> = if p.abr.is_some() { vec!["[high]".into(), "[low]".into()] } else { vec![video.to_string()] };
     if let Some(hw) = hw {
         let saidas: &[&str] = if p.abr.is_some() { &["[hwhigh]", "[hwlow]"] } else { &["[hwv]"] };
+        // Decodificação na GPU: os quadros já estão lá e só trocam de formato; senão sobem da CPU.
+        let filtro = if full_hw(p) { hw.gpu_filter() } else { Hw::upload() };
         for (label, saida) in maps.iter().zip(saidas) {
-            filters.push(format!("{label}{}{saida}", hw.upload()));
+            filters.push(format!("{label}{filtro}{saida}"));
         }
         maps = saidas.iter().map(|s| (*s).to_string()).collect();
     }
@@ -113,6 +159,9 @@ pub fn build_args(
     let hw = Hw::from_encoder(encoder).filter(|_| !p.video_copy);
     if let Some(hw) = hw {
         a.extend(hw_init_args(hw, super::hw_device()));
+        if full_hw(p) {
+            a.extend(hw.decode_in().iter().map(OsString::from));
+        }
     }
     if p.start_secs > 0.0 {
         add(&mut a, "-ss");
@@ -161,6 +210,10 @@ pub fn build_args(
                 add(&mut a, s);
             }
         }
+        if hw == Some(Hw::Vaapi) {
+            add(&mut a, "-rc_mode");
+            add(&mut a, if super::hw_i965() { "CBR" } else { "VBR" });
+        }
         for (i, bitrate) in [ladder.high, ladder.low].into_iter().enumerate() {
             for option in ["b", "maxrate", "bufsize"] {
                 add(&mut a, format!("-{option}:v:{i}"));
@@ -182,13 +235,37 @@ pub fn build_args(
         add(&mut a, "-c:v");
         add(&mut a, encoder);
         let bitrate = p.video_bitrate.unwrap_or(8_000_000);
-        add(&mut a, "-b:v");
-        add(&mut a, bitrate.to_string());
-        if hw.is_some() {
-            add(&mut a, "-maxrate");
-            add(&mut a, bitrate.to_string());
-            add(&mut a, "-bufsize");
-            add(&mut a, bitrate.saturating_mul(2).to_string());
+        let bufsize = bitrate.saturating_mul(2).to_string();
+        match hw {
+            Some(Hw::Vaapi) => {
+                // O driver i965 pixeliza em VBR (observação do Jellyfin): usa CBR nele.
+                for s in ["-rc_mode", if super::hw_i965() { "CBR" } else { "VBR" }, "-b:v"] {
+                    add(&mut a, s);
+                }
+                add(&mut a, bitrate.to_string());
+                add(&mut a, "-maxrate");
+                add(&mut a, bitrate.to_string());
+                add(&mut a, "-bufsize");
+                add(&mut a, bufsize);
+            }
+            Some(Hw::Qsv) => {
+                // `veryfast` troca um pouco de qualidade por velocidade (o padrão `medium` é ~20% mais lento).
+                add(&mut a, "-preset");
+                add(&mut a, "veryfast");
+                // maxrate = bitrate + 1 aciona o VBR do Quick Sync (igual ao Jellyfin).
+                add(&mut a, "-b:v");
+                add(&mut a, bitrate.to_string());
+                add(&mut a, "-maxrate");
+                add(&mut a, bitrate.saturating_add(1).to_string());
+                add(&mut a, "-rc_init_occupancy");
+                add(&mut a, bitrate.to_string());
+                add(&mut a, "-bufsize");
+                add(&mut a, bufsize);
+            }
+            None => {
+                add(&mut a, "-b:v");
+                add(&mut a, bitrate.to_string());
+            }
         }
     }
     if encoder == "libx264" && !p.video_copy {
@@ -198,9 +275,18 @@ pub fn build_args(
         add(&mut a, "subme=0:me_range=16:rc_lookahead=10:me=hex:open_gop=0");
     }
     if !p.video_copy && p.hls {
-        // Keyframes alinhados aos segmentos HLS.
-        add(&mut a, "-force_key_frames");
-        add(&mut a, format!("expr:gte(t,n_forced*{HLS_SEGMENT_SECS})"));
+        if hw == Some(Hw::Qsv) {
+            // O Quick Sync ignora `-force_key_frames` (gera segmentos de ~10 s e a playlist promete 6 s): o intervalo
+            // fixo de quadros-chave, `ceil(segmento × fps)`, é o que alinha os cortes (igual ao Jellyfin).
+            let gop = p.hw_gop.unwrap_or(HLS_SEGMENT_SECS * 25).to_string();
+            for s in ["-g", &gop, "-keyint_min", &gop] {
+                add(&mut a, s);
+            }
+        } else {
+            // Keyframes alinhados aos segmentos HLS.
+            add(&mut a, "-force_key_frames");
+            add(&mut a, format!("expr:gte(t,n_forced*{HLS_SEGMENT_SECS})"));
+        }
     }
 
     if p.audio_copy && p.abr.is_none() {
