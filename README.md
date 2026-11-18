@@ -113,7 +113,7 @@ cargo run --release
 
 ## Painel de administração
 
-![Diretório de bibliotecas com varredura e manutenção ao lado](docs/assets/diretorio-bibliotecas.png)
+![Diretório de bibliotecas com varredura e manutenção ao lado](docs/assets/diretorio-bibliotecas.jpg)
 
 O painel só é acessível pela rede local e pode exigir senha. Detalhes em
 [docs/usuarios-e-seguranca.md](docs/usuarios-e-seguranca.md).
