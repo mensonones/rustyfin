@@ -143,7 +143,7 @@ NVIDIA (`h264_nvenc`) pode ser usada pelo mesmo mecanismo de encoder, mas não �
   O encoder `auto` escolhe `h264_qsv` e o log mostra `Aceleração por hardware ativa: h264_qsv`. O dispositivo vem do D3D11
   (`vendor_id=0x8086`), então em notebooks com GPU Intel e NVIDIA o Quick Sync usa a Intel.
 
-**O que foi testado na GPU Intel real** (Rustyfin nativo no Windows, Quick Sync, vídeos sintéticos de 1080p): H.264 de 8 e de
+**O que foi testado na GPU Intel real** (o `tools/gpu_test/gpu_test.py` repete tudo isto na sua máquina, veja [o README](../tools/gpu_test/README.md)) (Rustyfin nativo no Windows, Quick Sync, vídeos sintéticos de 1080p): H.264 de 8 e de
 10 bits, HEVC de 8 e de 10 bits, HDR10 com conversão para SDR, VP9, segmentos HLS de 6 s exatos, avanço para qualquer ponto,
 ABR com duas qualidades, segmentos fMP4, stream progressivo, três sessões simultâneas (4,8× cada usando ~34% da CPU, contra
 2,5× cada e ~97% do `libx264`) e a volta para software com uma GPU que falha. Também foram testados 4K, AV1, vídeo

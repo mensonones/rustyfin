@@ -5,6 +5,11 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+### Adicionado
+- `tools/gpu_test/gpu_test.py`: testes do transcode por GPU para rodar fora do Docker (Quick Sync no Windows, VAAPI no Linux). Gera
+  vídeos de teste, inclusive uma legenda PGS, e confere formatos, HDR, ABR, avanço, fMP4, 4K, AV1, entrelaçado, legenda de
+  imagem queimada, sessões simultâneas e a volta para software.
+
 ### Testado
 - Na GPU Intel real (Quick Sync, Windows nativo) com arquivos gerados: 4K (H.264 e HEVC), AV1, H.264 entrelaçado e legenda de
   imagem (PGS) queimada, em H.264 e em HEVC. Todos funcionam; resultados em `docs/reproducao.md`.

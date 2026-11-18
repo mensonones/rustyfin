@@ -38,6 +38,7 @@ cargo test --locked                                  # unitários e de integraç
 | Integração | `tests/` | O roteador completo com um SQLite temporário: rotas públicas, token obrigatório, perfis ocultos, sessões |
 | Fluxo de um app | `tools/client_probe.py` | Sequência de um cliente Jellyfin contra um servidor em execução |
 | GPU | `tools/gpu-check.sh` | Diagnóstico da aceleração por hardware dentro do container (veja [reprodução](reproducao.md#aceleração-por-hardware)) |
+| GPU (nativo) | `tools/gpu_test/gpu_test.py` | Formatos, HDR, ABR, avanço, legendas de imagem, 4K, AV1 e a volta para software com o Quick Sync ou o VAAPI, fora do Docker ([como rodar](../tools/gpu_test/README.md)) |
 
 ```bash
 python tools/client_probe.py http://127.0.0.1:8096
