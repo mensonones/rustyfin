@@ -5,6 +5,21 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.20.0] - 2026-11-18
+
+### Adicionado
+- **Limite automático de transcodificações.** Sem `RUSTYFIN_MAX_TRANSCODES` e sem valor salvo no painel, o servidor calcula o
+  limite pelo hardware: 4 com GPU; senão metade das CPUs, de 2 a 8 (respeita o `--cpus` do Docker). O log e o painel mostram
+  o valor em uso. Antes o padrão era sempre 2.
+- **GPU no Docker em dois comandos.** `tools/gpu-setup.sh` detecta o dispositivo e o grupo `render` do host e grava o `.env`
+  para o novo `docker-compose.gpu.yml`, que repassa `/dev/dri` e o `group_add`. Depois, `docker compose up -d`.
+- Quando a GPU existe mas o container não tem permissão para abri-la, o log diz qual `group_add` falta, em vez de uma falha
+  genérica do ffmpeg.
+
+### Corrigido
+- O limite de transcodificações salvo no painel era ignorado ao reiniciar o servidor (a subida só lia o ambiente). Agora o
+  valor salvo vale, depois o do ambiente, depois o automático.
+
 ## [0.19.0] - 2026-11-18
 
 ### Adicionado
