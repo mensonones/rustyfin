@@ -46,5 +46,7 @@ jobs:
       - name: Exercita o setup
         shell: pwsh
         run: |
-          $extra = if ("${{ matrix.ffmpeg }}" -eq "baixar") { @("-BaixarFfmpeg") } else { @() }
+          # Hashtable no splat: uma lista passaria "-BaixarFfmpeg" como texto, não como o parâmetro.
+          $extra = @{}
+          if ("${{ matrix.ffmpeg }}" -eq "baixar") { $extra["BaixarFfmpeg"] = $true }
           ./packaging/windows/testar-setup.ps1 -Setup "dist/Rustyfin-Setup-0.0.0-x64.exe" @extra

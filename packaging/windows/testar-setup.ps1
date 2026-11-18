@@ -12,11 +12,14 @@
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Setup,
-    [string]$Pasta = (Join-Path $env:SystemDrive "RustyfinSetupTeste"),
+    [string]$Pasta = "",
     [int]$Porta = 8097,
     [switch]$BaixarFfmpeg
 )
 $ErrorActionPreference = "Stop"
+# Pasta de teste: o padrão fica na pasta temporária do sistema (um valor padrão calculado no param() que falhasse seria
+# ignorado em silêncio e deixaria $Pasta vazio).
+if ([string]::IsNullOrWhiteSpace($Pasta)) { $Pasta = Join-Path ([System.IO.Path]::GetTempPath()) "RustyfinSetupTeste" }
 $Setup = (Resolve-Path $Setup).Path
 $Midia = "$Pasta-midia"
 $Log = "$Pasta-instalacao.log"
