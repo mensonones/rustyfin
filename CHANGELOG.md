@@ -5,6 +5,16 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.24.0] - 2026-11-18
+
+### Adicionado
+- **Instalação direta no sistema** ([guia](docs/instalacao-nativa.md)): instaladores de serviço em `packaging/` para Windows
+  (tarefa agendada, sem administrador), Linux (systemd) e macOS (launchd), com um modelo de configuração `rustyfin.env`.
+- Fluxo `release.yml`: a cada tag `vX.Y.Z`, compila o binário para Windows, Linux (x86_64 e aarch64) e macOS (arm64 e x86_64)
+  e anexa os pacotes, com `.sha256`, à versão no GitHub.
+- `RUSTYFIN_DATA_DIR`: uma pasta só para o banco e o cache, criada se não existir. Sem ela, nada muda.
+- Ao subir sem `ffmpeg`, o log diz como instalá-lo no sistema em uso (`winget`, `brew` ou `apt`/`dnf`).
+
 ## [0.23.3] - 2026-11-18
 
 ### Adicionado

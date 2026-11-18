@@ -334,6 +334,18 @@ pub fn tone_map_hdr(streams_json: Option<&str>) -> Option<HdrToneMap> {
 }
 
 /// Verifica o ffmpeg, limpa restos de execuções anteriores e inicia o coletor de sessões ociosas.
+/// Como instalar o ffmpeg no sistema em que o servidor roda (ou apontar `RUSTYFIN_FFMPEG`).
+#[must_use]
+pub fn dica_instalar_ffmpeg() -> &'static str {
+    if cfg!(windows) {
+        "Instale com `winget install Gyan.FFmpeg` (ou baixe um build win64-gpl) e reinicie o Rustyfin, ou aponte RUSTYFIN_FFMPEG para o ffmpeg.exe."
+    } else if cfg!(target_os = "macos") {
+        "Instale com `brew install ffmpeg` e reinicie o Rustyfin, ou aponte RUSTYFIN_FFMPEG para o executável."
+    } else {
+        "Instale com `sudo apt install ffmpeg` (Debian, Ubuntu), `sudo dnf install ffmpeg` (Fedora) ou o gerenciador da sua distribuição, ou aponte RUSTYFIN_FFMPEG para o executável."
+    }
+}
+
 pub async fn init(config: &AppConfig) {
     let available = match Command::new(&config.ffmpeg_path)
         .arg("-version")
@@ -406,6 +418,6 @@ pub async fn init(config: &AppConfig) {
         );
         tokio::spawn(hls::reaper());
     } else {
-        info!("ffmpeg não encontrado: apenas Direct Play (sem remux/transcode/miniaturas).");
+        info!("ffmpeg não encontrado: apenas Direct Play (sem remux/transcode/miniaturas). {}", dica_instalar_ffmpeg());
     }
 }

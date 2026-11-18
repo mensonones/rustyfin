@@ -84,6 +84,10 @@ ferramenta de migração externa. Valores derivados (como o TMDB de itens antigo
 - Agrupe as mudanças no [CHANGELOG](../CHANGELOG.md), atualize a versão em `Cargo.toml` e `Cargo.lock` e crie uma tag
   anotada `vX.Y.Z` no commit da versão.
 - O commit de versão usa `chore(release): prepara a versão X.Y.Z`.
+- **Publicar uma versão:** ao enviar a tag (`git push origin vX.Y.Z`), o fluxo
+  [`release.yml`](../.github/workflows/release.yml) compila o binário para Windows, Linux (x86_64 e aarch64) e macOS (arm64
+  e x86_64), empacota cada um com os instaladores de [`packaging/`](../packaging/) e um `.sha256`, e cria a versão no GitHub
+  com as notas da seção correspondente do CHANGELOG. Confira a seção `[X.Y.Z]` antes de enviar a tag.
 
 ## Imagens do projeto
 

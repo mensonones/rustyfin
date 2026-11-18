@@ -25,6 +25,7 @@ Para as configurações que existem nos dois lugares, **o valor salvo no painel 
 
 | Variável | Padrão | Descrição |
 |---|---|---|
+| `RUSTYFIN_DATA_DIR` | vazio | Pasta única para o banco (`rustyfin.db`) e o cache (`cache/`), criada se não existir. Pensada para a [instalação direta](instalacao-nativa.md) e serviços. Sem ela, valem `./rustyfin.db` e `./cache` (a pasta de onde o servidor foi iniciado) |
 | `DATABASE_URL` | `sqlite://rustyfin.db?mode=rwc` | Banco SQLite (modo WAL) |
 | `RUSTYFIN_MEDIA_DIRS` | `/media`, Vídeos do usuário, `./media` | Pastas de mídia separadas por vírgula. **Só vale na primeira execução**, para criar as bibliotecas "Filmes" e "Séries"; depois o banco é a fonte da verdade |
 | `RUSTYFIN_CACHE_DIR` | `./cache` | Miniaturas, imagens redimensionadas, legendas extraídas, fotos e sessões HLS |

@@ -1,0 +1,32 @@
+[Unit]
+Description=Rustyfin, servidor de midia compativel com o Jellyfin
+Documentation=https://github.com/mensonones/rustyfin/blob/main/docs/instalacao-nativa.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rustyfin
+Group=rustyfin
+# Banco e cache em /var/lib/rustyfin. As demais variaveis vem de /etc/rustyfin/rustyfin.env (o "-" torna o arquivo opcional).
+Environment=RUSTYFIN_DATA_DIR=/var/lib/rustyfin
+EnvironmentFile=-/etc/rustyfin/rustyfin.env
+ExecStart=/usr/local/bin/rustyfin
+Restart=on-failure
+RestartSec=3
+# O servidor trata o SIGTERM: para as transcodificacoes e fecha o banco.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+StateDirectory=rustyfin
+WorkingDirectory=/var/lib/rustyfin
+
+# Endurecimento que nao atrapalha a leitura das midias nem o acesso a GPU (/dev/dri).
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target

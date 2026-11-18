@@ -88,7 +88,8 @@ Como ler a saída:
 - **`docker-cpu`:** [primeiros passos](primeiros-passos.md). Nenhuma configuração extra.
 - **`docker-gpu` (Linux):** `sh tools/gpu-setup.sh` e `docker compose up -d`.
   Detalhes em [aceleração por hardware](reproducao.md#aceleração-por-hardware).
-- **`nativo-gpu` ou `nativo-cpu` (Windows):** [reprodução → Windows](reproducao.md#windows). Em resumo: compile com
+- **`nativo-gpu` ou `nativo-cpu`:** [instalação direta no sistema](instalacao-nativa.md), com instaladores de serviço para Windows,
+  Linux e macOS. No Windows: [reprodução → Windows](reproducao.md#windows). Em resumo: compile com
   `cargo build --release`, aponte `RUSTYFIN_FFMPEG` para o `ffmpeg.exe` e rode o binário. O encoder `auto` escolhe o Quick
   Sync. Confira no log a linha `Aceleração por hardware ativa: h264_qsv`.
 

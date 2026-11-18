@@ -166,6 +166,9 @@ extraídas, sessões de vídeo) pode ser apagada à vontade: ela é recriada.
 
 ### Rodar sem Docker
 
+Guia completo para Windows, Linux e macOS, com instaladores de serviço: [instalação direta no sistema](instalacao-nativa.md).
+Resumo:
+
 Se preferir, o Rustyfin é um único binário. Precisa de Rust 1.85+ para compilar e do `ffmpeg` e do `ffprobe` no `PATH`
 para transcodificar e ler os codecs (e do `curl`, para o TMDB):
 

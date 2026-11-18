@@ -39,6 +39,24 @@ pub struct AppConfig {
     pub tmdb_image_base: String,
 }
 
+/// URL do SQLite dentro da pasta de dados (barras normais, que o sqlx aceita também no Windows).
+fn database_url_in(dir: &std::path::Path) -> String {
+    format!("sqlite://{}?mode=rwc", dir.join("rustyfin.db").to_string_lossy().replace('\\', "/"))
+}
+
+/// `RUSTYFIN_DATA_DIR`: a pasta é criada se não existir. `None` se a variável não estiver definida ou estiver vazia.
+fn data_dir_from_env() -> Option<PathBuf> {
+    let dir = std::env::var("RUSTYFIN_DATA_DIR")
+        .ok()
+        .map(|d| PathBuf::from(d.trim()))
+        .filter(|d| !d.as_os_str().is_empty())?;
+    if let Err(erro) = std::fs::create_dir_all(&dir) {
+        // O servidor segue e o erro ao abrir o banco mostrará o caminho; aqui só avisamos de onde ele veio.
+        eprintln!("Não foi possível criar RUSTYFIN_DATA_DIR ({}): {erro}", dir.display());
+    }
+    Some(dir)
+}
+
 impl AppConfig {
     pub fn load() -> Self {
         let server_id = std::env::var("RUSTYFIN_SERVER_ID")
@@ -57,10 +75,17 @@ impl AppConfig {
             .and_then(|p| p.parse::<u16>().ok())
             .unwrap_or(8096);
         
-        let database_url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "sqlite://rustyfin.db?mode=rwc".to_string());
+        // `RUSTYFIN_DATA_DIR` junta o banco e o cache numa pasta só (instalação nativa, serviços). Sem ela, valem os
+        // padrões antigos (`./rustyfin.db` e `./cache`), e `DATABASE_URL` e `RUSTYFIN_CACHE_DIR` continuam mandando.
+        let data_dir = data_dir_from_env();
+        let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            data_dir.as_deref().map_or_else(|| "sqlite://rustyfin.db?mode=rwc".to_string(), database_url_in)
+        });
 
-        let cache_dir = std::env::var("RUSTYFIN_CACHE_DIR").map_or_else(|_| PathBuf::from("./cache"), PathBuf::from);
+        let cache_dir = std::env::var("RUSTYFIN_CACHE_DIR").map_or_else(
+            |_| data_dir.as_ref().map_or_else(|| PathBuf::from("./cache"), |dir| dir.join("cache")),
+            PathBuf::from,
+        );
 
         let scan_interval_secs = std::env::var("RUSTYFIN_SCAN_INTERVAL_SECS")
             .ok()
@@ -151,5 +176,24 @@ impl AppConfig {
             tmdb_base_url,
             tmdb_image_base,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_database_lives_inside_the_data_dir() {
+        assert_eq!(database_url_in(std::path::Path::new("/var/lib/rustyfin")), "sqlite:///var/lib/rustyfin/rustyfin.db?mode=rwc");
+        // Caminhos do Windows usam barras normais na URL.
+        let url = database_url_in(std::path::Path::new("C:\\Dados\\Rustyfin"));
+        assert!(url.ends_with("/rustyfin.db?mode=rwc"), "{url}");
+        assert!(!url.contains('\\'), "{url}");
+    }
+
+    #[test]
+    fn the_ffmpeg_hint_names_a_package_command() {
+        assert!(crate::transcode::dica_instalar_ffmpeg().contains("ffmpeg"));
     }
 }

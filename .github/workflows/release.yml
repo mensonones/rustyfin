@@ -1,0 +1,79 @@
+name: Release
+
+# Ao publicar uma tag `vX.Y.Z`, compila o binário para Windows, Linux e macOS e anexa os pacotes à versão no GitHub.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.nome }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { nome: linux-x86_64, os: ubuntu-latest, target: x86_64-unknown-linux-gnu, exe: rustyfin, formato: tar.gz }
+          - { nome: linux-aarch64, os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, exe: rustyfin, formato: tar.gz }
+          - { nome: macos-arm64, os: macos-latest, target: aarch64-apple-darwin, exe: rustyfin, formato: tar.gz }
+          - { nome: macos-x86_64, os: macos-latest, target: x86_64-apple-darwin, exe: rustyfin, formato: tar.gz }
+          - { nome: windows-x86_64, os: windows-latest, target: x86_64-pc-windows-msvc, exe: rustyfin.exe, formato: zip }
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Alvo de compilação
+        run: rustup target add ${{ matrix.target }}
+      - name: Compila
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Empacota
+        shell: bash
+        run: |
+          pacote="rustyfin-${GITHUB_REF_NAME}-${{ matrix.nome }}"
+          mkdir "$pacote"
+          cp "target/${{ matrix.target }}/release/${{ matrix.exe }}" "$pacote/"
+          cp -r packaging LICENSE README.md CHANGELOG.md "$pacote/"
+          if [ "${{ matrix.formato }}" = "zip" ]; then
+            7z a -tzip "$pacote.zip" "$pacote" > /dev/null
+            arquivo="$pacote.zip"
+          else
+            tar -czf "$pacote.tar.gz" "$pacote"
+            arquivo="$pacote.tar.gz"
+          fi
+          if command -v sha256sum > /dev/null; then sha256sum "$arquivo" > "$arquivo.sha256"; else shasum -a 256 "$arquivo" > "$arquivo.sha256"; fi
+          echo "ARQUIVO=$arquivo" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.nome }}
+          path: |
+            ${{ env.ARQUIVO }}
+            ${{ env.ARQUIVO }}.sha256
+
+  publicar:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: pacotes
+          merge-multiple: true
+      - name: Publica a versão
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          versao="${GITHUB_REF_NAME#v}"
+          # Notas: a seção desta versão do CHANGELOG, ou as geradas pelo GitHub se ela não existir.
+          awk -v v="$versao" 'index($0, "## [" v "]") == 1 {f=1; next} index($0, "## [") == 1 {f=0} f' CHANGELOG.md > notas.md
+          if [ -s notas.md ]; then
+            gh release create "$GITHUB_REF_NAME" pacotes/* --title "Rustyfin $GITHUB_REF_NAME" --notes-file notas.md --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$GITHUB_REF_NAME" pacotes/* --title "Rustyfin $GITHUB_REF_NAME" --generate-notes --repo "$GITHUB_REPOSITORY"
+          fi

@@ -127,6 +127,12 @@ recomenda um ([como ler](docs/escolher-perfil.md)). No Windows com GPU Intel, ro
 ([detalhes](docs/reproducao.md#aceleração-por-hardware)). No Docker Desktop do Windows a GPU Intel não é repassada;
 rodando o Rustyfin direto no Windows o Quick Sync funciona ([como](docs/reproducao.md#windows)).
 
+### Sem Docker (Windows, Linux, macOS)
+
+O Rustyfin é um binário só: dá para rodar direto no sistema e instalá-lo como serviço, com instaladores para Windows
+(tarefa agendada), Linux (systemd) e macOS (launchd). No Windows com GPU Intel é o caminho mais rápido (Quick Sync).
+Veja **[Instalação direta no sistema](docs/instalacao-nativa.md)**.
+
 ### Compilando
 
 Requer Rust 1.85 ou mais novo e, para transcodificar e ler codecs, `ffmpeg`/`ffprobe` no `PATH`.
@@ -167,6 +173,7 @@ e o minuto, e esconde o que você ainda não assistiu. Como indexar as legendas:
 | [Migrando do Jellyfin](docs/migrando-do-jellyfin.md) | O que você ganha, o que perde e como testar lado a lado |
 | [Configuração](docs/configuracao.md) | Variáveis de ambiente, configurações do painel, pastas, TMDB e nomes de arquivo |
 | [Usuários e segurança](docs/usuarios-e-seguranca.md) | Contas, senhas, tokens, sessões, acesso por biblioteca e o que é público |
+| [Instalação direta no sistema](docs/instalacao-nativa.md) | Windows, Linux e macOS sem Docker: binário, ffmpeg, serviço, GPU e portas |
 | [Qual perfil escolher](docs/escolher-perfil.md) | Docker ou nativo, com ou sem GPU: o que medir, o que escolher e o script que decide |
 | [Guia para LLM](docs/guia-llm.md) | Procedimento para um assistente de IA medir a máquina e recomendar o perfil |
 | [Reprodução](docs/reproducao.md) | Direct Play, remux, transcode, HLS, legendas e HDR |

@@ -31,6 +31,7 @@ O Rustyfin é **um único binário** (`rustyfin`) sobre uma biblioteca de mesmo 
 | `src/models.rs` | DTOs do contrato Jellyfin (PascalCase) |
 | `src/transcode/` | Decisão Direct Play/Remux/Transcode, argumentos do ffmpeg (software, VAAPI e Quick Sync), escolha do encoder na subida, processos e sessões HLS |
 | `src/api/` | Rotas: itens, séries, imagens, streaming, transcodificação, legendas, usuários, painel |
+| `packaging/` | Instaladores de serviço (Windows, Linux, macOS) e o modelo `rustyfin.env`; vão dentro dos pacotes de cada versão |
 | `src/admin.html` | Painel de administração (página única, embutida no binário) |
 | `src/assets/fontes/` | Fontes Geist e Geist Mono (OFL), embutidas e servidas em `/assets/fontes/` sem autenticação |
 | `tests/` | Testes de integração do roteador |
