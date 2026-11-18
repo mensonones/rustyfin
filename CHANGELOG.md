@@ -5,6 +5,18 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.27.0] - 2026-11-18
+
+### Adicionado
+- **Biblioteca do tipo Anime.** Aparece no painel (Filmes, Séries e Anime) e na criação de bibliotecas; para os apps do
+  Jellyfin é uma biblioteca de séries (`CollectionType` `tvshows`), e o tipo de verdade vai em `RustyfinType`. Os episódios
+  vão para ela como para as séries. Guia em [docs/anime.md](docs/anime.md).
+- **Metadados do AniList** para as séries das bibliotecas de anime: sinopse, capa, fundo, gêneros, nota e estúdio, só no
+  que o TMDB não trouxe. API pública, sem conta nem chave; uma consulta por série a cada 7 dias no máximo.
+  `RUSTYFIN_ANILIST=0` desliga.
+- **Áudio japonês e legenda em português como padrão** (`DefaultAudioStreamIndex` e `DefaultSubtitleStreamIndex`) nos
+  títulos de anime que têm áudio em japonês.
+
 ## [0.26.0] - 2026-11-18
 
 ### Adicionado
