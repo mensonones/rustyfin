@@ -5,6 +5,20 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.20.4] - 2026-11-18
+
+### Adicionado
+- O painel avisa, ao buscar um título para indexar áudio e cenas, quantos arquivos ainda aguardam a assinatura (hash) em
+  segundo plano, em vez de só falhar na hora de indexar.
+
+### Testado
+- Indexação e busca de cenas de ponta a ponta: lê o SRT, conta os trechos, respeita o progresso e os spoilers, substitui o
+  índice ao reindexar e não devolve o texto antigo quando a legenda muda.
+- Recusas de indexar cenas e áudio (título inexistente ou sem assinatura), versões preparadas (rotas vazias, chave
+  desconhecida, só observa títulos com hash, uma sessão por usuário, ocupado enquanto há reprodução, expiração) e a
+  assinatura de áudio (sem hash, assinatura já existente, arquivo alterado, trechos sem informação).
+- Medida da busca de cenas: 0,2 a 0,3 s com 1 milhão de falas e 0,6 a 1,0 s com 3 milhões.
+
 ## [0.20.3] - 2026-11-18
 
 ### Corrigido
