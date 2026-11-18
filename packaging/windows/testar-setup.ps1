@@ -108,6 +108,16 @@ Conferir "a atualização terminou com código 0 (recebido $codigo)" ($codigo -e
 Conferir "a configuração foi preservada" ((Get-Content $env_ -Raw).Contains("# marcador do teste"))
 Conferir "o servidor voltou a responder" (Esperar-Servidor $true)
 
+Write-Host "2b. Atualização com o ffmpeg configurado quebrado (o assistente corrige só essa linha)"
+$linhas = @(Get-Content $env_ | Where-Object { $_ -notmatch '^\s*RUSTYFIN_FFMPEG=' })
+Set-Content -Path $env_ -Value ($linhas + 'RUSTYFIN_FFMPEG=C:\nao\existe\ffmpeg.exe') -Encoding utf8
+$codigo = Instalar "nenhum"
+Conferir "a atualização com ffmpeg quebrado terminou com código 0 (recebido $codigo)" ($codigo -eq 0)
+$texto = Get-Content $env_ -Raw
+Conferir "a linha do ffmpeg quebrado saiu da configuração" (-not ($texto -match '(?m)^\s*RUSTYFIN_FFMPEG=C:\\nao'))
+Conferir "o resto da configuração foi preservado" ($texto.Contains("# marcador do teste") -and ($texto -match "RUSTYFIN_PORT=$Porta"))
+Conferir "o servidor voltou a responder" (Esperar-Servidor $true)
+
 Write-Host "3. Desinstalação (apagando os dados)"
 $desinstalador = Get-ChildItem -Path $Pasta -Filter "unins*.exe" | Select-Object -First 1
 Conferir "o desinstalador existe" ($null -ne $desinstalador)

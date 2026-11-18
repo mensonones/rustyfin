@@ -117,7 +117,15 @@ powershell -ExecutionPolicy Bypass -File packaging\windows\instalar.ps1 -Binario
 - **GPU Intel (Quick Sync):** instale um `ffmpeg` com `h264_qsv` (o `winget install Gyan.FFmpeg` serve). O encoder `auto`
   escolhe o Quick Sync e o log mostra `Aceleração por hardware ativa: h264_qsv`. Veja [reprodução → Windows](reproducao.md#windows).
 
-Para atualizar, rode o instalador de novo com o binário novo.
+**Atualizar ou reparar (assistente com telas):** ao abrir o setup novo sobre uma instalação existente, ele mostra a versão
+instalada e a nova e entra no modo de atualização: não pergunta de novo pastas de mídia nem porta (a configuração, o banco, as
+bibliotecas e os usuários são mantidos) e confere o que já está configurado. Só aparece a tela do ffmpeg se o
+`RUSTYFIN_FFMPEG` do `rustyfin.env` não estiver configurado, ou apontar para um arquivo que não existe mais (ou sem o
+`ffprobe` ao lado); nesse caso dá para usar o que foi encontrado, baixar de novo ou deixar para depois, e só essa linha do
+`rustyfin.env` muda. Rodar a mesma versão de novo faz um reparo; uma versão mais antiga que a instalada avisa antes de
+continuar. Sem telas, o ffmpeg só é tocado se você passar `/FFMPEG=`.
+
+Para atualizar com o instalador de linha de comando, rode-o de novo com o binário novo.
 
 > Se o PowerShell for aberto de dentro de um aplicativo empacotado (MSIX), o Windows pode redirecionar
 > `%LOCALAPPDATA%` para uma pasta privada do aplicativo, que a tarefa agendada não enxerga. Nesse caso use `-Pasta` com um

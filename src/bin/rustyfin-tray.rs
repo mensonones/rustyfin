@@ -20,6 +20,9 @@ fn main() {
 
 #[cfg(windows)]
 mod bandeja {
+    /// Versão do pacote (a mesma do servidor).
+    const VERSAO: &str = env!("CARGO_PKG_VERSION");
+
     use std::{
         collections::HashMap,
         fs::{self, OpenOptions},
@@ -113,6 +116,8 @@ mod bandeja {
         trava: Option<TcpListener>,
     ) {
         let evento = EventLoopBuilder::new().build();
+        // A versão do ícone é a do pacote: o servidor e a bandeja são compilados e instalados juntos.
+        let versao = MenuItem::new(format!("Rustyfin {VERSAO}"), false, None);
         let abrir_painel = MenuItem::new("Abrir o painel", true, None);
         let ver_log = MenuItem::new("Ver o log", true, None);
         let abrir_pasta = MenuItem::new("Abrir a pasta de dados", true, None);
@@ -120,6 +125,8 @@ mod bandeja {
         let sair = MenuItem::new("Sair", true, None);
         let menu = Menu::new();
         let montado = menu.append_items(&[
+            &versao,
+            &PredefinedMenuItem::separator(),
             &abrir_painel,
             &ver_log,
             &abrir_pasta,
@@ -134,7 +141,7 @@ mod bandeja {
         };
         let bandeja = match TrayIconBuilder::new()
             .with_menu(Box::new(menu))
-            .with_tooltip(format!("Rustyfin (porta {porta})"))
+            .with_tooltip(format!("Rustyfin {VERSAO} (porta {porta})"))
             .with_icon(icone)
             .build()
         {
@@ -172,13 +179,13 @@ mod bandeja {
             }
 
             let texto = if estado.sair.load(Ordering::SeqCst) {
-                "Rustyfin: encerrando...".to_owned()
+                format!("Rustyfin {VERSAO}: encerrando...")
             } else if estado.rodando.load(Ordering::SeqCst) {
-                format!("Rustyfin: rodando na porta {porta}")
+                format!("Rustyfin {VERSAO}: rodando na porta {porta}")
             } else if estado.porta_ocupada.load(Ordering::SeqCst) {
-                format!("Rustyfin: a porta {porta} está ocupada por outro programa (mude RUSTYFIN_PORT no rustyfin.env)")
+                format!("Rustyfin {VERSAO}: a porta {porta} está ocupada por outro programa (mude RUSTYFIN_PORT no rustyfin.env)")
             } else {
-                "Rustyfin: iniciando...".to_owned()
+                format!("Rustyfin {VERSAO}: iniciando...")
             };
             if texto != ultimo_texto {
                 if let Some(b) = &bandeja {

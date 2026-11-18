@@ -86,6 +86,15 @@ var
   FfmpegDetectado: string;
   FfmpegParametro: string;
   PortaEscolhida: string;
+  PaginaAtualizacao: TOutputMsgWizardPage;
+  { Atualização: há uma instalação anterior (achada pelo registro de desinstalação, antes de a pasta ser escolhida). }
+  Atualizacao: Boolean;
+  PastaInstalada: string;
+  VersaoInstalada: string;
+  FfmpegPrecisaReparo: Boolean;
+
+const
+  ChaveDesinstalar = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6F1D2B7A-3C4E-4A55-9E0B-8D52C1A7B3F4}_is1';
 
 function Parametro(const Nome, Padrao: string): string;
 begin
@@ -98,6 +107,11 @@ begin
 end;
 
 { ---------------------------------------------------------------- ffmpeg }
+function EmAtualizacao: Boolean;
+begin
+  Result := Atualizacao and FileExists(ExpandConstant('{app}\rustyfin.env'));
+end;
+
 
 function ProcurarFfmpeg: string;
 var
@@ -127,7 +141,9 @@ end;
 
 function ModoFfmpeg: string;
 begin
-  if FfmpegParametro <> '' then
+  if EmAtualizacao and (not FfmpegPrecisaReparo) then
+    Result := 'manter'
+  else if FfmpegParametro <> '' then
     Result := 'caminho'
   else if PaginaFfmpeg.Values[1] then
     Result := 'baixar'
@@ -193,6 +209,118 @@ begin
   Result := True;
 end;
 
+{ ---------------------------------------------------------------- atualização }
+
+{ "0.25.5" vira um número comparável (até três partes). }
+function NumeroDaVersao(const Versao: string): Integer;
+var
+  Resto, Parte: string;
+  I, P: Integer;
+begin
+  Result := 0;
+  Resto := Versao;
+  for I := 1 to 3 do
+  begin
+    P := Pos('.', Resto);
+    if P > 0 then
+    begin
+      Parte := Copy(Resto, 1, P - 1);
+      Resto := Copy(Resto, P + 1, 100);
+    end
+    else
+    begin
+      Parte := Resto;
+      Resto := '';
+    end;
+    Result := Result * 1000 + StrToIntDef(Parte, 0);
+  end;
+end;
+
+{ O valor de uma chave ativa (não comentada) do rustyfin.env; vazio se não houver. }
+function ValorDoEnv(const Arquivo, Chave: string): string;
+var
+  Linhas: TArrayOfString;
+  I: Integer;
+  Linha: string;
+begin
+  Result := '';
+  if not LoadStringsFromFile(Arquivo, Linhas) then
+    Exit;
+  for I := 0 to GetArrayLength(Linhas) - 1 do
+  begin
+    Linha := Trim(Linhas[I]);
+    if Pos(Chave + '=', Linha) = 1 then
+    begin
+      Result := Trim(Copy(Linha, Length(Chave) + 2, 1000));
+      if (Length(Result) >= 2) and (Result[1] = '"') and (Result[Length(Result)] = '"') then
+        Result := Copy(Result, 2, Length(Result) - 2);
+    end;
+  end;
+end;
+
+{ O ffmpeg.exe configurado existe (e tem o ffprobe ao lado)? Um nome sem pasta é procurado no PATH. }
+function FfmpegConfiguradoFunciona(const Configurado: string): Boolean;
+var
+  Caminho: string;
+begin
+  Caminho := Configurado;
+  if (Pos('\', Caminho) = 0) and (Pos(':', Caminho) = 0) then
+    Caminho := FileSearch(Caminho, GetEnv('PATH'));
+  Result := (Caminho <> '') and FileExists(Caminho) and FileExists(ExtractFilePath(Caminho) + 'ffprobe.exe');
+end;
+
+procedure DetectarInstalacaoAnterior;
+var
+  Pasta, Versao: string;
+begin
+  Atualizacao := False;
+  if not RegQueryStringValue(HKCU, ChaveDesinstalar, 'Inno Setup: App Path', Pasta) then
+    Exit;
+  Pasta := RemoveBackslashUnlessRoot(Pasta);
+  if not FileExists(Pasta + '\rustyfin.env') then
+    Exit;
+  Atualizacao := True;
+  PastaInstalada := Pasta;
+  if not RegQueryStringValue(HKCU, ChaveDesinstalar, 'DisplayVersion', Versao) then
+    Versao := '';
+  VersaoInstalada := Versao;
+end;
+
+{ Troca a linha do ffmpeg no rustyfin.env existente; o resto da configuração fica como está. }
+procedure AtualizarFfmpegNoEnv(const Arquivo, Novo: string);
+var
+  Linhas, Saida: TArrayOfString;
+  I, N: Integer;
+  Linha: string;
+  Havia: Boolean;
+begin
+  if not LoadStringsFromFile(Arquivo, Linhas) then
+    Exit;
+  N := 0;
+  Havia := False;
+  SetArrayLength(Saida, GetArrayLength(Linhas) + 1);
+  for I := 0 to GetArrayLength(Linhas) - 1 do
+  begin
+    Linha := Trim(Linhas[I]);
+    if Pos('RUSTYFIN_FFMPEG=', Linha) <> 1 then
+    begin
+      Saida[N] := Linhas[I];
+      N := N + 1;
+    end
+    else
+      Havia := True;
+  end;
+  { Sem ffmpeg configurado e nada a trocar: o arquivo já está como deve ficar. }
+  if (Novo = '') and (not Havia) then
+    Exit;
+  if Novo <> '' then
+    Saida[N] := 'RUSTYFIN_FFMPEG=' + Novo
+  else
+    Saida[N] := '# RUSTYFIN_FFMPEG=C:\caminho\ffmpeg.exe   (sem o ffmpeg só há reprodução direta)';
+  SetArrayLength(Saida, N + 1);
+  SaveStringsToUTF8File(Arquivo, Saida, False);
+end;
+
 { ---------------------------------------------------------------- páginas do assistente }
 
 procedure AdicionarPastaClick(Sender: TObject);
@@ -213,12 +341,13 @@ end;
 
 procedure InitializeWizard;
 var
-  Modo, Padrao: string;
+  Modo, Padrao, Configurado, Porta, Situacao, Titulo: string;
   Texto: TNewStaticText;
   BotaoAdicionar, BotaoRemover: TNewButton;
 begin
   PortaEscolhida := Parametro('PORTA', '8096');
   FfmpegDetectado := ProcurarFfmpeg;
+  DetectarInstalacaoAnterior;
 
   PaginaFfmpeg := CreateInputOptionPage(wpSelectDir, 'FFmpeg', 'Transcodificação, miniaturas e legendas',
     'O Rustyfin usa o ffmpeg para converter os vídeos que a TV ou o celular não tocam. Sem ele só há reprodução direta '
@@ -291,6 +420,53 @@ begin
 
   PaginaDownload := CreateDownloadPage(SetupMessage(msgWizardPreparing), SetupMessage(msgPreparingDesc),
     @OnDownloadProgress);
+
+  { Atualização ou reinstalação: confere o que já está configurado e só pergunta o que precisa de atenção. }
+  PaginaAtualizacao := CreateOutputMsgPage(wpWelcome, 'Atualização', 'O Rustyfin já está instalado', '');
+  if Atualizacao then
+  begin
+    Configurado := ValorDoEnv(PastaInstalada + '\rustyfin.env', 'RUSTYFIN_FFMPEG');
+    Porta := ValorDoEnv(PastaInstalada + '\rustyfin.env', 'RUSTYFIN_PORT');
+    if StrToIntDef(Porta, 0) > 0 then
+      PortaEscolhida := Porta
+    else
+      Porta := '8096';
+    if Configurado = '' then
+      Situacao := 'ffmpeg: não configurado (só reprodução direta). Na próxima tela você pode instalá-lo.'
+    else if FfmpegConfiguradoFunciona(Configurado) then
+      Situacao := 'ffmpeg: ok (' + Configurado + ')'
+    else
+      Situacao := 'ffmpeg: NÃO encontrado em ' + Configurado + ' (ou falta o ffprobe ao lado). Na próxima tela você '
+        + 'escolhe como corrigir.';
+    FfmpegPrecisaReparo := (Configurado = '') or (not FfmpegConfiguradoFunciona(Configurado));
+    { Sem telas, só mexe no ffmpeg se isso foi pedido com /FFMPEG=. }
+    if WizardSilent and (Parametro('FFMPEG', '') = '') then
+      FfmpegPrecisaReparo := False;
+
+    if VersaoInstalada = '' then
+      Titulo := 'Foi encontrada uma instalação do Rustyfin em ' + PastaInstalada + '.'
+    else if NumeroDaVersao(VersaoInstalada) = NumeroDaVersao('{#AppVersion}') then
+      Titulo := 'O Rustyfin ' + VersaoInstalada + ' já está instalado. Este assistente vai reparar a instalação.'
+    else if NumeroDaVersao(VersaoInstalada) > NumeroDaVersao('{#AppVersion}') then
+      Titulo := 'Atenção: está instalado o Rustyfin ' + VersaoInstalada + ', mais novo que esta versão ({#AppVersion}). '
+        + 'Continuar volta para a versão anterior.'
+    else
+      Titulo := 'Atualizando o Rustyfin ' + VersaoInstalada + ' para a versão {#AppVersion}.';
+    PaginaAtualizacao.MsgLabel.Caption := Titulo + #13#10#13#10 + 'Mantidos: a configuração (rustyfin.env), o banco de dados, '
+      + 'as bibliotecas, os usuários e o log. O servidor é parado e iniciado de novo pelo assistente.' + #13#10#13#10
+      + 'Porta: ' + Porta + ' (mantida)' + #13#10 + Situacao;
+  end;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if PageID = PaginaAtualizacao.ID then
+    Result := not Atualizacao
+  else if (PageID = PaginaMidias.ID) or (PageID = PaginaRede.ID) then
+    Result := EmAtualizacao
+  else if PageID = PaginaFfmpeg.ID then
+    Result := EmAtualizacao and (not FfmpegPrecisaReparo);
 end;
 
 { Confere se uma porta TCP está livre (porta.ps1, extraído para a pasta temporária). Se não der para conferir, não atrapalha. }
@@ -466,7 +642,21 @@ var
 begin
   Arquivo := ExpandConstant('{app}\rustyfin.env');
   if FileExists(Arquivo) then
+  begin
+    { Atualização: o resto da configuração fica como está; só o ffmpeg é corrigido, se foi escolhido. }
+    if Atualizacao and FfmpegPrecisaReparo then
+    begin
+      if ModoFfmpeg = 'baixar' then
+        AtualizarFfmpegNoEnv(Arquivo, ExpandConstant('{app}\ffmpeg\bin\ffmpeg.exe'))
+      else if ModoFfmpeg = 'caminho' then
+        AtualizarFfmpegNoEnv(Arquivo, FfmpegParametro)
+      else if ModoFfmpeg = 'usar' then
+        AtualizarFfmpegNoEnv(Arquivo, FfmpegDetectado)
+      else
+        AtualizarFfmpegNoEnv(Arquivo, '');
+    end;
     Exit;
+  end;
   Midias := ListaDeMidias;
   if ModoFfmpeg = 'baixar' then
     Ffmpeg := ExpandConstant('{app}\ffmpeg\bin\ffmpeg.exe')

@@ -321,7 +321,6 @@
   #statusGrid .records { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
   #statusGrid .service { border-top: 0; }
 
-  @media (max-width: 100rem) { .brand small { display: none; } }
   @media (max-width: 60rem) {
     .library-workspace { grid-template-columns: minmax(0, 1fr); }
     .bar-in { flex-wrap: wrap; gap: 12px; padding-top: 12px; padding-bottom: 8px; }
@@ -1854,7 +1853,8 @@ async function loadStatus() {
 }
 async function atualizarStatus() {
   const s = await api('GET', '/admin/api/status');
-  $('srv').textContent = s.serverName + ' (v' + s.version + ', porta ' + s.port + ')';
+  $('srv').textContent = 'v' + s.version;
+  $('srv').title = s.serverName + ', porta ' + s.port;
   atualizarSaude(s);
   const sc = s.scan;
   const anterior = sc.lastFinished
