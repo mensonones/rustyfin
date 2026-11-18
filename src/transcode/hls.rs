@@ -3,7 +3,10 @@ use std::{
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
     process::Stdio,
-    sync::OnceLock,
+    sync::{
+        OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 use tokio::{
@@ -21,6 +24,31 @@ fn sessions() -> &'static Mutex<HashMap<String, HlsSession>> {
     SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+
+static LIXO: AtomicU64 = AtomicU64::new(0);
+
+/// Tira a pasta de uma sessão do caminho da chave sem esperar para apagá-la: renomeia (rápido e atômico) para um nome
+/// único e apaga o conteúdo em segundo plano. Assim a limpeza nunca alcança a pasta de uma sessão nova que reutilize a
+/// mesma chave, e quem chama pode estar com a trava das sessões sem bloquear os outros espectadores por causa de uma
+/// árvore com milhares de segmentos. Chame com a trava das sessões ainda em mãos, para a troca não ser ultrapassada.
+async fn descartar_pasta(dir: &Path) {
+    let numero = LIXO.fetch_add(1, Ordering::Relaxed);
+    let base = dir.file_name().map_or_else(|| "sessao".into(), |n| n.to_string_lossy().into_owned());
+    let destino = dir.with_file_name(format!("{base}.apagar-{numero}"));
+    let alvo = if tokio::fs::rename(dir, &destino).await.is_ok() {
+        destino
+    } else if tokio::fs::metadata(dir).await.is_ok() {
+        // Não deu para renomear (no Windows, enquanto o ffmpeg ainda segura um arquivo): apaga no lugar, em segundo plano.
+        dir.to_path_buf()
+    } else {
+        return;
+    };
+    tokio::spawn(async move {
+        if let Err(erro) = tokio::fs::remove_dir_all(&alvo).await {
+            warn!("Falha ao limpar a pasta de sessão HLS {}: {erro}", alvo.display());
+        }
+    });
+}
 
 struct HlsSession {
     dir: PathBuf,
@@ -69,7 +97,8 @@ async fn acquire_or_evict(map: &mut HashMap<String, HlsSession>) -> Result<Owned
     let HlsSession { dir, mut child, permit, .. } = old;
     let _ = child.start_kill();
     drop(permit);
-    let _ = tokio::fs::remove_dir_all(&dir).await;
+    // Só renomeia aqui (quem chama segura a trava das sessões): apagar a árvore inteira atrasaria os outros espectadores.
+    descartar_pasta(&dir).await;
     acquire_slot()
 }
 
@@ -88,18 +117,16 @@ pub async fn shutdown() {
 /// O app avisou que parou de assistir (`Sessions/Playing/Stopped`): encerra o ffmpeg e libera a vaga na hora.
 /// A receita fica guardada, então retomar a reprodução recria a sessão.
 pub async fn stop_play_session(play_session: &str) {
-    let parados: Vec<HlsSession> = {
-        let mut map = sessions().lock().await;
-        let keys: Vec<String> = map
-            .iter()
-            .filter(|(_, s)| s.play_session.as_deref() == Some(play_session))
-            .map(|(k, _)| k.clone())
-            .collect();
-        keys.iter().filter_map(|k| map.remove(k)).collect()
-    };
-    for mut s in parados {
+    let mut map = sessions().lock().await;
+    let keys: Vec<String> = map
+        .iter()
+        .filter(|(_, s)| s.play_session.as_deref() == Some(play_session))
+        .map(|(k, _)| k.clone())
+        .collect();
+    // A pasta sai do caminho da chave ainda com a trava: uma sessão recriada logo depois não perde os arquivos.
+    for mut s in keys.iter().filter_map(|k| map.remove(k)) {
         let _ = s.child.start_kill();
-        let _ = tokio::fs::remove_dir_all(&s.dir).await;
+        descartar_pasta(&s.dir).await;
         info!("Sessão HLS encerrada a pedido do cliente: {}", s.dir.display());
     }
 }
@@ -197,6 +224,13 @@ async fn restart_vod(
     Ok(())
 }
 
+/// O ffmpeg deve recomeçar no segmento `n`? Sim se ele parou, se o pedido está antes do ponto em que ele começou ou se
+/// está longe demais do que ele já gerou (`perto` = o segmento `n - VOD_LOOKAHEAD` já existe, ou `n` está dentro da
+/// janela inicial).
+fn deve_reiniciar(running: bool, start: u32, n: u32, perto: bool) -> bool {
+    !running || n < start || !perto
+}
+
 /// O ffmpeg terminou por conta própria com código de erro (não foi encerrado por nós, que o tiramos do mapa antes).
 fn exited_with_error(estado: &std::io::Result<Option<std::process::ExitStatus>>) -> bool {
     matches!(estado, Ok(Some(st)) if !st.success())
@@ -263,18 +297,18 @@ pub async fn ensure_segment(key: &str, file: &str, timeout: Duration) -> Result<
         (None, w) => Some(w.unwrap_or(0)),
         (Some(_), None) => None,
         (Some(start), Some(n)) => {
-            // Último segmento contíguo já gerado a partir do início desta execução.
-            let mut head = start;
-            if let Some((prefix, _, ext)) = parts {
-                while head < n.saturating_add(VOD_LOOKAHEAD + 1)
-                    && tokio::fs::metadata(s.work_dir.join(key).join(format!("{prefix}_{:05}.{ext}", head + 1)))
+            // O ffmpeg grava em ordem: se o segmento `n - VOD_LOOKAHEAD` já existe, os anteriores também, e ele está perto
+            // o bastante de `n` para valer a espera. Um único acesso ao disco, não um por segmento gerado.
+            let perto = match (n <= start.saturating_add(VOD_LOOKAHEAD), parts) {
+                (true, _) => true,
+                (false, Some((prefix, _, ext))) => {
+                    tokio::fs::metadata(s.work_dir.join(key).join(format!("{prefix}_{:05}.{ext}", n - VOD_LOOKAHEAD)))
                         .await
                         .is_ok()
-                {
-                    head += 1;
                 }
-            }
-            (!running || n < start || n > head + VOD_LOOKAHEAD).then_some(n)
+                (false, None) => false,
+            };
+            deve_reiniciar(running, start, n, perto).then_some(n)
         }
     };
     if let Some(seg) = restart_at {
@@ -419,7 +453,7 @@ pub async fn ensure_hls(key: &str, input: &Path, p: &TranscodeParams, play_sessi
 
     let permit = acquire_or_evict(&mut map).await?;
     let dir = s.work_dir.join(key);
-    let _ = tokio::fs::remove_dir_all(&dir).await;
+    descartar_pasta(&dir).await;
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| SpawnError::Io(e.to_string()))?;
@@ -474,7 +508,6 @@ pub async fn wait_for_file(key: &str, name: &str, timeout: Duration) -> Option<P
 pub(super) async fn reaper() {
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
-        let mut expired: Vec<HlsSession> = Vec::new();
         {
             let mut map = sessions().lock().await;
             for sess in map.values_mut() {
@@ -488,15 +521,10 @@ pub(super) async fn reaper() {
                 .map(|(k, _)| k.clone())
                 .collect();
             for k in keys {
-                if let Some(s) = map.remove(&k) {
-                    expired.push(s);
+                if let Some(mut s) = map.remove(&k) {
+                    let _ = s.child.start_kill();
+                    descartar_pasta(&s.dir).await;
                 }
-            }
-        }
-        for mut s in expired {
-            let _ = s.child.start_kill();
-            if let Err(e) = tokio::fs::remove_dir_all(&s.dir).await {
-                warn!("Falha ao limpar sessão HLS {}: {}", s.dir.display(), e);
             }
         }
     }
@@ -515,6 +543,50 @@ mod tests {
         assert!(!should_fall_back_to_software(true, "h264_qsv", true));
         // sem falha, nada muda
         assert!(!should_fall_back_to_software(false, "h264_qsv", false));
+    }
+
+    #[test]
+    fn o_reinicio_do_vod_so_olha_para_a_frente_do_que_foi_gerado() {
+        // Rodando, pedido logo à frente: espera o ffmpeg.
+        assert!(!deve_reiniciar(true, 0, 3, true));
+        // Rodando, mas o pedido está longe do que ele já gerou (avanço do usuário): reinicia no ponto pedido.
+        assert!(deve_reiniciar(true, 0, 300, false));
+        // Pedido antes do ponto em que esta execução começou (retrocesso): reinicia.
+        assert!(deve_reiniciar(true, 120, 40, true));
+        // ffmpeg parado: reinicia mesmo com o segmento por perto.
+        assert!(deve_reiniciar(false, 0, 3, true));
+    }
+
+    #[tokio::test]
+    async fn a_limpeza_de_uma_sessao_nao_alcanca_a_pasta_da_sessao_recriada() {
+        let raiz = std::env::temp_dir().join(format!("rustyfin-hls-descarte-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&raiz);
+        let pasta = raiz.join("0123456789abcdef");
+        std::fs::create_dir_all(&pasta).unwrap();
+        std::fs::write(pasta.join("seg_00000.ts"), b"velho").unwrap();
+
+        descartar_pasta(&pasta).await;
+        // O caminho da chave fica livre na hora: uma sessão nova pode usá-lo já.
+        assert!(!pasta.exists());
+        std::fs::create_dir_all(&pasta).unwrap();
+        std::fs::write(pasta.join("seg_00000.ts"), b"novo").unwrap();
+
+        // A limpeza roda em segundo plano, mas só na pasta renomeada.
+        let sobras = || {
+            std::fs::read_dir(&raiz)
+                .unwrap()
+                .filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().contains(".apagar-"))
+                .count()
+        };
+        for _ in 0..50 {
+            if sobras() == 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_eq!(sobras(), 0, "a pasta renomeada foi apagada");
+        assert_eq!(std::fs::read(pasta.join("seg_00000.ts")).unwrap(), b"novo");
+        let _ = std::fs::remove_dir_all(&raiz);
     }
 
     #[test]
