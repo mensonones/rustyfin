@@ -35,7 +35,7 @@ use tokio::{
 };
 use tracing::{info, warn};
 
-pub use args::build_args;
+pub use args::{Hw, build_args, hw_probe_args};
 pub use decide::*;
 pub use hls::*;
 pub use params::*;
@@ -56,6 +56,8 @@ pub struct Settings {
     pub ffmpeg: String,
     pub available: bool,
     pub encoder: String,
+    /// Dispositivo DRM usado pelos encoders de hardware (`/dev/dri/renderD128`).
+    pub hw_device: String,
     pub work_dir: PathBuf,
     tone_mapping: bool,
 }
@@ -85,6 +87,59 @@ pub fn set_max_slots(new: usize) {
     }
 }
 
+
+/// Dispositivo DRM dos encoders de hardware (VAAPI e QSV).
+pub fn hw_device() -> &'static str {
+    SETTINGS.get().map_or(DEFAULT_HW_DEVICE, |s| s.hw_device.as_str())
+}
+
+/// Encoder de vídeo em uso, já resolvido (`auto` vira `h264_vaapi` ou `libx264`).
+pub fn active_encoder() -> &'static str {
+    SETTINGS.get().map_or("libx264", |s| s.encoder.as_str())
+}
+
+const DEFAULT_HW_DEVICE: &str = "/dev/dri/renderD128";
+
+/// Escolhe o encoder: `auto` usa VAAPI quando há GPU (`/dev/dri`) e um quadro de teste codifica; um encoder de hardware
+/// pedido explicitamente que não funciona cai para `libx264` em vez de quebrar todas as transcodificações.
+async fn resolve_encoder(ffmpeg: &str, requested: &str, device: &str) -> String {
+    let requested = requested.trim().to_ascii_lowercase();
+    let (encoder, explicit) = match requested.as_str() {
+        "" | "auto" => ("h264_vaapi", false),
+        other => (other, true),
+    };
+    let Some(hw) = Hw::from_encoder(encoder) else {
+        return if explicit { requested } else { "libx264".to_string() };
+    };
+    if !std::path::Path::new(device).exists() {
+        if explicit {
+            warn!("Encoder {encoder} pedido, mas {device} não existe (GPU não repassada ao container?). Usando libx264.");
+        }
+        return "libx264".to_string();
+    }
+    let probe = Command::new(ffmpeg)
+        .args(hw_probe_args(hw, encoder, device))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .output();
+    match tokio::time::timeout(Duration::from_secs(20), probe).await {
+        Ok(Ok(out)) if out.status.success() => {
+            info!("Aceleração por hardware ativa: {encoder} em {device}.");
+            encoder.to_string()
+        }
+        Ok(Ok(out)) => {
+            let erro = String::from_utf8_lossy(&out.stderr);
+            warn!("Encoder {encoder} indisponível em {device} ({}); usando libx264.", erro.lines().last().unwrap_or("falha no teste"));
+            "libx264".to_string()
+        }
+        _ => {
+            warn!("O teste do encoder {encoder} falhou ou demorou demais; usando libx264.");
+            "libx264".to_string()
+        }
+    }
+}
 
 pub fn ffmpeg_path() -> &'static str {
     SETTINGS.get().map_or("ffmpeg", |s| s.ffmpeg.as_str())
@@ -159,6 +214,13 @@ pub async fn init(config: &AppConfig) {
         false
     };
 
+    let hw_device = std::env::var("RUSTYFIN_HWACCEL_DEVICE").unwrap_or_else(|_| DEFAULT_HW_DEVICE.to_string());
+    let encoder = if available {
+        resolve_encoder(&config.ffmpeg_path, &config.video_encoder, &hw_device).await
+    } else {
+        "libx264".to_string()
+    };
+
     let work_dir = config.cache_dir.join("transcodes");
     let _ = tokio::fs::remove_dir_all(&work_dir).await;
 
@@ -168,7 +230,8 @@ pub async fn init(config: &AppConfig) {
     let _ = SETTINGS.set(Settings {
         ffmpeg: config.ffmpeg_path.clone(),
         available,
-        encoder: config.video_encoder.clone(),
+        encoder: encoder.clone(),
+        hw_device,
         work_dir,
         tone_mapping,
     });
@@ -180,7 +243,7 @@ pub async fn init(config: &AppConfig) {
         info!(
             "ffmpeg encontrado: transcodificação sob demanda ativa (máx. {} simultâneas, encoder {}).",
             config.max_transcodes.max(1),
-            config.video_encoder
+            encoder
         );
         tokio::spawn(hls::reaper());
     } else {

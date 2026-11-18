@@ -64,6 +64,44 @@ para buscar a faixa atualizada. **Remover ajuste** volta a servir a temporizaç�
 preserva o arquivo e ignora o ajuste se a assinatura da origem mudar. O editor aceita SRT UTF-8 de até
 2 MiB. A prévia de vídeo depende do suporte do navegador ao arquivo original.
 
+## Aceleração por hardware
+
+O transcode usa `libx264` (processador) por padrão. Com uma **GPU Intel** (Quick Sync) ou **AMD** no Linux, o Rustyfin
+pode usar a GPU para codificar, o que libera a CPU e atende mais sessões ao mesmo tempo.
+
+O encoder padrão é `auto`: na subida o servidor procura `/dev/dri/renderD128`, codifica um quadro de teste com `h264_vaapi`
+e, se funcionar, usa a GPU; se não, usa `libx264` sem avisar nada de errado. O log mostra a decisão
+(`Aceleração por hardware ativa: h264_vaapi em /dev/dri/renderD128`), e o painel mostra o encoder em uso.
+
+**Como ativar no Docker:**
+
+1. Descubra o grupo que pode usar a GPU: `getent group render | cut -d: -f3` (costuma ser 104, 105 ou 109).
+2. No `docker-compose.yml`, descomente (ou ponha em um `docker-compose.override.yml`):
+
+   ```yaml
+   devices:
+     - /dev/dri:/dev/dri
+   group_add:
+     - "105"   # o GID do grupo `render` do seu host
+   ```
+
+3. Recrie o container (`docker compose up -d`) e procure no log a linha de aceleração ativa.
+
+Para conferir se a GPU funciona dentro do container: `docker exec rustyfin vainfo --display drm --device /dev/dri/renderD128`.
+A imagem já traz os drivers Intel (`iHD` para Gen9 em diante e Arc, `i965` para as mais antigas).
+
+**Como funciona:** o ffmpeg decodifica o vídeo na CPU, aplica os filtros (legendas queimadas, HDR para SDR, ABR) também na CPU
+e só então envia os quadros à GPU (`hwupload`) para codificar. Assim todos os modos de transcode funcionam com a GPU. O vídeo
+copiado (remux) nunca usa a GPU. A decodificação por hardware ainda não é usada, então o ganho é maior em CPUs fracas.
+
+**Opções:** `RUSTYFIN_VIDEO_ENCODER=h264_vaapi` força o VAAPI, e `h264_qsv` usa o Quick Sync (experimental; o VAAPI é o
+caminho recomendado, com o mesmo resultado na GPU Intel). Se o encoder escolhido não funcionar, o servidor registra o motivo
+e volta para `libx264`. Outro dispositivo se escolhe com `RUSTYFIN_HWACCEL_DEVICE`. NVIDIA (`h264_nvenc`) pode ser usada pelo
+mesmo mecanismo de encoder, mas não é o foco nem está testada.
+
+> **Estado da validação:** a montagem dos comandos e os fallbacks são cobertos por testes, mas o caminho de hardware ainda não
+> foi exercitado numa GPU Intel real (o Docker Desktop no Windows não repassa `/dev/dri`).
+
 ## HDR
 
 Ao recodificar vídeo HDR PQ ou HLG, o `ffmpeg` (com os filtros `zscale` e `tonemap`) converte para SDR BT.709. Com vídeo

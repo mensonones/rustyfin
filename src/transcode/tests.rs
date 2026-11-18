@@ -342,3 +342,63 @@ fn session_key_is_stable_and_param_sensitive() {
     assert_ne!(k, session_key("item", &q, None));
     assert_ne!(k, session_key("other", &HashMap::new(), None));
 }
+
+fn hw_args(encoder: &str, p: &TranscodeParams) -> String {
+    build_args(encoder, Path::new("/m/a.mkv"), p, None)
+        .iter()
+        .map(|a| a.to_string_lossy().to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[test]
+fn vaapi_sobe_os_quadros_para_a_gpu_antes_do_encoder() {
+    let a = hw_args("h264_vaapi", &params(false, true, Container::Mkv, false));
+    assert!(a.contains("-init_hw_device vaapi=hw:/dev/dri/renderD128 -filter_hw_device hw"), "{a}");
+    assert!(a.contains("-filter_complex [0:V:0]format=nv12,hwupload[hwv]"), "{a}");
+    assert!(a.contains("-map [hwv]"), "{a}");
+    assert!(a.contains("-c:v h264_vaapi -b:v 8000000 -maxrate 8000000 -bufsize 16000000"), "{a}");
+    assert!(!a.contains("-crf") && !a.contains("-x264opts") && !a.contains("-preset"), "{a}");
+}
+
+#[test]
+fn vaapi_com_filtros_de_software_usa_a_mesma_cadeia() {
+    let mut p = params(false, true, Container::Mkv, false);
+    p.burn_subtitle = Some(3);
+    let a = hw_args("h264_vaapi", &p);
+    assert!(a.contains("[0:V:0][0:3]overlay=eof_action=pass[v];[v]format=nv12,hwupload[hwv]"), "{a}");
+    assert!(a.contains("-map [hwv]"), "{a}");
+}
+
+#[test]
+fn vaapi_abr_envia_as_duas_qualidades_para_a_gpu() {
+    let mut p = params(false, false, Container::Mp4, true);
+    p.abr = Some(AbrLadder { high: 6_000_000, low: 1_500_000 });
+    let a = hw_args("h264_vaapi", &p);
+    assert!(a.contains("[high]format=nv12,hwupload[hwhigh];[low]format=nv12,hwupload[hwlow]"), "{a}");
+    assert!(a.contains("-map [hwhigh] -map [hwlow]"), "{a}");
+    assert!(a.contains("-b:v:0 6000000") && a.contains("-b:v:1 1500000"), "{a}");
+}
+
+#[test]
+fn qsv_deriva_o_dispositivo_do_vaapi() {
+    let a = hw_args("h264_qsv", &params(false, true, Container::Mkv, false));
+    assert!(a.contains("-init_hw_device vaapi=va:/dev/dri/renderD128 -init_hw_device qsv=hw@va -filter_hw_device hw"), "{a}");
+    assert!(a.contains("hwupload=extra_hw_frames=64"), "{a}");
+    assert!(a.contains("-c:v h264_qsv"), "{a}");
+}
+
+#[test]
+fn video_copiado_nao_abre_a_gpu() {
+    let a = hw_args("h264_vaapi", &params(true, true, Container::Mkv, false));
+    assert!(!a.contains("-init_hw_device") && !a.contains("hwupload"), "{a}");
+    assert!(a.contains("-c:v copy"), "{a}");
+}
+
+#[test]
+fn o_teste_do_encoder_codifica_um_quadro() {
+    let a: Vec<String> = hw_probe_args(Hw::Vaapi, "h264_vaapi", "/dev/dri/renderD129").iter().map(|s| s.to_string_lossy().to_string()).collect();
+    let a = a.join(" ");
+    assert!(a.contains("-init_hw_device vaapi=hw:/dev/dri/renderD129"), "{a}");
+    assert!(a.contains("-vf format=nv12,hwupload -c:v h264_vaapi -frames:v 1 -f null -"), "{a}");
+}

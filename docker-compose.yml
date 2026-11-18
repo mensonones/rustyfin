@@ -24,6 +24,13 @@ services:
       - TMDB_API_KEY=${TMDB_API_KEY:-}
       - RUSTYFIN_TMDB_LANGUAGE=pt-BR
       - RUST_LOG=rustyfin=info,tower_http=debug
+    # Aceleração por hardware (GPU Intel ou AMD no Linux): descomente para repassar a GPU ao container.
+    # O encoder `auto` (padrão) usa a GPU quando ela funciona e cai para o processador (libx264) quando não.
+    # `group_add` precisa do GID do grupo `render` do host (`getent group render | cut -d: -f3`).
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # group_add:
+    #   - "${RENDER_GID:-105}"
     volumes:
       # Banco de dados persistente
       - ./data:/data

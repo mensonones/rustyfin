@@ -25,7 +25,8 @@ pub struct AppConfig {
     pub ffmpeg_path: String,
     /// Máximo de processos de transcodificação simultâneos.
     pub max_transcodes: usize,
-    /// Encoder de vídeo: `libx264` (padrão) ou de hardware (`h264_nvenc`, `h264_qsv`, `h264_videotoolbox`).
+    /// Encoder de vídeo: `auto` (padrão: VAAPI se houver GPU Intel/AMD, senão `libx264`), `libx264` ou de hardware
+    /// (`h264_vaapi`, `h264_qsv`, `h264_nvenc`, `h264_videotoolbox`).
     pub video_encoder: String,
     /// Chave v3 (32 chars) ou token v4 do TMDB. Sem ela, nenhum metadado online é buscado.
     pub tmdb_api_key: Option<String>,
@@ -69,7 +70,7 @@ impl AppConfig {
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(2);
         let video_encoder =
-            std::env::var("RUSTYFIN_VIDEO_ENCODER").unwrap_or_else(|_| "libx264".to_string());
+            std::env::var("RUSTYFIN_VIDEO_ENCODER").unwrap_or_else(|_| "auto".to_string());
         let discovery_enabled = std::env::var("RUSTYFIN_DISCOVERY")
             .map_or(true, |v| !matches!(v.trim().to_lowercase().as_str(), "0" | "false" | "no" | "off"));
         let admin_password = std::env::var("RUSTYFIN_ADMIN_PASSWORD")

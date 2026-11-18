@@ -654,7 +654,7 @@ async fn status(State(st): State<AdminState>) -> Response {
         "ffmpeg": {
             "available": transcode::can_transcode(),
             "path": st.config.ffmpeg_path,
-            "encoder": st.config.video_encoder,
+            "encoder": transcode::active_encoder(),
             "maxTranscodes": rt.max_transcodes
         },
         "tmdb": { "configured": rt.tmdb_api_key.is_some(), "language": rt.tmdb_language },

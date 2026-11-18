@@ -27,10 +27,18 @@ RUN find src -name '*.rs' -exec touch {} + && cargo build --release
 FROM debian:bookworm-slim AS runtime
 
 # Instala ffmpeg/ffprobe para extração de metadados e codecs
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Em amd64 inclui os drivers de GPU Intel (VAAPI/Quick Sync): `intel-media-va-driver-non-free` (iGPUs Gen9+ e Arc),
+# `i965-va-driver` (Intel mais antigas), as bibliotecas do Quick Sync e o `vainfo` para diagnóstico. Sem GPU repassada
+# ao container (`/dev/dri`), nada disso é usado e o transcode segue em software (libx264).
+RUN sed -i 's/^Components: main$/Components: main non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
     ca-certificates \
+    && if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+         apt-get install -y --no-install-recommends \
+           intel-media-va-driver-non-free i965-va-driver libmfx1 libmfx-gen1.2 vainfo; \
+       fi \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

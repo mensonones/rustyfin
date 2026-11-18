@@ -39,7 +39,7 @@ leia com `docker compose logs -f`.
 | O avanço volta ao início | Acontecia com playlists HLS que só cresciam; transcodificações completas agora aceitam avanço livre. Com vídeo copiado (remux) o avanço fica limitado ao trecho já gerado |
 | "Mídia não suportada" | O arquivo precisa ser transcodificado e o `ffmpeg` não está disponível: veja Status → ffmpeg |
 | Erro 503 ao tocar | Atingiu o limite de transcodificações simultâneas (`RUSTYFIN_MAX_TRANSCODES`, também no painel) |
-| Transcode lento | `libx264` roda na CPU. Para usar a placa de vídeo, defina `RUSTYFIN_VIDEO_ENCODER` (`h264_nvenc`, `h264_qsv`...) e garanta que o container tenha acesso ao dispositivo |
+| Transcode lento | `libx264` roda na CPU. Com GPU Intel ou AMD no Linux, repasse `/dev/dri` ao container e o encoder `auto` a usa (veja [aceleração por hardware](reproducao.md#aceleração-por-hardware)). O log diz qual encoder está em uso e por que a GPU foi recusada |
 | Sem legenda | SRT precisa ter o mesmo nome do vídeo. Legendas de imagem (PGS/DVD) só aparecem queimadas, o que força transcode |
 
 ## Metadados (TMDB)

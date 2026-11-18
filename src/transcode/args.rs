@@ -10,7 +10,60 @@ fn add<S: AsRef<std::ffi::OsStr>>(args: &mut Vec<OsString>, s: S) {
     args.push(s.as_ref().to_os_string());
 }
 
-fn map_video(args: &mut Vec<OsString>, p: &TranscodeParams, hdr_filter: Option<&str>) {
+/// Família de encoder de hardware que o Rustyfin sabe montar (GPUs Intel e AMD no Linux).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hw {
+    /// VAAPI: o caminho padrão para Intel (driver `iHD`) e AMD.
+    Vaapi,
+    /// Intel Quick Sync (experimental): usa o VAAPI como dispositivo-pai.
+    Qsv,
+}
+
+impl Hw {
+    pub fn from_encoder(encoder: &str) -> Option<Self> {
+        match encoder {
+            "h264_vaapi" => Some(Self::Vaapi),
+            "h264_qsv" => Some(Self::Qsv),
+            _ => None,
+        }
+    }
+
+    /// Filtro que leva os quadros (decodificados na CPU) para a memória da GPU.
+    fn upload(self) -> &'static str {
+        match self {
+            Self::Vaapi => "format=nv12,hwupload",
+            Self::Qsv => "format=nv12,hwupload=extra_hw_frames=64",
+        }
+    }
+}
+
+/// Argumentos globais que abrem o dispositivo de hardware (antes do `-i`).
+pub fn hw_init_args(hw: Hw, device: &str) -> Vec<OsString> {
+    let args: Vec<String> = match hw {
+        Hw::Vaapi => vec!["-init_hw_device".into(), format!("vaapi=hw:{device}"), "-filter_hw_device".into(), "hw".into()],
+        Hw::Qsv => vec![
+            "-init_hw_device".into(),
+            format!("vaapi=va:{device}"),
+            "-init_hw_device".into(),
+            "qsv=hw@va".into(),
+            "-filter_hw_device".into(),
+            "hw".into(),
+        ],
+    };
+    args.into_iter().map(OsString::from).collect()
+}
+
+/// Comando que codifica um quadro de teste no encoder de hardware: se ele falhar, o encoder não serve nesta máquina.
+pub fn hw_probe_args(hw: Hw, encoder: &str, device: &str) -> Vec<OsString> {
+    let mut a: Vec<OsString> = ["-nostdin", "-hide_banner", "-loglevel", "error"].map(OsString::from).to_vec();
+    a.extend(hw_init_args(hw, device));
+    for s in ["-f", "lavfi", "-i", "color=c=black:s=256x144:d=0.2:r=25", "-vf", hw.upload(), "-c:v", encoder, "-frames:v", "1", "-f", "null", "-"] {
+        add(&mut a, s);
+    }
+    a
+}
+
+fn map_video(args: &mut Vec<OsString>, p: &TranscodeParams, hdr_filter: Option<&str>, hw: Option<Hw>) {
     let mut filters = Vec::new();
     let mut video = "[0:V:0]";
     if let Some(filter) = hdr_filter {
@@ -24,15 +77,23 @@ fn map_video(args: &mut Vec<OsString>, p: &TranscodeParams, hdr_filter: Option<&
     if p.abr.is_some() {
         filters.push(format!("{video}split=2[high][downscale];[downscale]scale=-2:trunc(ih/4)*2[low]"));
     }
+    // Encoder de hardware: os filtros rodam na CPU e só o resultado sobe para a GPU, antes do encoder.
+    let mut maps: Vec<String> = if p.abr.is_some() { vec!["[high]".into(), "[low]".into()] } else { vec![video.to_string()] };
+    if let Some(hw) = hw {
+        let saidas: &[&str] = if p.abr.is_some() { &["[hwhigh]", "[hwlow]"] } else { &["[hwv]"] };
+        for (label, saida) in maps.iter().zip(saidas) {
+            filters.push(format!("{label}{}{saida}", hw.upload()));
+        }
+        maps = saidas.iter().map(|s| (*s).to_string()).collect();
+    }
     if filters.is_empty() {
         args.extend(["-map", "0:V:0"].map(OsString::from));
     } else {
         add(args, "-filter_complex");
         add(args, filters.join(";"));
-        if p.abr.is_some() {
-            args.extend(["-map", "[high]", "-map", "[low]"].map(OsString::from));
-        } else {
-            args.extend(["-map", video].map(OsString::from));
+        for m in maps {
+            add(args, "-map");
+            add(args, m);
         }
     }
 }
@@ -49,6 +110,10 @@ pub fn build_args(
     add(&mut a, "-hide_banner");
     add(&mut a, "-loglevel");
     add(&mut a, "error");
+    let hw = Hw::from_encoder(encoder).filter(|_| !p.video_copy);
+    if let Some(hw) = hw {
+        a.extend(hw_init_args(hw, super::hw_device()));
+    }
     if p.start_secs > 0.0 {
         add(&mut a, "-ss");
         add(&mut a, format!("{:.3}", p.start_secs));
@@ -58,7 +123,7 @@ pub fn build_args(
 
     // Trilhas: primeiro vídeo + áudio escolhido (ou o primeiro, se existir); sem legendas.
     let hdr_filter = p.tone_map_hdr.filter(|_| !p.video_copy).map(HdrToneMap::filter);
-    map_video(&mut a, p, hdr_filter.as_deref());
+    map_video(&mut a, p, hdr_filter.as_deref(), hw);
     let audio = p.audio_index.map_or_else(|| "0:a:0?".to_string(), |i| format!("0:{i}"));
     let audio_outputs = match (p.abr, p.has_audio) {
         (Some(_), true) => 2,
@@ -116,8 +181,15 @@ pub fn build_args(
         // Encoders de hardware (h264_nvenc, h264_qsv, h264_videotoolbox...): controle por bitrate.
         add(&mut a, "-c:v");
         add(&mut a, encoder);
+        let bitrate = p.video_bitrate.unwrap_or(8_000_000);
         add(&mut a, "-b:v");
-        add(&mut a, p.video_bitrate.unwrap_or(8_000_000).to_string());
+        add(&mut a, bitrate.to_string());
+        if hw.is_some() {
+            add(&mut a, "-maxrate");
+            add(&mut a, bitrate.to_string());
+            add(&mut a, "-bufsize");
+            add(&mut a, bitrate.saturating_mul(2).to_string());
+        }
     }
     if encoder == "libx264" && !p.video_copy {
         // Mesmos ajustes de busca de movimento do Jellyfin: mais rápido que o `veryfast` puro, com perda

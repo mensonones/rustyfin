@@ -56,6 +56,8 @@ sobe em segundos e usa **poucas dezenas de megabytes de memória**.
 - **Direct Play** com `Range` (avanço e retrocesso instantâneos), **Remux** e **Transcode** sob demanda, escolhidos pelo
   `DeviceProfile` que o app envia.
 - **HLS** (MPEG-TS e fMP4) com avanço livre, duas qualidades (ABR) e conversão de HDR para SDR.
+- [Aceleração por hardware](docs/reproducao.md#aceleração-por-hardware) com GPU Intel ou AMD (VAAPI) no Linux: detectada
+  sozinha e com volta automática para o processador quando a GPU não está disponível.
 - Legendas SRT/ASS/VTT, externas ou embutidas; legendas de imagem (PGS/DVD) são queimadas no vídeo.
 - [Ajuste de legendas SRT](docs/reproducao.md#corrigir-uma-faixa-srt) no painel, com atraso fixo e desvio progressivo por dois pontos.
 
