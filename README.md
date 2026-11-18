@@ -31,15 +31,16 @@ sobe em segundos e usa **poucas dezenas de megabytes de memória**.
 | Memória em repouso (biblioteca indexada) | 11 MiB (9 MiB com 1 CPU) | 391 MiB (374 MiB) |
 | Imagem Docker | 791 MB | 2,49 GB |
 | Subida até a API responder | 0,6 s | 6,0 s |
+| Reinício a quente | 0,8 s | 2,6 s |
 | 1ª varredura de 30 GB | 3,0 s | 57,7 s |
 | API, 1 conexão (p50) | 1,4 a 2,1 ms | 12 a 32 ms |
 | Direct Play, 1 stream | 182 MB/s | 78 MB/s |
 | Transcodificação, 1 sessão | 14,0× tempo real | 12,2× |
 | Varredura de 1.000 arquivos numa pasta | 15 s | 413 s |
 
-> Medido em 17 e 18/11/2026 (Rustyfin v0.17.4, 4 CPUs, mesma biblioteca, sem metadados online). Em um container com
-> **1 CPU e 512 MB** o Rustyfin também vence em tudo o que foi medido. Só no reinício a quente com 4 CPUs o Jellyfin é
-> mais rápido (2,6 s contra 3,6 s). Números, metodologia, ressalvas e as correções feitas a partir do teste em
+> Medido em 17 e 18/11/2026 (Rustyfin v0.17.5, 4 CPUs, mesma biblioteca, sem metadados online). Em um container com
+> **1 CPU e 512 MB** o Rustyfin também vence em tudo o que foi medido. Só na transcodificação com 4 sessões simultâneas os
+> dois empatam. Números, metodologia, ressalvas e as correções feitas a partir do teste em
 > [docs/desempenho.md](docs/desempenho.md).
 
 ## Recursos

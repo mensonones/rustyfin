@@ -12,7 +12,7 @@
     "memory": "512m"
    }
   },
-  "rustyfin_versao": "0.17.4",
+  "rustyfin_versao": "0.17.5",
   "nota": "Rustyfin medido na v0.17.4 (rodada final); Jellyfin 12.4.0 medido no mesmo dia, sem mudança. Cenário E do Jellyfin refeito com a duração real dos segmentos."
  },
  "restrito": {
@@ -28,7 +28,7 @@
     "cpu_pct_max": 0.02,
     "n": 10
    },
-   "A_restart_quente_s": 3.703272899991134,
+   "A_restart_quente_s": 0.6107274999958463,
    "B_scan_inicial": {
     "arquivos": 18,
     "visivel_s": 2.724060600012308,

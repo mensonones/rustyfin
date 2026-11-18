@@ -5,6 +5,14 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.17.5] - 2026-11-18
+
+### Corrigido
+- O servidor ignorava o `SIGTERM`: como PID 1 no container, o `docker stop` esperava o prazo inteiro e terminava com
+  `SIGKILL` (código 137), o que deixava todo reinício lento (3,6 s com o prazo curto desta máquina, 10 s no padrão do
+  Docker). Agora `SIGTERM` e `SIGINT` encerram as transcodificações, fecham o banco (checkpoint do WAL) e saem com
+  código 0: o reinício a quente caiu de 3,6 s para 0,8 s.
+
 ## [0.17.4] - 2026-11-17
 
 ### Corrigido

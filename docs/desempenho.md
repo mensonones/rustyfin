@@ -1,6 +1,6 @@
 # Desempenho: Rustyfin × Jellyfin
 
-Comparativo medido em **17 e 18/11/2026** com o Rustyfin **v0.17.4** e o Jellyfin **12.4.0** (imagem `latest` do dia),
+Comparativo medido em **17 e 18/11/2026** com o Rustyfin **v0.17.5** e o Jellyfin **12.4.0** (imagem `latest` do dia),
 com o *harness* que está em [`tools/bench/`](../tools/bench/README.md) e os resultados brutos em
 [`tools/bench/results/`](../tools/bench/results/). Os números são de uma máquina e de uma rodada completa, não um estudo
 estatístico: leia as [ressalvas](#ressalvas) antes de citá-los.
@@ -14,7 +14,7 @@ Mesma biblioteca (18 vídeos reais, ~30 GB), um sistema por vez, em dois perfis 
 |---|---|---|---|---|
 | Imagem Docker | **791 MB** | 2.490 MB | **791 MB** | 2.490 MB |
 | Subida até a API responder | **0,6 s** | 6,0 s | **0,5 s** | 3,9 s |
-| Reinício a quente | 3,6 s | **2,6 s** | **3,7 s** | 6,2 s |
+| Reinício a quente | **0,8 s** | 2,6 s | **0,6 s** | 6,2 s |
 | Memória em repouso (biblioteca indexada) | **11 MiB** | 391 MiB | **9 MiB** | 374 MiB |
 | 1ª varredura de 30 GB (concluída) | **3,0 s** | 57,7 s | **3,0 s** | 56,0 s |
 | Rescan sem mudanças | **0,14 s** | 6,1 s | **0,11 s** | 7,5 s |
@@ -32,15 +32,13 @@ Mesma biblioteca (18 vídeos reais, ~30 GB), um sistema por vez, em dois perfis 
 
 **No perfil restrito o Rustyfin vence em tudo o que foi medido**, e é onde a diferença mais pesa: o Jellyfin usa 374 MiB
 em repouso dentro de um limite de 512 MiB, leva 56 s para indexar a mesma biblioteca (contra 3 s) e reinicia em 6,2 s
-(contra 3,7 s). No perfil folgado o Rustyfin vence em tudo, exceto no reinício a quente, e empata na transcodificação
-com 4 sessões simultâneas.
+(contra 0,6 s). No perfil folgado o Rustyfin vence em tudo e só empata na transcodificação com 4 sessões
+simultâneas.
 
 ## Onde o Rustyfin não ganha
 
-1. **Reinício a quente (folgado): 3,6 s contra 2,6 s.** O tempo inclui o `docker restart`, que espera o encerramento do
-   processo. Ainda não investigado (no restrito o Rustyfin ganha: 3,7 s contra 6,2 s).
-2. **Transcodificação com 4 sessões simultâneas e 4 CPUs: empate** (1,27× cada). Os dois saturam a CPU com o `libx264`;
-   o Rustyfin usa menos memória (950 MiB contra 1.507 MiB).
+**Transcodificação com 4 sessões simultâneas e 4 CPUs: empate** (1,27× cada). Os dois saturam a CPU com o `libx264`; o
+Rustyfin usa menos memória (950 MiB contra 1.507 MiB). Em todo o resto medido o Rustyfin está à frente.
 
 ## Correções feitas a partir deste benchmark
 
@@ -58,6 +56,10 @@ O comparativo foi feito para achar pontos fracos, e estes foram corrigidos:
 - **Velocidade de transcodificação: 2,97× com 1 sessão (v0.17.4).** O x264 passou a usar os mesmos ajustes de busca de
   movimento do Jellyfin (`subme=0`, `me=hex`, `rc_lookahead=10`), chegando a 14,0×. Testei também `-sc_threshold 0` e o
   perfil Main, que o Jellyfin usa: não aceleram neste arquivo e não foram adotados.
+- **Reinício a quente: 3,6 s contra 2,6 s do Jellyfin (v0.17.5).** O servidor não tratava o `SIGTERM`: como PID 1 no
+  container ele o ignorava, e o `docker stop` só o encerrava com `SIGKILL` depois do prazo (código de saída 137). A subida
+  levava só 0,55 s; o resto era a espera. Agora `SIGTERM` e `SIGINT` encerram as transcodificações, fecham o banco e saem
+  com código 0, e o reinício caiu para 0,8 s.
 - **Varredura de muitas pastas pequenas** (antes de `5490b99`): listar a pasta por vídeo tornava a varredura quadrática
   (1.000 clipes levavam 212 s e 3.000 não terminavam). Cada pasta agora é listada uma vez.
 
@@ -101,12 +103,12 @@ O comparativo foi feito para achar pontos fracos, e estes foram corrigidos:
 
 - **Uma máquina, uma rodada completa.** Há variação entre execuções: em outras rodadas o Direct Play do Rustyfin ficou
   entre 132 e 195 MB/s e o do Jellyfin entre 57 e 95 MB/s.
-- **Rodadas diferentes por sistema.** O Rustyfin foi medido por inteiro na v0.17.4; o Jellyfin, que não mudou, foi medido
+- **Rodadas diferentes por sistema.** O Rustyfin foi medido por inteiro na v0.17.4 (só o reinício a quente foi refeito na v0.17.5, depois da correção do `SIGTERM`); o Jellyfin, que não mudou, foi medido
   no mesmo dia em rodadas anteriores (e o cenário de transcodificação dele foi refeito depois da correção de medição).
 - **Perfil restrito:** não mede escala (1.000 e 3.000 clipes), transcodificação com 2 e 4 sessões nem estabilidade. Com
   1 CPU e 512 MB a transcodificação encosta no limite de memória nos dois.
 - A "RAM" é a do cgroup do container (`docker stats`), que inclui processos filhos como o `ffmpeg`.
-- O "reinício a quente" inclui o tempo de o Docker encerrar o processo.
+- O "reinício a quente" é o `docker restart` completo até a API responder, ou seja, inclui o tempo de o Docker encerrar o processo.
 - O Jellyfin não terminou a varredura de 3.000 clipes em 15 minutos (limite do teste); o número real é maior.
 - O Jellyfin usa o `jellyfin-ffmpeg` próprio e segmentos de 3 s; o Rustyfin usa o `ffmpeg` da imagem Debian e segmentos
   de 6 s. A velocidade é medida sobre a mesma quantidade de vídeo, não sobre o mesmo número de segmentos.
@@ -124,7 +126,7 @@ O comparativo foi feito para achar pontos fracos, e estes foram corrigidos:
 |---|---|---|---|
 | Imagem Docker (MB) | 791 | 2 490 | 3,1× |
 | Subida até responder (s, volume novo) | 0,6 | 6,0 | 10,8× |
-| Reinício a quente (s) | 3,6 | 2,6 | 0,7× |
+| Reinício a quente (s) | 0,8 | 2,6 | 3,4× |
 | RAM em repouso, biblioteca vazia (MiB) | 5 | 191 | 36,4× |
 | RAM em repouso, biblioteca indexada (MiB) | 11 | 391 | 34,8× |
 | CPU em repouso, indexada (%) | 0,0 | 0,5 |  |
@@ -199,7 +201,7 @@ O comparativo foi feito para achar pontos fracos, e estes foram corrigidos:
 |---|---|---|---|
 | Imagem Docker (MB) | 791 | 2 490 | 3,1× |
 | Subida até responder (s, volume novo) | 0,5 | 3,9 | 7,6× |
-| Reinício a quente (s) | 3,7 | 6,2 | 1,7× |
+| Reinício a quente (s) | 0,6 | 6,2 | 10,1× |
 | RAM em repouso, biblioteca vazia (MiB) | 5 | 180 | 37,7× |
 | RAM em repouso, biblioteca indexada (MiB) | 9 | 374 | 41,1× |
 | CPU em repouso, indexada (%) | 0,0 | 0,4 |  |
