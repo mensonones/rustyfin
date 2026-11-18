@@ -1,0 +1,42 @@
+name: Setup do Windows
+
+# Compila o Rustyfin-Setup.exe (Inno Setup) e o exercita sem telas: instala, confere o servidor, atualiza por cima e
+# desinstala. A segunda tarefa repete tudo com o download real do ffmpeg.
+on:
+  pull_request:
+    paths: ["packaging/windows/**", ".github/workflows/setup-windows.yml"]
+  push:
+    branches: [main]
+    paths: ["packaging/windows/**", ".github/workflows/setup-windows.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: setup (ffmpeg: ${{ matrix.ffmpeg }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ffmpeg: [nenhum, baixar]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Compila o servidor
+        run: cargo build --locked
+      - name: Instala o Inno Setup
+        run: choco install innosetup --version=6.7.4 --no-progress -y
+      - name: Compila o setup
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path "target/debug/rustyfin.exe").Path
+          & "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe" "/DAppVersion=0.0.0" "/DExePath=$exe" "packaging/windows/rustyfin.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC falhou ($LASTEXITCODE)" }
+      - name: Exercita o setup
+        shell: pwsh
+        run: |
+          $extra = if ("${{ matrix.ffmpeg }}" -eq "baixar") { @("-BaixarFfmpeg") } else { @() }
+          ./packaging/windows/testar-setup.ps1 -Setup "dist/Rustyfin-Setup-0.0.0-x64.exe" @extra

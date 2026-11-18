@@ -71,7 +71,8 @@ Type: filesandordirs; Name: "{app}\ffmpeg"
 [Code]
 var
   PaginaFfmpeg: TInputOptionWizardPage;
-  PaginaMidias: TInputDirWizardPage;
+  PaginaMidias: TWizardPage;
+  ListaMidias: TNewListBox;
   PaginaRede: TInputQueryWizardPage;
   PaginaDownload: TDownloadWizardPage;
   FfmpegDetectado: string;
@@ -186,9 +187,27 @@ end;
 
 { ---------------------------------------------------------------- páginas do assistente }
 
+procedure AdicionarPastaClick(Sender: TObject);
+var
+  Pasta: string;
+begin
+  Pasta := '';
+  if BrowseForFolder('Escolha uma pasta com filmes ou séries', Pasta, False) then
+    if ListaMidias.Items.IndexOf(Pasta) < 0 then
+      ListaMidias.Items.Add(Pasta);
+end;
+
+procedure RemoverPastaClick(Sender: TObject);
+begin
+  if ListaMidias.ItemIndex >= 0 then
+    ListaMidias.Items.Delete(ListaMidias.ItemIndex);
+end;
+
 procedure InitializeWizard;
 var
   Modo, Padrao: string;
+  Texto: TNewStaticText;
+  BotaoAdicionar, BotaoRemover: TNewButton;
 begin
   PortaEscolhida := Parametro('PORTA', '8096');
   FfmpegDetectado := ProcurarFfmpeg;
@@ -223,15 +242,39 @@ begin
   else if (Modo <> 'detectar') and FileExists(Parametro('FFMPEG', '')) then
     FfmpegParametro := Parametro('FFMPEG', '');
 
-  PaginaMidias := CreateInputDirPage(PaginaFfmpeg.ID, 'Pastas de mídia', 'Onde estão os seus filmes e séries?',
-    'Escolha até três pastas. As bibliotecas "Filmes" e "Séries" são criadas com elas na primeira execução. Depois você '
-    + 'muda tudo no painel. Deixe em branco o que não precisar.', False, '');
-  PaginaMidias.Add('Pasta 1:');
-  PaginaMidias.Add('Pasta 2 (opcional):');
-  PaginaMidias.Add('Pasta 3 (opcional):');
+  PaginaMidias := CreateCustomPage(PaginaFfmpeg.ID, 'Pastas de mídia', 'Onde estão os seus filmes e séries?');
+  Texto := TNewStaticText.Create(PaginaMidias);
+  Texto.Parent := PaginaMidias.Surface;
+  Texto.WordWrap := True;
+  Texto.AutoSize := True;
+  Texto.Width := PaginaMidias.SurfaceWidth;
+  Texto.Caption := 'Adicione as pastas com os seus vídeos. As bibliotecas "Filmes" e "Séries" são criadas com elas na '
+    + 'primeira execução, e depois você muda tudo no painel. Pode deixar a lista vazia e configurar depois.';
+  ListaMidias := TNewListBox.Create(PaginaMidias);
+  ListaMidias.Parent := PaginaMidias.Surface;
+  ListaMidias.Top := Texto.Height + ScaleY(12);
+  ListaMidias.Left := 0;
+  ListaMidias.Width := PaginaMidias.SurfaceWidth - ScaleX(118);
+  ListaMidias.Height := PaginaMidias.SurfaceHeight - ListaMidias.Top;
+  BotaoAdicionar := TNewButton.Create(PaginaMidias);
+  BotaoAdicionar.Parent := PaginaMidias.Surface;
+  BotaoAdicionar.Caption := 'Adicionar pasta...';
+  BotaoAdicionar.Left := ListaMidias.Width + ScaleX(8);
+  BotaoAdicionar.Top := ListaMidias.Top;
+  BotaoAdicionar.Width := ScaleX(110);
+  BotaoAdicionar.Height := ScaleY(25);
+  BotaoAdicionar.OnClick := @AdicionarPastaClick;
+  BotaoRemover := TNewButton.Create(PaginaMidias);
+  BotaoRemover.Parent := PaginaMidias.Surface;
+  BotaoRemover.Caption := 'Remover';
+  BotaoRemover.Left := BotaoAdicionar.Left;
+  BotaoRemover.Top := BotaoAdicionar.Top + ScaleY(31);
+  BotaoRemover.Width := ScaleX(110);
+  BotaoRemover.Height := ScaleY(25);
+  BotaoRemover.OnClick := @RemoverPastaClick;
   Padrao := ExpandConstant('{%USERPROFILE}\Videos');
   if DirExists(Padrao) then
-    PaginaMidias.Values[0] := Padrao;
+    ListaMidias.Items.Add(Padrao);
 
   PaginaRede := CreateInputQueryPage(PaginaMidias.ID, 'Rede', 'Porta do servidor',
     'Os apps se conectam por esta porta. Mude só se a 8096 estiver ocupada, por exemplo por outro servidor de mídia.');
@@ -244,23 +287,9 @@ end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
-  I, Porta: Integer;
-  Pasta: string;
+  Porta: Integer;
 begin
   Result := True;
-  if CurPageID = PaginaMidias.ID then
-  begin
-    for I := 0 to 2 do
-    begin
-      Pasta := Trim(PaginaMidias.Values[I]);
-      if (Pasta <> '') and (not DirExists(Pasta)) then
-      begin
-        MsgBox('A pasta não existe: ' + Pasta, mbError, MB_OK);
-        Result := False;
-        Exit;
-      end;
-    end;
-  end;
   if CurPageID = PaginaRede.ID then
   begin
     Porta := StrToIntDef(Trim(PaginaRede.Values[0]), 0);
@@ -291,7 +320,7 @@ begin
   Result := '-Pasta "' + ExpandConstant('{app}') + '" -Acao ' + Acao;
 end;
 
-{ Baixa (com a verificação do SHA-256) e extrai o ffmpeg para {app}\ffmpeg, antes de copiar os arquivos. }
+// Baixa (com a verificação do SHA-256) e extrai o ffmpeg para a pasta ffmpeg do aplicativo, antes de copiar os arquivos.
 function PrepareToInstall(var NeedsRestart: Boolean): string;
 var
   Nome, Hash, Destino: string;
@@ -359,9 +388,9 @@ begin
   StringChangeEx(Result, ';', ',', True);
   if Result <> '' then
     Exit;
-  for I := 0 to 2 do
+  for I := 0 to ListaMidias.Items.Count - 1 do
   begin
-    Pasta := Trim(PaginaMidias.Values[I]);
+    Pasta := Trim(ListaMidias.Items[I]);
     if Pasta <> '' then
     begin
       if Result <> '' then
