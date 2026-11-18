@@ -60,6 +60,8 @@ mod bandeja {
         matar: AtomicBool,
         /// O servidor está de pé.
         rodando: AtomicBool,
+        /// O servidor caiu logo ao iniciar e a porta dele está ocupada por outro programa.
+        porta_ocupada: AtomicBool,
         /// O supervisor terminou (o programa pode fechar).
         parado: AtomicBool,
     }
@@ -81,7 +83,7 @@ mod bandeja {
 
         {
             let (estado, pasta, configuracao) = (estado.clone(), pasta.clone(), configuracao.clone());
-            thread::spawn(move || supervisor(&estado, &pasta, &configuracao));
+            thread::spawn(move || supervisor(&estado, &pasta, &configuracao, porta));
         }
 
         let evento = EventLoopBuilder::new().build();
@@ -143,6 +145,8 @@ mod bandeja {
                 "Rustyfin: encerrando...".to_owned()
             } else if estado.rodando.load(Ordering::SeqCst) {
                 format!("Rustyfin: rodando na porta {porta}")
+            } else if estado.porta_ocupada.load(Ordering::SeqCst) {
+                format!("Rustyfin: a porta {porta} está ocupada por outro programa (mude RUSTYFIN_PORT no rustyfin.env)")
             } else {
                 "Rustyfin: iniciando...".to_owned()
             };
@@ -215,7 +219,7 @@ mod bandeja {
     }
 
     /// Mantém o servidor no ar: se ele cair, sobe de novo (com espera crescente se cair logo ao iniciar).
-    fn supervisor(estado: &Estado, pasta: &Path, configuracao: &HashMap<String, String>) {
+    fn supervisor(estado: &Estado, pasta: &Path, configuracao: &HashMap<String, String>, porta: u16) {
         let mut espera = Duration::from_secs(5);
         while !estado.sair.load(Ordering::SeqCst) {
             let inicio = Instant::now();
@@ -229,6 +233,7 @@ mod bandeja {
                 }
             };
             estado.rodando.store(true, Ordering::SeqCst);
+            estado.porta_ocupada.store(false, Ordering::SeqCst);
             let saida = loop {
                 if estado.matar.load(Ordering::SeqCst) {
                     let _ = filho.kill();
@@ -250,6 +255,11 @@ mod bandeja {
                 // Terminou sem erro e sem ninguém pedir: alguém desligou o servidor de propósito.
                 break;
             } else {
+                // Caiu logo ao iniciar com a porta ocupada: o servidor não conseguiu escutar nela.
+                if inicio.elapsed() < Duration::from_secs(20) && porta_em_uso(porta) {
+                    estado.porta_ocupada.store(true, Ordering::SeqCst);
+                    registrar(pasta, &format!("A porta {porta} está ocupada por outro programa (por exemplo, outro servidor de mídia ou o Rustyfin no Docker). Pare o outro serviço ou mude RUSTYFIN_PORT no rustyfin.env."));
+                }
                 let codigo = saida.and_then(|s| s.code()).map_or_else(|| "?".to_owned(), |c| c.to_string());
                 registrar(pasta, &format!("Rustyfin encerrou com o código {codigo}; reiniciando em {} segundos.", espera.as_secs()));
                 if !estado.sair.load(Ordering::SeqCst) {
@@ -264,6 +274,11 @@ mod bandeja {
             }
         }
         estado.parado.store(true, Ordering::SeqCst);
+    }
+
+    /// Há alguém escutando nesta porta, na própria máquina?
+    fn porta_em_uso(porta: u16) -> bool {
+        TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], porta)), Duration::from_millis(500)).is_ok()
     }
 
     // ---------------------------------------------------------------- desligamento gracioso

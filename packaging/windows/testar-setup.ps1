@@ -44,6 +44,18 @@ function Instalar([string]$ffmpeg) {
 New-Item -ItemType Directory -Force -Path $Midia | Out-Null
 $modo = if ($BaixarFfmpeg) { "baixar" } else { "nenhum" }
 
+Write-Host "0. Verificação de porta ocupada (porta.ps1, usada pelo assistente)"
+$script_porta = Join-Path $PSScriptRoot "porta.ps1"
+$ocupada = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, $Porta + 100)
+$ocupada.Start()
+& $script_porta -Porta ($Porta + 100)
+Conferir "uma porta em uso é reconhecida como ocupada" ($LASTEXITCODE -eq 1)
+$sugerida = & $script_porta -Porta ($Porta + 100) -Procurar
+Conferir "a busca sugere outra porta livre ($sugerida)" ($LASTEXITCODE -eq 0 -and [int]$sugerida -gt ($Porta + 100))
+$ocupada.Stop()
+& $script_porta -Porta ($Porta + 100)
+Conferir "a mesma porta, depois de liberada, é reconhecida como livre" ($LASTEXITCODE -eq 0)
+
 Write-Host "1. Instalação sem telas (ffmpeg: $modo)"
 $codigo = Instalar $modo
 Conferir "o setup terminou com código 0 (recebido $codigo)" ($codigo -eq 0)

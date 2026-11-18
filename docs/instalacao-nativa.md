@@ -162,6 +162,12 @@ driver do sistema.
 | `8096/tcp` | O app e o painel |
 | `7359/udp` | Descoberta automática dos apps |
 
+**Porta padrão e outra porta:** o padrão é a **8096**, a que os apps esperam. O setup do Windows pergunta a porta (já
+preenchida com 8096) e **confere se ela está livre**: se outro servidor de mídia ou o Rustyfin no Docker a estiver usando,
+ele avisa e sugere a próxima livre. Para trocar depois, edite `RUSTYFIN_PORT` no `rustyfin.env` e reinicie (nos apps, use o
+endereço com a nova porta). Rodar o Docker e o Rustyfin nativo ao mesmo tempo exige portas diferentes. Se o servidor não
+conseguir escutar a porta, o ícone da bandeja mostra "a porta está ocupada" ao passar o mouse e o `rustyfin.log` explica.
+
 Fora do Docker o servidor **detecta sozinho o IP da rede**; não precisa do `RUSTYFIN_PUBLIC_URL` (só se ele escolher a placa
 de rede errada). No Windows, o Firewall pergunta na primeira vez: permita na **rede privada**.
 

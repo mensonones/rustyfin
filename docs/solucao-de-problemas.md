@@ -8,6 +8,7 @@ leia com `docker compose logs -f`.
 | Sintoma | Causa provável e solução |
 |---|---|
 | Não aparece na descoberta automática | Em **Docker**, defina `RUSTYFIN_PUBLIC_URL` com o IP do PC (ex.: `http://192.168.1.10:8096`) e publique a porta `7359/udp`. Confirme que o app e o servidor estão na mesma rede |
+| O servidor não sobe e o log diz "a porta 8096 está ocupada" (ou `AddrInUse`) | Outro programa usa a porta: outro servidor de mídia ou o Rustyfin no Docker. Pare o outro serviço, ou mude `RUSTYFIN_PORT` no `rustyfin.env` e reinicie. Nos apps, use o endereço com a nova porta. No Windows, o ícone da bandeja mostra o aviso ao passar o mouse |
 | Aparecia e sumiu | O Moonfin **esconde os servidores já salvos** da lista de descobertos. Remova o servidor antigo no app |
 | Nem digitando o IP conecta | Permita a porta `8096/tcp` (e `7359/udp`) no Firewall para a **rede privada**. Teste `http://<ip>:8096/System/Info/Public` no navegador do celular |
 | Conecta no PC, mas não no celular | Use o IP da rede (`192.168...`), não `localhost`; confira se o celular está no mesmo Wi-Fi e se o isolamento de clientes do roteador está desligado |

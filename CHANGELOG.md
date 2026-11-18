@@ -5,6 +5,14 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.25.1] - 2026-11-18
+
+### Adicionado
+- Setup do Windows: confere se a porta escolhida (padrão 8096) está livre e, se outro servidor de mídia ou o Rustyfin no
+  Docker a estiver usando, avisa e sugere a próxima livre (`porta.ps1`). Numa atualização e no modo sem telas, não pergunta.
+- Ícone da bandeja: se o servidor cair logo ao iniciar porque a porta está ocupada, o passa-mouse mostra "a porta está
+  ocupada por outro programa" e o `rustyfin.log` explica o que fazer, em vez de reiniciar em silêncio.
+
 ## [0.25.0] - 2026-11-18
 
 ### Adicionado

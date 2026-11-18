@@ -62,6 +62,7 @@ Source: "{#TrayPath}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "iniciar.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "tarefa.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "firewall.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "porta.ps1"; Flags: dontcopy
 Source: "..\rustyfin.env.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 
@@ -293,9 +294,38 @@ begin
     @OnDownloadProgress);
 end;
 
+{ Confere se uma porta TCP está livre (porta.ps1, extraído para a pasta temporária). Se não der para conferir, não atrapalha. }
+function PortaLivre(Porta: Integer): Boolean;
+var
+  Codigo: Integer;
+begin
+  Result := True;
+  ExtractTemporaryFile('porta.ps1');
+  if Exec('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\porta.ps1') + '" -Porta '
+      + IntToStr(Porta), '', SW_HIDE, ewWaitUntilTerminated, Codigo) then
+    Result := (Codigo = 0);
+end;
+
+{ A primeira porta livre a partir da informada (a própria informada, se der). }
+function ProximaPortaLivre(Porta: Integer): Integer;
+var
+  Arquivo: string;
+  Conteudo: AnsiString;
+  Codigo: Integer;
+begin
+  Result := Porta;
+  Arquivo := ExpandConstant('{tmp}\porta-livre.txt');
+  DeleteFile(Arquivo);
+  ExtractTemporaryFile('porta.ps1');
+  if Exec('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\porta.ps1') + '" -Porta '
+      + IntToStr(Porta) + ' -Procurar -Saida "' + Arquivo + '"', '', SW_HIDE, ewWaitUntilTerminated, Codigo) then
+    if (Codigo = 0) and LoadStringFromFile(Arquivo, Conteudo) then
+      Result := StrToIntDef(Trim(String(Conteudo)), Porta);
+end;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
-  Porta: Integer;
+  Porta, Sugerida, Resposta: Integer;
 begin
   Result := True;
   if CurPageID = PaginaRede.ID then
@@ -306,6 +336,27 @@ begin
       MsgBox('Informe uma porta entre 1024 e 65535.', mbError, MB_OK);
       Result := False;
       Exit;
+    end;
+    { Porta ocupada (outro servidor de mídia, o Rustyfin no Docker...): avisa e sugere a próxima livre. Numa atualização
+      a porta pode ser do próprio Rustyfin, então não pergunta; no modo sem telas também não. }
+    if (not WizardSilent) and (not FileExists(ExpandConstant('{app}\rustyfin.exe'))) and (not PortaLivre(Porta)) then
+    begin
+      Sugerida := ProximaPortaLivre(Porta + 1);
+      Resposta := MsgBox('A porta ' + IntToStr(Porta) + ' já está em uso neste computador, por exemplo por outro servidor '
+        + 'de mídia ou pelo Rustyfin no Docker.' + #13#10#13#10 + 'Usar a porta ' + IntToStr(Sugerida) + ' no lugar?'
+        + #13#10#13#10 + 'Sim: usar a ' + IntToStr(Sugerida) + '.' + #13#10 + 'Não: manter a ' + IntToStr(Porta)
+        + ' (pare o outro serviço antes de iniciar o Rustyfin).' + #13#10 + 'Cancelar: voltar e escolher outra.',
+        mbConfirmation, MB_YESNOCANCEL);
+      if Resposta = IDYES then
+      begin
+        PaginaRede.Values[0] := IntToStr(Sugerida);
+        Porta := Sugerida;
+      end
+      else if Resposta = IDCANCEL then
+      begin
+        Result := False;
+        Exit;
+      end;
     end;
     PortaEscolhida := IntToStr(Porta);
   end;
