@@ -141,7 +141,7 @@ O painel só é acessível pela rede local e pode exigir senha. Detalhes em
 
 ### Acervo
 
-![Aba Acervo, com filtros de situação, busca e a lista de títulos](docs/assets/painel-acervo.png)
+![Aba Acervo, com filtros de situação, busca e a lista de títulos](docs/assets/painel-acervo-capas.png)
 
 A aba **Acervo** lista todos os filmes e episódios que a varredura encontrou, com a capa de cada um, e mostra o que falta: metadados,
 capa, legenda, assinatura e cenas indexadas. Filtre por problema, busque por título ou caminho e rode as ações (indexar
