@@ -529,6 +529,15 @@ async fn logo_dark() -> impl IntoResponse {
     ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=86400")], include_bytes!("../assets/icon-dark.png").as_slice())
 }
 
+/// Fontes do painel e da busca de cenas (Geist, licença OFL), embutidas no binário. Públicas e imutáveis.
+pub async fn fonte_geist() -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "font/woff2"), (header::CACHE_CONTROL, "public, max-age=31536000, immutable")], include_bytes!("../assets/fontes/geist-latin.woff2").as_slice())
+}
+
+pub async fn fonte_geist_mono() -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "font/woff2"), (header::CACHE_CONTROL, "public, max-age=31536000, immutable")], include_bytes!("../assets/fontes/geist-mono-latin.woff2").as_slice())
+}
+
 async fn logo() -> impl IntoResponse {
     ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=86400")], include_bytes!("../assets/icon.png").as_slice())
 }

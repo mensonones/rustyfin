@@ -687,3 +687,16 @@ async fn versoes_preparadas_comecam_vazias_e_nao_aceitam_chaves_desconhecidas() 
     let (status, _) = call(&s.app, Method::POST, "/admin/api/preparos/chave-que-nao-existe", None, None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+
+#[tokio::test]
+async fn as_fontes_do_painel_sao_publicas_e_estaticas() {
+    let s = server("fontes").await;
+    for arquivo in ["geist-latin.woff2", "geist-mono-latin.woff2"] {
+        let (status, bytes) = corpo(&s.app, Method::GET, &format!("/assets/fontes/{arquivo}"), None, None).await;
+        assert_eq!(status, StatusCode::OK, "{arquivo}");
+        assert_eq!(&bytes[..4], b"wOF2", "{arquivo} deve ser um woff2");
+    }
+    let (status, _) = corpo(&s.app, Method::GET, "/assets/fontes/outra-coisa.woff2", None, None).await;
+    assert_ne!(status, StatusCode::OK, "só as duas fontes embutidas são servidas");
+}

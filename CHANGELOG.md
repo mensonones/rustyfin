@@ -5,6 +5,24 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.21.0] - 2026-11-18
+
+### Alterado
+- Painel de administração redesenhado: tema Coral com modo claro e escuro (segue o sistema e lembra a escolha), barra
+  superior com as cinco abas, paleta de comandos (Ctrl K) e avisos só do que precisa de atenção (FFmpeg ausente, painel
+  sem senha, assinaturas pendentes).
+- Listas de bibliotecas, usuários e sessões com estados de carregamento, vazio e erro; ações raras em menus; barra de
+  varredura com progresso; configurações com indicação de alterações não salvas e botão de descartar.
+- `confirm()` e `prompt()` do navegador trocados por diálogos próprios, acessíveis por teclado.
+- A página `/cenas` usa o mesmo visual e o mesmo tema do painel.
+- Todos os ids e chamadas à API do painel foram preservados; só o seletor de seção do celular deu lugar às abas, que
+  rolam de lado.
+
+### Adicionado
+- Fontes Geist e Geist Mono (licença OFL) e ícones Lucide (ISC) embutidos no binário, sem CDN. Rotas públicas
+  `/assets/fontes/geist-latin.woff2` e `/assets/fontes/geist-mono-latin.woff2`, com cache longo.
+- Teste de integração das rotas de fontes.
+
 ## [0.20.4] - 2026-11-18
 
 ### Adicionado

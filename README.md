@@ -63,7 +63,7 @@ sobe em segundos e usa **poucas dezenas de megabytes de memória**.
 - [Ajuste de legendas SRT](docs/reproducao.md#corrigir-uma-faixa-srt) no painel, com atraso fixo e desvio progressivo por dois pontos.
 
 **Administração**
-- Painel web em `/admin`: bibliotecas, usuários e permissões, dispositivos conectados e configurações, sem reiniciar.
+- Painel web em `/admin` com tema claro/escuro, paleta de comandos (Ctrl K) e avisos do que precisa de atenção: bibliotecas, usuários e permissões, dispositivos conectados e configurações, sem reiniciar.
 - [Revisão de alterações do acervo](docs/arquitetura.md#revisar-alterações-do-acervo) para transferir favoritos, marcações de assistido e posições de retomada entre edições.
 - Vários usuários, cada um com progresso e favoritos próprios, acesso por biblioteca, foto de perfil e perfil oculto.
 - Descoberta automática na rede (UDP 7359): o app encontra o servidor sozinho.
@@ -113,7 +113,7 @@ cargo run --release
 
 ## Painel de administração
 
-![Diretório de bibliotecas com varredura e manutenção ao lado](docs/assets/diretorio-bibliotecas.jpg)
+![Diretório de bibliotecas com varredura e manutenção ao lado](docs/assets/diretorio-bibliotecas.png)
 
 O painel só é acessível pela rede local e pode exigir senha. Detalhes em
 [docs/usuarios-e-seguranca.md](docs/usuarios-e-seguranca.md).

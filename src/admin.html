@@ -3,316 +3,355 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Administração do servidor de mídia Rustyfin.">
+<meta name="description" content="Administração do servidor de mídia Rustyfin: bibliotecas, usuários, sessões, configurações e diagnóstico.">
 <title>Rustyfin Admin</title>
+<script>try{var t=localStorage.getItem('rustyfin-tema');if(!t&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="icon" type="image/png" href="/admin/favicon.png">
 <link rel="icon" type="image/png" href="/admin/favicon-dark.png" media="(prefers-color-scheme: dark)">
+<link rel="preload" href="/assets/fontes/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
-  /* Hallmark · v2.0.0 · custom · shape: app screen · genre: modern-minimal */
-  /* Hallmark · critique: replace the tall cards with compact records and give operations their own column */
-  /* Hallmark · waive 28b · preview video is below the fold · local subtitle previews have no poster */
+  /* Hallmark · v2.0.0 · theme: coral (dealt 1/3, seed admin-panel-self-hosted-media-705e·f938bf56·2026-11-18·r0) · shape: app screen · genre: modern-minimal · redesign: full · fontes: Geist (OFL) no lugar da General Sans, que não pode ser redistribuída no repositório */
+  /* Hallmark · critique: o que precisa de atenção sobe para a barra, as ações raras vão para menus e cada lista tem seus quatro estados */
+  /* Hallmark · dropped #sectionSelect · as abas rolam de lado no celular, como pede a regra de navegação */
+  /* Hallmark · waive 28b · below the fold and not the LCP · a prévia de vídeo das legendas usa o arquivo do próprio usuário, que não tem pôster */
+  @font-face { font-family: "Geist"; src: url("/assets/fontes/geist-latin.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+  @font-face { font-family: "Geist Mono"; src: url("/assets/fontes/geist-mono-latin.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
   :root {
     color-scheme: light dark;
-    --bg: #f5f1ea; --panel: #fffdf9; --text: #29231e; --muted: #645950;
-    --line: #d9cec1; --accent: #943d24; --accent-text: #fffdf9; --selected: #f2e0d5;
-    --danger: #a32724; --ok: #216546; --warn: #8a4b16; --error-text: #fff;
-    --overlay: rgb(0 0 0 / 55%); --transparent: transparent;
-    --font: system-ui, sans-serif; --mono: ui-monospace, monospace;
-    --motion: 160ms ease-out;
+    --paper: oklch(97% 0.006 55); --paper-2: oklch(94.5% 0.007 55); --paper-3: oklch(91.5% 0.009 55);
+    --panel: oklch(99% 0.004 75);
+    --ink: oklch(21% 0.012 38); --ink-2: oklch(29% 0.013 40); --muted: oklch(47% 0.013 45);
+    --rule: oklch(87% 0.009 55); --rule-2: oklch(81% 0.011 55);
+    --accent: oklch(74% 0.125 30); --accent-ink: oklch(21% 0.012 38);
+    --action: oklch(54% 0.165 29); --action-ink: oklch(99% 0.004 75); --action-hover: oklch(49% 0.165 29);
+    --link: oklch(48% 0.165 29); --focus: oklch(54% 0.17 30);
+    --ok: oklch(46% 0.1 155); --ok-wash: oklch(95% 0.03 155);
+    --warn: oklch(48% 0.1 65); --warn-wash: oklch(95% 0.045 80);
+    --danger: oklch(48% 0.17 27); --danger-wash: oklch(95% 0.03 25);
+    --scrim: oklch(20% 0.01 40 / 0.5);
+    --font: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace;
+    --radius: 8px; --radius-sm: 6px; --radius-pill: 999px;
+    --edge: inset 0 1px 0 oklch(100% 0 0 / 0.9), 0 0 0 1px oklch(32% 0.03 50 / 0.12), 0 1px 2px oklch(20% 0.01 35 / 0.05);
+    --lift: 0 8px 24px -8px oklch(32% 0.03 50 / 0.3);
+    --dur-micro: 120ms; --dur-short: 200ms; --ease: cubic-bezier(0.2, 0, 0, 1);
+    --text-xs: 0.8125rem; --text-sm: 0.875rem; --text-base: 1rem; --text-lg: 1.125rem; --text-xl: 1.375rem; --text-2xl: 1.75rem;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #1c1917; --panel: #25211e; --text: #f4ede4; --muted: #c3b5a8;
-      --line: #473d35; --accent: #f2a480; --accent-text: #2d170e; --selected: #412b21;
-      --danger: #ffaaa4; --ok: #9ad8b4; --warn: #f0be80; --error-text: #321210;
-    }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: oklch(19% 0.01 40); --paper-2: oklch(22.5% 0.011 40); --paper-3: oklch(26% 0.012 40);
+    --panel: oklch(23.5% 0.011 40);
+    --ink: oklch(95% 0.006 70); --ink-2: oklch(86% 0.008 65); --muted: oklch(72% 0.012 55);
+    --rule: oklch(32% 0.012 45); --rule-2: oklch(40% 0.013 45);
+    --accent: oklch(74% 0.125 30); --accent-ink: oklch(20% 0.02 35);
+    --action: oklch(74% 0.125 30); --action-ink: oklch(20% 0.02 35); --action-hover: oklch(79% 0.12 30);
+    --link: oklch(80% 0.11 30); --focus: oklch(80% 0.12 30);
+    --ok: oklch(80% 0.1 155); --ok-wash: oklch(28% 0.04 155);
+    --warn: oklch(82% 0.1 80); --warn-wash: oklch(30% 0.05 75);
+    --danger: oklch(78% 0.13 25); --danger-wash: oklch(29% 0.05 25);
+    --scrim: oklch(8% 0.01 40 / 0.65);
+    --edge: inset 0 1px 0 oklch(100% 0 0 / 0.06), 0 0 0 1px oklch(100% 0 0 / 0.07);
+    --lift: 0 12px 28px -10px oklch(5% 0.01 40 / 0.7);
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--font); }
-  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px 24px; background: var(--panel); border-bottom: 1px solid var(--line); }
-  header h1 { margin: 0; font-size: 18px; font-weight: 650; }
-  header .sub { color: var(--muted); font-size: 13px; }
-  nav { display: flex; gap: 4px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
-  nav button { background: var(--transparent); border: 0; border-bottom: 2px solid var(--transparent); padding: 12px 16px; color: var(--muted); font: inherit; cursor: pointer; white-space: nowrap; }
-  nav button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; background: var(--selected); }
-  main { max-width: 920px; margin: 0 auto; padding: 20px 16px 60px; }
-  [hidden] { display: none !important; }
-  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .page-heading .hint { margin: 0; }
-  .row.between { justify-content: space-between; }
-  h2 { font-size: 16px; margin: 0 0 4px; }
-  p.hint { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
-  .card { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: none; }
-  .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
-  .paths { list-style: none; margin: 12px 0 0; padding: 0; }
-  .paths li { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; font-family: var(--mono); font-size: 13px; }
-  .paths li span { flex: 1; overflow-wrap: anywhere; }
-  .empty { color: var(--muted); font-size: 13px; margin-top: 12px; }
-  button.btn { font: inherit; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
-  button.btn:hover { border-color: var(--accent); }
-  button.btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
-  button.btn.danger { color: var(--danger); }
-  button.btn.small { padding: 4px 12px; font-size: 13px; }
-  button.btn:disabled { background: var(--bg); color: var(--muted); cursor: not-allowed; }
-  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
-  input, select { width: 100%; font: inherit; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
-  input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .ok { color: var(--ok); } .bad { color: var(--danger); } .warn { color: var(--warn); }
-  dialog { border: 1px solid var(--line); border-radius: 14px; padding: 0; width: min(560px, calc(100% - 24px)); background: var(--panel); color: var(--text); }
-  dialog::backdrop { background: var(--overlay); }
-  dialog .body { padding: 20px 20px 8px; }
-  dialog .foot { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 20px 20px; }
-  .browser { border: 1px solid var(--line); border-radius: 8px; max-height: 260px; overflow: auto; margin-top: 8px; }
-  .browser button { display: block; width: 100%; text-align: left; padding: 8px 12px; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--text); font: inherit; cursor: pointer; }
-  .browser button:last-child { border-bottom: 0; }
-  .browser button:hover { background: var(--bg); }
-  #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 12px 16px; border-radius: 10px; font-size: 14px; opacity: 0; pointer-events: none;  max-width: calc(100% - 32px); }
-  #toast.show { opacity: 1; }
-  #toast.err { background: var(--danger); color: var(--error-text); }
   html, body { overflow-x: clip; }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  button.btn:active, summary:active { transform: translateY(1px); }
-  .shell { background: var(--panel); border-bottom: 1px solid var(--line); }
-  header, nav, main { width: 100%; max-width: 1120px; margin-inline: auto; padding-inline: 24px; }
-  header, nav { border: 0; }
-  header h1 { display: flex; align-items: center; gap: 8px; }
-  header img { display: block; }
-  main { padding-block: 32px 64px; }
-  h2 { font-size: 22px; min-width: 0; overflow-wrap: break-word; text-wrap: balance; }
-  h3 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
-  .page-heading { margin-bottom: 16px; }
-  .scan { padding: 16px; margin-bottom: 24px; background: var(--panel);
-    border: 1px solid var(--line); border-radius: 8px; }
-  .scan p { margin: 4px 0 0; color: var(--muted); }
-  .records { border-top: 1px solid var(--line); }
-  .records > .card, .library { margin: 0; padding: 16px; border: 0;
-    border-bottom: 1px solid var(--line); border-radius: 0; background: var(--panel); color: var(--text); }
-  .library .hint { margin: 0; }
-  details > summary { cursor: pointer; padding: 8px; width: fit-content; }
-  .library > details { margin-top: 8px; }
+  html { scroll-padding-top: 76px; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 var(--text-base)/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+  [hidden] { display: none !important; }
+  ::selection { background: var(--accent); color: var(--accent-ink); }
+  a { color: var(--link); text-underline-offset: 4px; }
+  b, strong { font-weight: 600; }
+  h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.02em; text-wrap: balance; overflow-wrap: anywhere; }
+  button, input, select { font: inherit; color: inherit; }
+  code { font: 400 var(--text-xs) var(--mono); background: var(--paper-2); border-radius: 4px; padding: 4px 8px; overflow-wrap: anywhere; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; transition: none; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  svg.i.sm { width: 16px; height: 16px; }
+
+  /* Barra do topo */
+  .bar { position: sticky; top: 0; z-index: 20; background: color-mix(in oklab, var(--paper) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--rule); }
+  .bar-in { max-width: 1240px; margin: 0 auto; padding: 0 24px; min-height: 60px; display: flex; align-items: center; gap: 16px; }
+  .brand { display: flex; flex: none; white-space: nowrap; align-items: center; gap: 12px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); text-decoration: none; margin: 0; font-size: var(--text-base); }
+  .brand img { display: block; width: 32px; height: 32px; border-radius: 8px; }
+  .brand small { display: block; white-space: nowrap; font-weight: 400; font-size: var(--text-xs); color: var(--muted); letter-spacing: 0; line-height: 1.1; }
+  nav[role="tablist"] { display: flex; flex: 1 1 auto; gap: 4px; overflow-x: auto; scrollbar-width: none; margin-inline: 4px; }
+  nav[role="tablist"] button { display: inline-flex; align-items: center; gap: 8px; flex: none; padding: 8px 12px; min-height: 40px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-weight: 500; font-size: var(--text-sm); white-space: nowrap; cursor: pointer; transition: background var(--dur-micro) var(--ease), color var(--dur-micro) var(--ease); }
+  nav[role="tablist"] button:hover { background: var(--paper-2); color: var(--ink); }
+  nav[role="tablist"] button[aria-selected="true"] { background: var(--paper-3); color: var(--ink); }
+  .bar-tools { display: flex; align-items: center; gap: 8px; }
+  .health { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: var(--radius-pill); font-size: var(--text-xs); font-weight: 500; border: 1px solid var(--rule-2); color: var(--ink-2); text-decoration: none; background: var(--panel); min-height: 28px; white-space: nowrap; }
+  .chip.ok, .badge.ok { color: var(--ok); border-color: color-mix(in oklab, var(--ok) 35%, transparent); background: var(--ok-wash); }
+  .chip.warn, .badge.warn { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 40%, transparent); background: var(--warn-wash); }
+  .chip.bad, .badge.bad { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 40%, transparent); background: var(--danger-wash); }
+  .chip svg.i { width: 14px; height: 14px; }
+  a.chip:hover { background: var(--paper-2); }
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: var(--radius-pill); font-size: var(--text-xs); font-weight: 500; border: 1px solid var(--rule-2); color: var(--ink-2); background: transparent; white-space: nowrap; }
+
+  /* Controles */
+  .btn, button.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 16px; border-radius: var(--radius-sm); border: 1px solid var(--rule-2); background: transparent; color: var(--ink); font-weight: 500; font-size: var(--text-sm); cursor: pointer; box-shadow: var(--edge); white-space: nowrap; text-decoration: none; transition: background var(--dur-micro) var(--ease), transform var(--dur-micro) var(--ease), box-shadow var(--dur-micro) var(--ease); }
+  .btn:hover { background: var(--paper-2); }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled, .btn[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; transform: none; }
+  .btn.primary { background: var(--action); color: var(--action-ink); border-color: transparent; }
+  .btn.primary:hover:enabled { background: var(--action-hover); }
+  .btn.danger { color: var(--danger); }
+  .btn.danger.solid { background: var(--danger); color: var(--paper); border-color: transparent; }
+  .btn.danger.solid:hover { background: color-mix(in oklab, var(--danger) 88%, var(--ink)); }
+  .btn.ghost { border-color: transparent; box-shadow: none; color: var(--ink-2); }
+  .btn.ghost:hover { background: var(--paper-2); }
+  .btn.icon { width: 40px; padding: 0; }
+  .btn.small { min-height: 32px; padding: 0 12px; }
+  .btn.small.icon { width: 32px; padding: 0; }
+  kbd { font: 500 var(--text-xs) var(--mono); padding: 4px 8px; border-radius: 4px; border: 1px solid var(--rule-2); background: var(--paper-2); color: var(--muted); }
+  label { display: block; font-size: var(--text-sm); font-weight: 500; margin: 16px 0 8px; }
+  input, select { width: 100%; min-height: 40px; padding: 0 12px; border: 1px solid var(--muted); border-radius: var(--radius-sm); background: var(--panel); color: var(--ink); }
+  input:focus-visible, select:focus-visible { outline-offset: -1px; }
+  input[readonly] { background: var(--paper-2); }
+  input[type="checkbox"], input[type="radio"] { width: 20px; min-height: 20px; height: 20px; padding: 0; accent-color: var(--action); flex: none; margin: 0; }
+  label.check, label.destino-revisao { display: flex; gap: 12px; align-items: flex-start; font-weight: 500; margin: 12px 0 0; }
+  label.check span, label.destino-revisao span { display: block; color: var(--muted); font-weight: 400; font-size: var(--text-sm); }
+  fieldset { min-width: 0; padding: 0; border: 0; margin: 16px 0 0; }
+  legend { font-weight: 500; font-size: var(--text-sm); padding: 0; margin-bottom: 8px; }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .row.between { justify-content: space-between; }
+  .hint { margin: 0 0 16px; color: var(--muted); font-size: var(--text-sm); }
+  p.hint:last-child { margin-bottom: 0; }
+
+  /* Página */
+  main { max-width: 1240px; margin: 0 auto; padding: 32px 24px 96px; }
+  [role="tabpanel"] { min-width: 0; }
+  .page-heading { margin-bottom: 24px; align-items: flex-end; }
+  .page-heading h2 { font-size: var(--text-2xl); line-height: 1.15; }
+  .page-heading .hint { margin: 8px 0 0; max-width: 64ch; }
+  h2.page-heading { font-size: var(--text-2xl); line-height: 1.15; margin-bottom: 24px; }
+  h3 { font-size: var(--text-base); letter-spacing: -0.01em; }
+  .card { background: var(--panel); color: var(--ink); border-radius: var(--radius); box-shadow: var(--edge); padding: 20px; margin-bottom: 16px; }
+  .card > h3 { margin-bottom: 4px; }
+  .empty { display: grid; justify-items: center; gap: 8px; padding: 32px 20px; text-align: center; color: var(--muted); font-size: var(--text-sm); margin: 0; }
+  .empty b { color: var(--ink); font-weight: 600; font-size: var(--text-base); }
+  .err { display: flex; gap: 12px; padding: 16px 20px; align-items: flex-start; color: var(--danger); background: var(--danger-wash); border-radius: var(--radius); font-size: var(--text-sm); margin-bottom: 16px; }
+  .err .row { margin-top: 8px; }
+  .skel { display: grid; gap: 12px; padding: 20px; background: var(--panel); border-radius: var(--radius); box-shadow: var(--edge); margin-bottom: 16px; }
+  .skel i { display: block; height: 16px; border-radius: 4px; background: linear-gradient(90deg, var(--paper-2), var(--paper-3), var(--paper-2)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+  .skel i:nth-child(1) { width: 40%; } .skel i:nth-child(2) { width: 88%; } .skel i:nth-child(3) { width: 64%; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+  .feedback { margin-bottom: 16px; }
+
+  /* Bibliotecas */
+  .library-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start; }
+  .library-directory, .operations { min-width: 0; }
+  .directory-heading { padding: 16px 20px; background: var(--panel); border-radius: var(--radius) var(--radius) 0 0; box-shadow: var(--edge); font-size: var(--text-base); }
+  .records { background: var(--panel); border-radius: var(--radius); box-shadow: var(--edge); }
+  .library-directory .records { border-radius: 0 0 var(--radius) var(--radius); }
+  .records:empty { display: none; }
+  .records > :first-child { border-top: 0; }
+  .library, .person { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 16px; align-items: start; padding: 16px 20px; border-top: 1px solid var(--rule); }
+  .ico { width: 40px; height: 40px; border-radius: 8px; background: var(--paper-2); color: var(--ink-2); display: grid; place-items: center; overflow: hidden; }
+  .ico img { width: 100%; height: 100%; object-fit: cover; }
+  .ico.avatar { border-radius: 50%; font-weight: 600; }
+  .library-identity, .person-id { min-width: 0; }
+  .library-identity h3, .person-id h3 { font-size: var(--text-base); }
+  .meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+  .library .hint, .person .hint { margin: 4px 0 0; }
+  .tag { font-size: var(--text-xs); color: var(--ink-2); border: 1px solid var(--rule-2); border-radius: var(--radius-pill); padding: 4px 8px; }
+  .library-tools, .person-tools { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+  .paths { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+  .paths li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 4px 4px 12px; background: var(--paper-2); border-radius: var(--radius-sm); font: 400 var(--text-xs) var(--mono); min-height: 40px; }
+  .paths li span { flex: 1; overflow-wrap: anywhere; }
+  .paths .empty { padding: 4px 0; justify-items: start; font: 400 var(--text-sm) var(--font); }
   .actions { position: relative; }
-  .actions > div { position: absolute; z-index: 1; inset-inline-end: 0; min-width: 144px;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px; }
-  .actions button { display: block; width: 100%; text-align: start; }
-  .btn.small { min-height: 36px; }
-  .metrics { display: flex; flex-wrap: wrap; gap: 16px 40px; margin: 0 0 24px; }
-  .metrics div { min-width: 100px; }
-  .metrics dt { color: var(--muted); }
-  .metrics dd { margin: 0; font-size: 24px; font-variant-numeric: tabular-nums; }
-  .service { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-    gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
-  .service dd { margin: 0; overflow-wrap: anywhere; }
-  .service small { display: block; color: var(--muted); }
-  #serverDetails p { overflow-wrap: anywhere; }
-  .settings input { max-width: 32rem; }
-  .settings input[type=number], #tmdbLang { max-width: 8rem; }
-  .feedback { margin-bottom: 12px; }
-  .feedback p { margin-block: 0 8px; }
-  .preflight { margin-top: 24px; }
-  .preflight form { margin-top: 16px; }
-  .preflight .campos { display: grid; gap: 12px;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
-  .preflight .campos label { margin-top: 0; }
-  .preflight .row { margin-top: 16px; }
-  .preflight output { display: block; margin-top: 16px; }
-  .preflight output ul { margin-block: 4px 8px; padding-inline-start: 20px; }
-  .preflight .resultado { padding-block: 12px; border-top: 1px solid var(--line);
-    overflow-wrap: anywhere; }
-  .legendas { margin-top: 24px; }
-  .legendas fieldset { min-width: 0; padding: 0; border: 0; margin: 0; }
-  .legendas video { display: block; max-width: 100%; width: 640px; margin-block: 16px; }
-  .legendas .amostra { margin-top: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
-  .legendas .amostra p { white-space: pre-wrap; overflow-wrap: anywhere; }
-  .legendas .hint { margin-top: 8px; }
-  .revisoes { margin-bottom: 24px; }
-  .revisoes article { padding-block: 16px; border-top: 1px solid var(--line); }
-  .revisoes code { font-family: var(--mono); overflow-wrap: anywhere; }
-  .revisoes .row { margin-top: 12px; }
-  .revisoes .destino-revisao { margin: 8px 0; }
-  .revisoes .amostra { padding-block: 12px; border-top: 1px solid var(--line); }
-  .revisoes .destino-revisao input { width: auto; margin-inline-end: 8px; }
-  .revisoes .destino-revisao span { display: block; color: var(--muted); }
-  .mobile-nav { display: none; }
-  @media (max-width: 600px) {
-    header, main, .mobile-nav { padding-inline: 16px; }
-    nav { display: none; }
-    .mobile-nav { display: block; padding-bottom: 12px; }
-    main { padding-top: 20px; }
-    button.btn, button.btn.small, summary, select { min-height: 44px; }
-    .service { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    button.btn:active, summary:active { transform: none; }
-  }
-  body { font-size: 16px; }
-  a { color: var(--accent); text-underline-offset: .2em; }
-  .shell {
-    display: grid; grid-template-columns: 13rem minmax(0, 1fr); align-items: start;
-    max-width: 80rem; min-height: 100dvh; margin-inline: auto; background: var(--transparent);
-    border: 0;
-  }
-  .sidebar { position: sticky; top: 0; padding: 32px 16px; }
-  header { display: block; padding: 0 12px 24px; background: var(--transparent); }
-  header .sub { display: block; margin-top: 8px; overflow-wrap: anywhere; }
-  nav { display: grid; gap: 4px; padding: 0; background: var(--transparent); }
-  nav button {
-    position: relative; min-height: 44px; text-align: start; border: 0; border-radius: 8px;
-    padding: 8px 12px;
-  }
-  nav button:hover { background: var(--panel); color: var(--text); }
-  nav button[aria-selected="true"]::before {
-    content: ""; position: absolute; inset: 10px auto 10px 0; width: 3px;
-    border-radius: 2px; background: var(--accent);
-  }
-  .scene-link { display: block; margin-top: 20px; padding: 12px; border-top: 1px solid var(--line); }
-  main { max-width: none; min-width: 0; min-height: 100dvh; border-inline-start: 1px solid var(--line);
-    padding: clamp(24px, 4vw, 56px); }
-  h2 { font-size: clamp(1.8rem, 4vw, 2.55rem); line-height: 1.15; letter-spacing: -.04em; }
-  .page-heading { margin-bottom: 24px; align-items: end; }
-  .page-heading .hint { max-width: 55ch; margin-top: 8px; }
-  .scan { padding: 16px; background: var(--selected); border: 0; }
-  .scan p { font-size: .875rem; }
-  .maintenance { margin-top: 32px; }
-  .maintenance > h3 { margin-bottom: 8px; }
-  .maintenance > details { margin: 0; border-radius: 0; border-width: 0 0 1px; }
-  .maintenance > details:first-of-type { border-block-start-width: 1px; }
-  details.card > summary { width: 100%; padding: 4px 8px; list-style: none; display: flex;
-    align-items: center; justify-content: space-between; gap: 12px; }
+  .actions > summary { list-style: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; min-height: 32px; border-radius: var(--radius-sm); color: var(--ink-2); cursor: pointer; }
+  .actions > summary::-webkit-details-marker { display: none; }
+  .actions > summary:hover, .actions[open] > summary { background: var(--paper-3); }
+  .actions > div { position: absolute; z-index: 5; inset-inline-end: 0; top: calc(100% + 4px); min-width: 180px; background: var(--panel); border-radius: var(--radius); box-shadow: var(--lift), 0 0 0 1px var(--rule-2); padding: 4px; display: grid; gap: 4px; }
+  .actions > div button { display: flex; width: 100%; justify-content: flex-start; border-color: transparent; box-shadow: none; min-height: 40px; }
+  .scan { background: var(--panel); border-radius: var(--radius); box-shadow: var(--edge); padding: 20px; margin-bottom: 16px; }
+  .scan strong { display: block; }
+  .scan p { margin: 4px 0 16px; color: var(--muted); font-size: var(--text-sm); }
+  .scan .row { gap: 8px; }
+  .progress { height: 4px; border-radius: 4px; background: var(--paper-3); overflow: hidden; margin: 0 0 16px; }
+  .progress i { display: block; height: 100%; width: 40%; border-radius: 4px; background: var(--action); animation: indeterminado 1.2s var(--ease) infinite; }
+  @keyframes indeterminado { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+  .signatures { margin: 0; font-size: var(--text-xs); color: var(--muted); }
+  .maintenance h3 { margin: 0 0 12px; }
+  details.card { padding: 0; }
+  details.card > summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; cursor: pointer; min-height: 56px; border-radius: var(--radius); }
   details.card > summary::-webkit-details-marker { display: none; }
-  details.card > summary::after { content: ""; width: .5em; height: .5em; flex: none;
-    margin-inline-end: .25em; border-inline-end: 2px solid; border-block-end: 2px solid;
-    color: var(--accent); transform: rotate(45deg); transition: transform var(--motion); }
+  details.card > summary::after { content: ""; width: 8px; height: 8px; flex: none; border-inline-end: 2px solid var(--muted); border-block-end: 2px solid var(--muted); transform: rotate(45deg); transition: transform var(--dur-short) var(--ease); }
   details.card[open] > summary::after { transform: rotate(225deg); }
-  details.card[open] > summary { margin-bottom: 12px; }
+  details.card > summary:hover { background: var(--paper-2); }
   details.card:not([open]) > :not(summary) { display: none; }
-  #buscarIndices { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  details.card > :not(summary) { margin-inline: 20px; }
+  details.card > :last-child { margin-bottom: 20px; }
+  details.card[open] > summary { border-radius: var(--radius) var(--radius) 0 0; }
+  #catalogoIndices[open] #buscarIndices { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
   #buscarIndices label { grid-column: 1 / -1; margin: 0; }
-  #opcoesIndices .row { margin-top: 12px; }
-  button.btn { transition: transform var(--motion), opacity var(--motion); }
-  button.btn:enabled:hover { background: var(--selected); }
-  button.btn.primary:enabled:hover { background: var(--accent); opacity: .86; }
-  input, select { border-color: var(--muted); }
-  #toast { left: auto; right: 20px; transform: translateY(6px);
-    transition: opacity var(--motion), transform var(--motion); }
-  #toast.show { transform: translateY(0); }
-  @keyframes painel-entrada { from { opacity: .55; transform: translateY(4px); } }
-  [role="tabpanel"]:not([hidden]) { animation: painel-entrada var(--motion); }
-  @media (max-width: 720px) {
-    .shell { display: block; }
-    .sidebar { position: static; display: grid; grid-template-columns: minmax(0, 1fr) auto;
-      align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
-    header, .mobile-nav { padding: 0; }
-    nav { display: none; }
-    .mobile-nav { display: block; grid-column: 1 / -1; }
-    .scene-link { margin-top: 0; border: 0; padding: 8px 0 8px 12px; }
-    main { min-height: auto; border: 0; padding: 24px 16px 48px; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    :root { --motion: 0s; }
-    [role="tabpanel"]:not([hidden]) { animation: none; }
-  }
-  :root {
-    --bg: #f3f5f6; --panel: #fff; --text: #172932; --muted: #526870; --line: #cad5d9;
-    --accent: #005c53; --accent-text: #fff; --selected: #dbede6;
-    --mast: #172932; --mast-ink: #f0f7f5; --mast-muted: #bdcfce; --signal: #a7efcd;
-    --font: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #101b21; --panel: #18272e; --text: #e8f0f2; --muted: #a5bac3; --line: #354b55;
-      --accent: #a7efcd; --accent-text: #122820; --selected: #213d38;
-      --mast: #0b151a; --mast-ink: #f0f7f5; --mast-muted: #bdcfce;
-    }
-  }
-  .shell { display: block; max-width: none; }
-  .sidebar { position: static; display: block; padding: 0; background: var(--mast); color: var(--mast-ink); }
-  .mast-inner { max-width: 80rem; margin-inline: auto; padding: 12px 24px 0; display: grid;
-    grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; align-items: center; }
-  header { display: flex; align-items: center; gap: 16px; padding: 0; }
-  header .sub { color: var(--mast-muted); margin: 0; }
-  .scene-link { grid-column: 2; grid-row: 1; margin: 0; padding: 8px 0; border: 0; color: var(--signal); }
-  .sidebar :focus-visible { outline-color: var(--signal); }
-  nav { display: flex; grid-column: 1 / -1; margin-top: 8px; width: auto; max-width: none; margin-inline: 0; }
-  nav button, nav button:hover { color: var(--mast-muted); background: var(--transparent); border-radius: 0; }
-  nav button[aria-selected="true"], nav button:hover { color: var(--mast-ink); }
-  nav button[aria-selected="true"] { background: var(--transparent); }
-  nav button[aria-selected="true"]::before { inset: auto 12px 0; width: auto; height: 3px; background: var(--signal); }
-  main { max-width: 80rem; padding: clamp(24px, 4vw, 48px) 24px 64px; border: 0; }
-  h2 { letter-spacing: -.055em; }
-  button.btn { border-radius: 6px; }
-  .library-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(17rem, 30%); gap: 24px; align-items: start; }
-  .library-directory { min-width: 0; }
-  .directory-heading { padding: 12px 16px; border: 1px solid var(--line); border-bottom: 0; background: var(--panel); border-radius: 8px 8px 0 0; }
-  .library-directory .records { border-inline: 1px solid var(--line); }
-  .library-directory .empty { padding-inline: 16px; }
-  .library { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px;
-    align-items: center; padding: 12px 16px; }
-  .library-identity { min-width: 0; }
-  .library-identity h3 { font-size: .9375rem; }
-  .library-tools { justify-content: end; gap: 8px; }
-  .library > details { margin: 0; display: contents; }
-  .library > details:not([open]) > .paths { display: none; }
-  .library > details > summary { grid-column: 2; grid-row: 1; font-size: .875rem; color: var(--accent); }
-  .library .paths { grid-column: 1 / -1; margin: 0; }
-  .library-tools .btn { border-color: var(--transparent); background: var(--transparent); }
-  .library-tools .actions summary { list-style: none; text-align: center; min-width: 36px; border-radius: 6px; }
-  .library-tools .actions summary::-webkit-details-marker { display: none; }
-  .library-tools .actions summary:hover { background: var(--selected); }
-  .library-tools .actions > div { z-index: 2; box-shadow: 0 8px 24px var(--overlay); }
-  .operations { border-inline-start: 1px solid var(--line); padding-inline-start: 24px; min-width: 0; }
-  .scan { display: block; background: var(--selected); margin: 0; }
-  .scan .row { margin-top: 12px; gap: 8px; }
-  .maintenance { margin-top: 24px; }
-  .maintenance > details { background: var(--transparent); padding-inline: 0; }
-  .maintenance > details > summary { padding-inline: 0; }
-  @media (max-width: 820px) {
+  #opcoesIndices .row { margin-top: 16px; }
+
+  /* Sessões e usuários */
+  .person-id .meta .badge { margin: 0; }
+  .person.compact { grid-template-columns: minmax(0, 1fr) auto; }
+  #usersWarn .warnbox { display: flex; gap: 12px; align-items: flex-start; padding: 16px 20px; margin-bottom: 16px; border-radius: var(--radius); background: var(--warn-wash); color: var(--warn); font-size: var(--text-sm); }
+
+  /* Diagnóstico */
+  .metrics { display: flex; flex-wrap: wrap; gap: 24px 40px; margin: 0 0 24px; padding: 20px; background: var(--panel); border-radius: var(--radius); box-shadow: var(--edge); font-variant-numeric: tabular-nums; }
+  .metrics div { min-width: 96px; }
+  .metrics dt { color: var(--muted); font-size: var(--text-xs); }
+  .metrics dd { margin: 4px 0 0; font: 500 var(--text-xl)/1.1 var(--mono); letter-spacing: -0.02em; }
+  #statusGrid { margin-bottom: 24px; }
+  #statusGrid h3 { margin: 0 0 12px; }
+  .service { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 16px 20px; border-top: 1px solid var(--rule); }
+  .service:first-child { border-top: 0; }
+  .service > svg { margin-top: 4px; }
+  .service.ok > svg { color: var(--ok); } .service.warn > svg { color: var(--warn); } .service.bad > svg { color: var(--danger); }
+  .service h4 { font-weight: 500; font-size: var(--text-sm); }
+  .service p { margin: 4px 0 0; color: var(--muted); font-size: var(--text-xs); overflow-wrap: anywhere; }
+  #serverDetails { margin-top: 16px; }
+  #serverDetails > summary { padding: 8px 0; min-height: 40px; }
+  #serverDetails > summary::after { display: none; }
+  #serverDetails p { overflow-wrap: anywhere; color: var(--muted); font-size: var(--text-sm); }
+  .preflight, .legendas { max-width: 820px; }
+  .preflight .campos { display: grid; gap: 0 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+  .preflight form { margin-top: 16px; }
+  .preflight output { display: block; margin-top: 16px; }
+  .preflight output ul { margin-block: 8px; padding-inline-start: 20px; }
+  .resultado { padding-block: 16px; border-top: 1px solid var(--rule); overflow-wrap: anywhere; }
+  .resultado p { margin: 8px 0 0; }
+  .legendas video { display: block; max-width: 100%; width: 640px; margin-block: 16px; border-radius: var(--radius-sm); background: var(--paper-3); }
+  .amostra { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--rule); }
+  .amostra p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0; }
+  .revisoes article { padding-block: 20px; border-top: 1px solid var(--rule); }
+  .revisoes article h3 { margin-bottom: 8px; }
+  .revisoes article p { margin: 8px 0; font-size: var(--text-sm); }
+  .revisoes .row { margin-top: 16px; }
+
+  /* Configurações */
+  .settings .card { max-width: 720px; padding: 0; }
+  .settings .card > h3, .settings .card > .hint, .settings .card > label, .settings .card > input, .settings .card > span { margin-inline: 20px; }
+  .settings .card > h3 { margin-top: 20px; }
+  .settings .card > .hint { margin-top: 4px; margin-bottom: 4px; }
+  .settings .card > input { width: calc(100% - 40px); max-width: 480px; }
+  .settings input[type="number"] { max-width: 160px; }
+  .savebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 16px 20px; margin-top: 24px; border-top: 1px solid var(--rule); background: var(--paper-2); border-radius: 0 0 var(--radius) var(--radius); }
+  .savebar .state { font-size: var(--text-sm); color: var(--muted); }
+  .savebar .state.dirty { color: var(--warn); font-weight: 500; }
+  .savebar .row { gap: 8px; }
+
+  /* Diálogos, seletor de pasta e aviso */
+  dialog { border: 0; padding: 0; border-radius: 12px; background: var(--panel); color: var(--ink); width: 560px; max-width: calc(100% - 32px); box-shadow: var(--lift), 0 0 0 1px var(--rule-2); }
+  dialog::backdrop { background: var(--scrim); }
+  dialog .body { padding: 24px 24px 8px; }
+  dialog .body h2 { font-size: var(--text-xl); margin-bottom: 8px; }
+  dialog .foot { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 24px 24px; }
+  dialog .hint { margin-bottom: 8px; }
+  #permLibs { margin-inline-start: 32px; }
+  .browser { border-radius: var(--radius-sm); box-shadow: 0 0 0 1px var(--rule-2); max-height: 260px; overflow: auto; margin-top: 12px; }
+  .browser button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; min-height: 40px; padding: 8px 12px; border: 0; border-bottom: 1px solid var(--rule); background: none; color: var(--ink); cursor: pointer; }
+  .browser button:last-child { border-bottom: 0; }
+  .browser button:hover { background: var(--paper-2); }
+  .browser .empty { padding: 12px; justify-items: start; }
+  #toast { position: fixed; right: 24px; bottom: 24px; z-index: 40; max-width: min(420px, calc(100% - 48px)); background: var(--ink); color: var(--paper); padding: 12px 16px; border-radius: var(--radius); box-shadow: var(--lift); font-size: var(--text-sm); opacity: 0; transform: translateY(8px); pointer-events: none; transition: opacity var(--dur-short) var(--ease), transform var(--dur-short) var(--ease); }
+  #toast.show { opacity: 1; transform: translateY(0); }
+  #toast.err { background: var(--danger); color: var(--paper); }
+  :root[data-theme="dark"] #toast.err { color: var(--paper); }
+  #paleta { margin-top: 12vh; width: 560px; }
+  .pal-in { border: 0; border-bottom: 1px solid var(--rule); border-radius: 0; min-height: 56px; padding: 0 20px; font-size: var(--text-base); background: transparent; }
+  .pal-list { list-style: none; margin: 0; padding: 8px; max-height: 320px; overflow: auto; }
+  .pal-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-radius: var(--radius-sm); cursor: pointer; font-size: var(--text-sm); }
+  .pal-list li[aria-selected="true"], .pal-list li:hover { background: var(--paper-3); }
+  .pal-list small { color: var(--muted); }
+  noscript p { padding: 24px; }
+
+  @media (max-width: 100rem) { .brand small { display: none; } }
+  @media (max-width: 60rem) {
     .library-workspace { grid-template-columns: minmax(0, 1fr); }
-    .operations { border-inline-start: 0; padding-inline-start: 0; }
+    .bar-in { flex-wrap: wrap; gap: 12px; padding-top: 12px; padding-bottom: 8px; }
+    nav[role="tablist"] { order: 3; width: 100%; flex-basis: 100%; margin: 0; }
+    .bar-tools { margin-inline-start: auto; }
   }
-  @media (max-width: 720px) {
-    .sidebar { padding: 0; }
-    .mast-inner { padding: 12px 16px; }
-    header { display: block; }
-    header .sub { margin-top: 4px; }
-    nav { display: none; }
-    .mobile-nav select { background: var(--mast); color: var(--mast-ink); }
+  @media (max-width: 48rem) {
+    .health, .bar-tools kbd { display: none; }
     main { padding-inline: 16px; }
+    .library, .person { grid-template-columns: 40px minmax(0, 1fr); }
+    .library-tools, .person-tools { grid-column: 1 / -1; justify-content: flex-start; }
+    .service { grid-template-columns: 24px minmax(0, 1fr); }
+    .service > :last-child { grid-column: 2; }
+    .page-heading .btn { width: 100%; }
   }
-  @media (max-width: 475px) {
-    .library { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
-    .library-tools { grid-column: 2; grid-row: 1 / 3; }
-    .library > details > summary { grid-column: 1; grid-row: 2; }
-  }
+  @media (pointer: coarse) { .btn, .btn.small { min-height: 44px; } .btn.icon, .btn.small.icon { width: 44px; } input, select { min-height: 48px; } }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition-duration: 0.01ms !important; } }
 </style>
 </head>
 <body>
-<div class="shell">
-<aside class="sidebar">
-<div class="mast-inner">
-<header>
-  <h1><picture><source media="(prefers-color-scheme: dark)" srcset="/admin/logo-dark.png"><img src="/admin/logo.png" alt="" width="32" height="32"></picture> Rustyfin</h1>
-  <span class="sub" id="srv"></span>
+<!-- Ícones: Lucide (https://lucide.dev), licença ISC -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" /></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7" /> <path d="M12 19V5" /></symbol>
+  <symbol id="i-badge-check" viewBox="0 0 24 24"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" /> <path d="m16 9-5.5 5.5L8 12" /></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z" /> <circle cx="12" cy="13" r="3" /></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
+  <symbol id="i-circle-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <line x1="12" x2="12" y1="8" y2="12" /> <line x1="12" x2="12.01" y1="16" y2="16" /></symbol>
+  <symbol id="i-circle-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="m16 9-5.5 5.5L8 12" /></symbol>
+  <symbol id="i-clapperboard" viewBox="0 0 24 24"><path d="m12.296 3.464 3.02 3.956" /> <path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3z" /> <path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /> <path d="m6.18 5.276 3.1 3.899" /></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><path d="M12 20v2" /> <path d="M12 2v2" /> <path d="M17 20v2" /> <path d="M17 2v2" /> <path d="M2 12h2" /> <path d="M2 17h2" /> <path d="M2 7h2" /> <path d="M20 12h2" /> <path d="M20 17h2" /> <path d="M20 7h2" /> <path d="M7 20v2" /> <path d="M7 2v2" /> <rect x="4" y="4" width="16" height="16" rx="2" /> <rect x="8" y="8" width="8" height="8" rx="1" /></symbol>
+  <symbol id="i-ellipsis" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1" /> <circle cx="19" cy="12" r="1" /> <circle cx="5" cy="12" r="1" /></symbol>
+  <symbol id="i-external-link" viewBox="0 0 24 24"><path d="M15 3h6v6" /> <path d="M10 14 21 3" /> <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" /> <path d="M7 3v18" /> <path d="M3 7.5h4" /> <path d="M3 12h18" /> <path d="M3 16.5h4" /> <path d="M17 3v18" /> <path d="M17 7.5h4" /> <path d="M17 16.5h4" /></symbol>
+  <symbol id="i-folder-open" viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" /></symbol>
+  <symbol id="i-folder-plus" viewBox="0 0 24 24"><path d="M12 10v6" /> <path d="M9 13h6" /> <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></symbol>
+  <symbol id="i-hard-drive" viewBox="0 0 24 24"><path d="M10 16h.01" /> <path d="M2.212 11.577a2 2 0 0 0-.212.896V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5.527a2 2 0 0 0-.212-.896L18.55 5.11A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /> <path d="M21.946 12.013H2.054" /> <path d="M6 16h.01" /></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /> <circle cx="9" cy="9" r="2" /> <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /> <path d="M12 16v-4" /> <path d="M12 8h.01" /></symbol>
+  <symbol id="i-key-round" viewBox="0 0 24 24"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z" /> <circle cx="16.5" cy="7.5" r=".5" fill="currentColor" /></symbol>
+  <symbol id="i-loader-circle" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2" /> <line x1="8" x2="16" y1="21" y2="21" /> <line x1="12" x2="12" y1="17" y2="21" /></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /> <path d="m15 5 4 4" /></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14" /> <path d="M12 5v14" /></symbol>
+  <symbol id="i-refresh-cw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" /> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /> <path d="M8 16H3v5" /></symbol>
+  <symbol id="i-scan-line" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2" /> <path d="M17 3h2a2 2 0 0 1 2 2v2" /> <path d="M21 17v2a2 2 0 0 1-2 2h-2" /> <path d="M7 21H5a2 2 0 0 1-2-2v-2" /> <path d="M7 12h10" /></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34" /> <circle cx="11" cy="11" r="8" /></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2" ry="2" /> <rect width="20" height="8" x="2" y="14" rx="2" ry="2" /> <line x1="6" x2="6.01" y1="6" y2="6" /> <line x1="6" x2="6.01" y1="18" y2="18" /></symbol>
+  <symbol id="i-shield-alert" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /> <path d="M12 8v4" /> <path d="M12 16h.01" /></symbol>
+  <symbol id="i-sliders-horizontal" viewBox="0 0 24 24"><path d="M10 5H3" /> <path d="M12 19H3" /> <path d="M14 3v4" /> <path d="M16 17v4" /> <path d="M21 12h-9" /> <path d="M21 19h-5" /> <path d="M21 5h-7" /> <path d="M8 10v4" /> <path d="M8 12H3" /></symbol>
+  <symbol id="i-subtitles" viewBox="0 0 24 24"><rect width="18" height="14" x="3" y="5" rx="2" ry="2" /> <path d="M7 15h4M15 15h2M7 11h2M13 11h4" /></symbol>
+  <symbol id="i-sun-moon" viewBox="0 0 24 24"><path d="M12 2v2" /> <path d="M14.837 16.385a6 6 0 1 1-7.223-7.222c.624-.147.97.66.715 1.248a4 4 0 0 0 5.26 5.259c.589-.255 1.396.09 1.248.715" /> <path d="M16 12a4 4 0 0 0-4-4" /> <path d="m19 5-1.256 1.256" /> <path d="M20 12h2" /></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /> <path d="M12 2v2" /> <path d="M12 20v2" /> <path d="m4.93 4.93 1.41 1.41" /> <path d="m17.66 17.66 1.41 1.41" /> <path d="M2 12h2" /> <path d="M20 12h2" /> <path d="m6.34 17.66-1.41 1.41" /> <path d="m19.07 4.93-1.41 1.41" /></symbol>
+  <symbol id="i-trash-2" viewBox="0 0 24 24"><path d="M10 11v6" /> <path d="M14 11v6" /> <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /> <path d="M3 6h18" /> <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></symbol>
+  <symbol id="i-triangle-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" /> <path d="M12 9v4" /> <path d="M12 17h.01" /></symbol>
+  <symbol id="i-tv" viewBox="0 0 24 24"><path d="m17 2-5 5-5-5" /> <rect width="20" height="15" x="2" y="7" rx="2" /></symbol>
+  <symbol id="i-user-round" viewBox="0 0 24 24"><circle cx="12" cy="8" r="5" /> <path d="M20 21a8 8 0 0 0-16 0" /></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /> <path d="M16 3.128a4 4 0 0 1 0 7.744" /> <path d="M22 21v-2a4 4 0 0 0-3-3.87" /> <circle cx="9" cy="7" r="4" /></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18" /> <path d="m6 6 12 12" /></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z" /></symbol>
+</svg>
+
+<header class="bar">
+  <div class="bar-in">
+    <h1 class="brand">
+      <img id="marca" src="/admin/logo.png" alt="" width="32" height="32">
+      <span>Rustyfin<small id="srv"></small></span>
+    </h1>
+    <nav role="tablist" aria-label="Administração" aria-orientation="horizontal">
+      <button id="nav-libs" role="tab" aria-controls="tab-libs" data-tab="libs" aria-selected="true" tabindex="0"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg>Bibliotecas</button>
+      <button id="nav-users" role="tab" aria-controls="tab-users" data-tab="users" aria-selected="false" tabindex="-1"><svg class="i" aria-hidden="true"><use href="#i-users"/></svg>Usuários</button>
+      <button id="nav-sessions" role="tab" aria-controls="tab-sessions" data-tab="sessions" aria-selected="false" tabindex="-1"><svg class="i" aria-hidden="true"><use href="#i-monitor"/></svg>Sessões</button>
+      <button id="nav-settings" role="tab" aria-controls="tab-settings" data-tab="settings" aria-selected="false" tabindex="-1"><svg class="i" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg>Configurações</button>
+      <button id="nav-status" role="tab" aria-controls="tab-status" data-tab="status" aria-selected="false" tabindex="-1"><svg class="i" aria-hidden="true"><use href="#i-activity"/></svg>Diagnóstico</button>
+    </nav>
+    <div class="bar-tools">
+      <div class="health" id="saude" aria-label="O que precisa de atenção"></div>
+      <a class="btn ghost icon" href="/cenas" aria-label="Busca de cenas" title="Busca de cenas"><svg class="i" aria-hidden="true"><use href="#i-clapperboard"/></svg></a>
+      <button class="btn ghost small" type="button" id="abrePaleta" aria-label="Buscar telas e ações"><svg class="i sm" aria-hidden="true"><use href="#i-search"/></svg><kbd>Ctrl K</kbd></button>
+      <button class="btn ghost icon" type="button" id="tema" aria-label="Alternar entre tema claro e escuro"><svg class="i" aria-hidden="true"><use href="#i-sun-moon"/></svg></button>
+    </div>
+  </div>
 </header>
-<nav role="tablist" aria-label="Administração" aria-orientation="horizontal">
-  <button id="nav-libs" role="tab" aria-controls="tab-libs" data-tab="libs" aria-selected="true" tabindex="0">Bibliotecas</button>
-  <button id="nav-users" role="tab" aria-controls="tab-users" data-tab="users" aria-selected="false" tabindex="-1">Usuários</button>
-  <button id="nav-sessions" role="tab" aria-controls="tab-sessions" data-tab="sessions" aria-selected="false" tabindex="-1">Sessões</button>
-  <button id="nav-settings" role="tab" aria-controls="tab-settings" data-tab="settings" aria-selected="false" tabindex="-1">Configurações</button>
-  <button id="nav-status" role="tab" aria-controls="tab-status" data-tab="status" aria-selected="false" tabindex="-1">Diagnóstico</button>
-</nav>
-<a class="scene-link" href="/cenas">Busca de cenas</a>
-<div class="mobile-nav">
-  <label for="sectionSelect">Seções</label>
-  <select id="sectionSelect">
-    <option value="libs">Bibliotecas</option>
-    <option value="users">Usuários</option>
-    <option value="sessions">Sessões</option>
-    <option value="settings">Configurações</option>
-    <option value="status">Diagnóstico</option>
-  </select>
-</div>
-</div>
-</aside>
+
 <main>
   <section id="tab-libs" role="tabpanel" aria-label="Bibliotecas">
     <div class="row between page-heading">
@@ -320,7 +359,7 @@
         <h2>Bibliotecas</h2>
         <p class="hint">Pastas de mídia de cada biblioteca. Mudanças disparam uma varredura automática.</p>
       </div>
-      <button class="btn primary" id="newLib">Nova biblioteca</button>
+      <button class="btn primary" id="newLib"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Nova biblioteca</button>
     </div>
     <div class="library-workspace">
     <section class="library-directory" aria-labelledby="libraryDirectoryTitle">
@@ -330,10 +369,12 @@
     <div class="operations">
     <div class="scan">
       <div><strong>Varredura do acervo</strong><p id="scanState" role="status">Consultando estado…</p></div>
+      <div class="progress" id="scanBar" role="progressbar" aria-label="Varredura em andamento" hidden><i></i></div>
       <div class="row">
-      <button class="btn" id="scanBtn" disabled>Iniciar varredura</button>
+      <button class="btn" id="scanBtn" disabled><svg class="i" aria-hidden="true"><use href="#i-scan-line"/></svg>Iniciar varredura</button>
       <button class="btn" id="retryScan" hidden>Tentar novamente</button>
       </div>
+      <p class="signatures" id="assinaturas" hidden></p>
     </div>
     <section class="maintenance" aria-labelledby="maintenanceTitle">
     <h3 id="maintenanceTitle">Manutenção do acervo</h3>
@@ -341,7 +382,7 @@
       <summary><strong>Revisar alterações</strong></summary>
       <p class="hint">Confira substituições e possíveis correspondências antes de transferir
         favoritos, marcações de assistido e pontos de retomada confirmados.</p>
-      <button class="btn small" id="recarregarRevisoes" type="button">Atualizar fila</button>
+      <button class="btn small" id="recarregarRevisoes" type="button"><svg class="i sm" aria-hidden="true"><use href="#i-refresh-cw"/></svg>Atualizar fila</button>
       <p id="mensagemRevisoes" class="hint" role="status"></p>
       <div id="listaRevisoes"></div>
     </details>
@@ -375,7 +416,7 @@
         <h2>Usuários</h2>
         <p class="hint">Cada usuário tem seu próprio progresso, favoritos e acesso às bibliotecas. Os apps pedem usuário e senha ao conectar.</p>
       </div>
-      <button class="btn primary" id="newUser">Novo usuário</button>
+      <button class="btn primary" id="newUser"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Novo usuário</button>
     </div>
     <div id="usersWarn"></div>
     <div id="users" class="records"></div>
@@ -395,29 +436,37 @@
   <section id="tab-settings" role="tabpanel" aria-label="Configurações" class="settings" hidden>
     <h2 class="page-heading">Configurações</h2>
     <div id="settingsForm" hidden>
-    <div class="card">
+    <div class="card" id="cartaoServidor">
       <h3>Servidor</h3>
       <p class="hint">Valem na hora, sem reiniciar. Os valores salvos aqui têm prioridade sobre as variáveis de ambiente.</p>
       <label for="srvName">Nome do servidor <span class="hint" style="display:inline">(aparece nos apps e na descoberta automática)</span></label>
       <input id="srvName" maxlength="64" placeholder="Rustyfin">
       <label for="srvScan">Intervalo da varredura automática</label>
-      <input id="srvScan" aria-describedby="srvScanUnit" type="number" min="0" max="86400" placeholder="300"> <span id="srvScanUnit">segundos (0 desativa)</span>
+      <input id="srvScan" aria-describedby="srvScanUnit" type="number" min="0" max="86400" placeholder="300"> <span class="hint" id="srvScanUnit">segundos (0 desativa)</span>
       <label for="srvTx">Transcodificações simultâneas</label>
       <input id="srvTx" type="number" min="1" max="16" placeholder="2">
-      <div class="row" style="margin-top:16px">
-        <button class="btn primary" id="saveServer">Salvar servidor</button>
+      <div class="savebar">
+        <span class="state" id="estadoServidor" role="status">Nenhuma alteração</span>
+        <div class="row">
+          <button class="btn" id="descartarServidor" type="button" disabled>Descartar</button>
+          <button class="btn primary" id="saveServer" disabled>Salvar servidor</button>
+        </div>
       </div>
     </div>
-    <div class="card">
+    <div class="card" id="cartaoTmdb">
       <h3>Metadados online (TMDB)</h3>
       <p class="hint">Sinopse, nota, gêneros, posters e nomes de episódios. Chave v3 (32 caracteres) ou token v4 em themoviedb.org/settings/api.</p>
       <label for="tmdbKey">Chave de API <span class="badge" id="tmdbState"></span></label>
       <input id="tmdbKey" type="password" autocomplete="off" placeholder="Deixe em branco para manter a atual">
       <label for="tmdbLang">Idioma dos metadados</label>
       <input id="tmdbLang" placeholder="pt-BR">
-      <div class="row" style="margin-top:16px">
-        <button class="btn primary" id="saveSettings">Salvar metadados</button>
-        <button class="btn danger" id="clearKey">Remover chave</button>
+      <div class="savebar">
+        <span class="state" id="estadoTmdb" role="status">Nenhuma alteração</span>
+        <div class="row">
+          <button class="btn danger" id="clearKey" type="button">Remover chave</button>
+          <button class="btn" id="descartarTmdb" type="button" disabled>Descartar</button>
+          <button class="btn primary" id="saveSettings" disabled>Salvar metadados</button>
+        </div>
       </div>
     </div>
     </div>
@@ -430,8 +479,8 @@
       <summary><strong>Versões recomendadas</strong></summary>
       <p class="hint">Conversões MP4 que apareceram em pelo menos duas sessões.
         O preparo aguarda a reprodução terminar.</p>
-      <button id="listarPreparos" class="btn" type="button">Atualizar recomendações</button>
-      <p id="mensagemPreparos" role="status" class="hint"></p>
+      <button id="listarPreparos" class="btn" type="button"><svg class="i sm" aria-hidden="true"><use href="#i-refresh-cw"/></svg>Atualizar recomendações</button>
+      <p id="mensagemPreparos" class="hint" role="status"></p>
       <div id="listaPreparos"></div>
     </details>
     <section class="card preflight" aria-labelledby="preflightTitle">
@@ -440,7 +489,7 @@
       <form id="preflightBusca">
         <label for="preflightTermo">Buscar filme ou episódio</label>
         <input id="preflightTermo" maxlength="128" required>
-        <div class="row"><button class="btn" type="submit">Buscar títulos</button></div>
+        <div class="row" style="margin-top:16px"><button class="btn" type="submit">Buscar títulos</button></div>
       </form>
       <form id="preflightForm" hidden>
         <div class="campos">
@@ -452,7 +501,7 @@
             <div><label for="preflightLegenda">Legenda</label><select id="preflightLegenda"></select></div>
           </div>
         </div>
-        <div class="row">
+        <div class="row" style="margin-top:16px">
           <button class="btn primary" id="preflightSimular" type="submit">Simular reprodução</button>
         </div>
       </form>
@@ -469,7 +518,7 @@
         <form id="legBusca">
           <label for="legTermo">Buscar título para ajustar legenda</label>
           <div class="row">
-            <input id="legTermo" maxlength="128" required>
+            <input id="legTermo" maxlength="128" required style="flex:1">
             <button class="btn" type="submit">Buscar</button>
           </div>
         </form>
@@ -496,12 +545,12 @@
             <input id="legOrigemA" type="number" min="0" max="3600000" step="0.001">
             <label for="legDestinoA">Primeira fala no vídeo</label>
             <input id="legDestinoA" type="number" min="0" max="3600000" step="0.001">
-            <button class="btn small" id="legMarcarA" type="button">Usar posição atual no primeiro ponto</button>
+            <div class="row" style="margin-top:8px"><button class="btn small" id="legMarcarA" type="button">Usar posição atual no primeiro ponto</button></div>
             <label for="legOrigemB">Segundo ponto na legenda</label>
             <input id="legOrigemB" type="number" min="0" max="3600000" step="0.001">
             <label for="legDestinoB">Segunda fala no vídeo</label>
             <input id="legDestinoB" type="number" min="0" max="3600000" step="0.001">
-            <button class="btn small" id="legMarcarB" type="button">Usar posição atual no segundo ponto</button>
+            <div class="row" style="margin-top:8px"><button class="btn small" id="legMarcarB" type="button">Usar posição atual no segundo ponto</button></div>
           </div>
           <video id="legVideo" aria-label="Prévia da legenda ajustada" controls preload="metadata"></video>
           <p id="legVideoErro" class="hint" hidden>O navegador não reproduz este arquivo. Confira os tempos nos trechos abaixo.</p>
@@ -518,7 +567,6 @@
   </section>
   <noscript><p>Ative o JavaScript para administrar o servidor.</p></noscript>
 </main>
-</div>
 
 <dialog id="libDialog">
   <form method="dialog" class="body" id="libForm">
@@ -530,8 +578,8 @@
       <option value="movies">Filmes</option>
       <option value="tvshows">Séries</option>
     </select>
-    <label>Pasta inicial</label>
-    <div class="row">
+    <label for="libPath">Pasta inicial</label>
+    <div class="row" style="flex-wrap:nowrap">
       <input id="libPath" readonly placeholder="Nenhuma pasta escolhida" style="flex:1">
       <button type="button" class="btn" id="pickPathNew">Escolher…</button>
     </div>
@@ -549,7 +597,7 @@
     <input id="uName" autocomplete="off" required>
     <label for="uPass">Senha <span class="badge">opcional</span></label>
     <input id="uPass" type="password" autocomplete="new-password" placeholder="Vazio = entra sem senha">
-    <label style="display:flex;gap:8px;align-items:center;font-weight:500;margin-top:14px"><input id="uAdmin" type="checkbox" style="width:auto"> Administrador</label>
+    <label class="check"><input id="uAdmin" type="checkbox"> Administrador</label>
   </div>
   <div class="foot">
     <button class="btn" id="userCancel">Cancelar</button>
@@ -573,11 +621,11 @@
 <dialog id="permDialog">
   <div class="body">
     <h2 id="permTitle">Permissões</h2>
-    <label style="display:flex;gap:8px;align-items:center;font-weight:500"><input id="permAdmin" type="checkbox" style="width:auto"> Administrador</label>
-    <label style="display:flex;gap:8px;align-items:center;font-weight:500"><input id="permDisabled" type="checkbox" style="width:auto"> Conta desativada (não consegue entrar)</label>
-    <label style="display:flex;gap:8px;align-items:center;font-weight:500"><input id="permHidden" type="checkbox" style="width:auto"> Perfil oculto (não aparece na lista da tela de login; entra digitando o nome)</label>
-    <label style="display:flex;gap:8px;align-items:center;font-weight:500"><input id="permAll" type="checkbox" style="width:auto"> Acesso a todas as bibliotecas</label>
-    <div id="permLibs" style="margin-left:26px"></div>
+    <label class="check"><input id="permAdmin" type="checkbox"> Administrador</label>
+    <label class="check"><input id="permDisabled" type="checkbox"> Conta desativada (não consegue entrar)</label>
+    <label class="check"><input id="permHidden" type="checkbox"> Perfil oculto (não aparece na lista da tela de login; entra digitando o nome)</label>
+    <label class="check"><input id="permAll" type="checkbox"> Acesso a todas as bibliotecas</label>
+    <div id="permLibs"></div>
   </div>
   <div class="foot">
     <button class="btn" id="permCancel">Cancelar</button>
@@ -588,9 +636,9 @@
 <dialog id="pickDialog">
   <div class="body">
     <h2>Escolher pasta</h2>
-    <p class="hint">Caminhos como o <strong>servidor</strong> os enxerga. No Docker, só aparecem as pastas <strong>montadas como volume</strong> no <code>docker-compose.yml</code> (ex.: <code>/media</code>, <code>/mnt/...</code>); para usar uma pasta do seu PC, monte-a lá e depois escolha-a aqui.</p>
-    <div class="row">
-      <button class="btn small" id="pickUp">↑ Acima</button>
+    <p class="hint">Caminhos como o <strong>servidor</strong> os enxerga. No Docker, só aparecem as pastas <strong>montadas como volume</strong> no <code>docker-compose.yml</code> (ex.: <code>/media</code>, <code>/mnt/...</code>); para usar uma pasta do seu PC, monte-a lá.</p>
+    <div class="row" style="flex-wrap:nowrap">
+      <button class="btn small" id="pickUp"><svg class="i sm" aria-hidden="true"><use href="#i-arrow-up"/></svg>Acima</button>
       <input id="pickPath" style="flex:1">
       <button class="btn small" id="pickGo">Ir</button>
     </div>
@@ -600,6 +648,34 @@
     <button class="btn" id="pickCancel">Cancelar</button>
     <button class="btn primary" id="pickOk">Usar esta pasta</button>
   </div>
+</dialog>
+
+<dialog id="confirmDialog" aria-labelledby="confirmTitulo">
+  <div class="body">
+    <h2 id="confirmTitulo">Confirmar</h2>
+    <p class="hint" id="confirmTexto" style="white-space:pre-line"></p>
+  </div>
+  <div class="foot">
+    <button class="btn" id="confirmCancel" type="button">Cancelar</button>
+    <button class="btn primary" id="confirmOk" type="button">Confirmar</button>
+  </div>
+</dialog>
+
+<dialog id="askDialog" aria-labelledby="askTitulo">
+  <form class="body" id="askForm" method="dialog">
+    <h2 id="askTitulo">Nome</h2>
+    <label for="askInput" id="askLabel">Novo nome</label>
+    <input id="askInput" maxlength="64" autocomplete="off" required>
+  </form>
+  <div class="foot">
+    <button class="btn" id="askCancel" type="button">Cancelar</button>
+    <button class="btn primary" id="askOk" type="button">Salvar</button>
+  </div>
+</dialog>
+
+<dialog id="paleta" aria-label="Paleta de comandos">
+  <input class="pal-in" id="palIn" type="search" placeholder="Buscar telas e ações" autocomplete="off" aria-controls="palLista">
+  <ul class="pal-list" id="palLista" role="listbox"></ul>
 </dialog>
 
 <div id="toast" role="status"></div>
@@ -638,6 +714,65 @@ const act = async (fn, okMsg) => {
   try { const r = await fn(); if (okMsg) toast(okMsg); return r; }
   catch (e) { toast(mensagemErro(e), true); }
 };
+const SVG = 'http://www.w3.org/2000/svg';
+function icone(nome, tamanho = '') {
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('class', ('i ' + tamanho).trim());
+  svg.setAttribute('aria-hidden', 'true');
+  const uso = document.createElementNS(SVG, 'use');
+  uso.setAttribute('href', '#i-' + nome);
+  svg.append(uso);
+  return svg;
+}
+const esqueleto = () => el('div', { className: 'skel', role: 'status', ariaLabel: 'Carregando' }, el('i'), el('i'), el('i'));
+function vazio(nomeIcone, titulo, texto, rotuloAcao, acao) {
+  return el('div', { className: 'empty' }, icone(nomeIcone), el('b', { textContent: titulo }),
+    el('span', { textContent: texto }),
+    rotuloAcao ? el('button', { className: 'btn primary small', type: 'button', textContent: rotuloAcao, onclick: acao }) : '');
+}
+// Menu de ações raras: <details> que fecha ao clicar fora e com Esc (tratados mais abaixo).
+function menu(rotulo, itens) {
+  const caixa = el('details', { className: 'actions' }, el('summary', { title: 'Mais ações' }, icone('ellipsis')));
+  caixa.firstChild.setAttribute('aria-label', rotulo);
+  caixa.append(el('div', {}, ...itens.map(([texto, acao, perigo, nomeIcone]) => el('button', {
+    type: 'button', className: 'btn small' + (perigo ? ' danger' : ''),
+    onclick: () => { caixa.open = false; caixa.firstChild.focus(); acao(); },
+  }, nomeIcone ? icone(nomeIcone, 'sm') : '', texto))));
+  return caixa;
+}
+// Confirmação e pergunta em diálogos do painel, no lugar de confirm() e prompt() do navegador.
+function confirmar(texto, { titulo = 'Confirmar', rotulo = 'Confirmar', perigo = false } = {}) {
+  return new Promise((resolver) => {
+    const d = $('confirmDialog');
+    $('confirmTitulo').textContent = titulo;
+    $('confirmTexto').textContent = texto;
+    const ok = $('confirmOk');
+    ok.textContent = rotulo;
+    ok.className = 'btn ' + (perigo ? 'danger solid' : 'primary');
+    const fim = (valor) => { resolver(valor); if (d.open) d.close(); };
+    ok.onclick = () => fim(true);
+    $('confirmCancel').onclick = () => fim(false);
+    d.onclose = () => resolver(false);
+    d.showModal();
+    (perigo ? $('confirmCancel') : ok).focus();
+  });
+}
+function pedirTexto(titulo, rotulo, valor) {
+  return new Promise((resolver) => {
+    const d = $('askDialog');
+    $('askTitulo').textContent = titulo;
+    $('askLabel').textContent = rotulo;
+    const campo = $('askInput');
+    campo.value = valor || '';
+    const fim = (v) => { resolver(v); if (d.open) d.close(); };
+    $('askOk').onclick = () => fim(campo.value.trim() || null);
+    $('askForm').onsubmit = (e) => { e.preventDefault(); fim(campo.value.trim() || null); };
+    $('askCancel').onclick = () => fim(null);
+    d.onclose = () => resolver(null);
+    d.showModal();
+    campo.select();
+  });
+}
 
 // ---- abas e estados de carregamento
 const abas = [...document.querySelectorAll('nav [role=tab]')];
@@ -654,7 +789,7 @@ async function carregar(aba) {
   $(avisoId)?.remove();
   const aviso = el('div', { className: 'feedback', id: avisoId });
   aviso.setAttribute('role', 'status');
-  aviso.append(el('p', { textContent: 'Carregando…' }));
+  aviso.append(esqueleto());
   regiao.before(aviso);
   regiao.setAttribute('aria-busy', 'true');
   const tarefa = (async () => {
@@ -663,11 +798,13 @@ async function carregar(aba) {
       regiao.hidden = false;
       aviso.remove();
     } catch (erro) {
-      aviso.replaceChildren(el('p', { textContent: 'Falha ao carregar. ' + mensagemErro(erro) }),
-        el('button', { className: 'btn', textContent: 'Tentar novamente', onclick: () => {
-          aviso.remove();
-          carregar(aba);
-        } }));
+      aviso.replaceChildren(el('div', { className: 'err', role: 'alert' }, icone('circle-alert'),
+        el('div', {}, el('b', { textContent: 'Não foi possível carregar esta tela.' }),
+          el('p', { className: 'hint', textContent: mensagemErro(erro) }),
+          el('button', { className: 'btn small', type: 'button', textContent: 'Tentar novamente', onclick: () => {
+            aviso.remove();
+            carregar(aba);
+          } }))));
     } finally {
       regiao.removeAttribute('aria-busy');
       carregamentos.delete(aba);
@@ -683,7 +820,6 @@ function abrirAba() {
   if (abaAtual === atual) return;
   abaAtual = atual;
   if (atual.dataset.tab !== 'status') $('legVideo').pause();
-  $('sectionSelect').value = atual.dataset.tab;
   for (const aba of abas) {
     const ativa = aba === atual;
     aba.setAttribute('aria-selected', ativa);
@@ -707,7 +843,6 @@ for (const [i, aba] of abas.entries()) {
     destino.focus();
   };
 }
-$('sectionSelect').onchange = (evento) => navegar(evento.target.value);
 window.addEventListener('popstate', abrirAba);
 window.addEventListener('hashchange', abrirAba);
 
@@ -846,7 +981,8 @@ async function decidirRevisao(revisao, acao, controles) {
     ? 'Transferir marcadores' + (acao.retomadas.length ? ' e as posições selecionadas' : '')
       + ' para o destino escolhido?'
     : 'Encerrar esta revisão e manter os itens separados?';
-  if (!confirm(mensagem)) return;
+  if (!(await confirmar(mensagem, { titulo: acao.acao === 'transferir' ? 'Transferir estado' : 'Manter separados',
+    rotulo: acao.acao === 'transferir' ? 'Transferir' : 'Manter separados' }))) return;
   for (const campo of controles) campo.disabled = true;
   try {
     await api('POST', rotaRevisoes + '/' + encodeURIComponent(revisao.id), acao);
@@ -1008,23 +1144,27 @@ async function loadLibs() {
   if (dados === bibliotecasExibidas) return;
   bibliotecasExibidas = dados;
   const root = $('libs');
-  const abertas = new Set([...root.querySelectorAll('.library > details[open]')]
-    .map((detalhe) => detalhe.parentElement.dataset.library));
   root.replaceChildren();
-  if (!libs.length) root.append(el('p', { className: 'empty', textContent: 'Nenhuma biblioteca. Crie a primeira com "Nova biblioteca".' }));
+  if (!libs.length) {
+    root.append(vazio('folder', 'Nenhuma biblioteca ainda', 'Aponte uma pasta com filmes ou séries.',
+      'Nova biblioteca', () => $('newLib').click()));
+  }
   for (const lib of libs) {
     const list = el('ul', { className: 'paths' });
     for (const p of lib.Locations) {
-      list.append(el('li', {}, el('span', { textContent: p }),
-        el('button', { className: 'btn small danger', textContent: 'Remover', onclick: () => {
-          if (confirm('Remover esta pasta da biblioteca "' + lib.Name + '"?\n' + p)) act(async () => {
+      const remover = el('button', { className: 'btn small icon ghost danger', type: 'button', title: 'Remover pasta',
+        onclick: async () => {
+          if (await confirmar('Remover esta pasta da biblioteca "' + lib.Name + '"?\n' + p,
+            { titulo: 'Remover pasta', rotulo: 'Remover', perigo: true })) act(async () => {
             await api('DELETE', '/admin/api/folders/paths?name=' + encodeURIComponent(lib.Name) + '&path=' + encodeURIComponent(p));
             await loadLibs(); setTimeout(poll, 500);
           }, 'Pasta removida. Reescaneando…');
-        } })));
+        } }, icone('x', 'sm'));
+      remover.setAttribute('aria-label', 'Remover a pasta ' + p);
+      list.append(el('li', {}, el('span', { textContent: p }), remover));
     }
     if (!lib.Locations.length) list.append(el('li', {}, el('span', { className: 'empty', textContent: 'Sem pastas' })));
-    const adicionar = el('button', { className: 'btn small', textContent: 'Adicionar pasta',
+    const adicionar = el('button', { className: 'btn small', type: 'button',
       onclick: () => pickFolder(async (path) => {
         await act(async () => {
           await api('POST', '/admin/api/folders/paths?name=' + encodeURIComponent(lib.Name)
@@ -1032,38 +1172,34 @@ async function loadLibs() {
           await loadLibs();
           setTimeout(poll, 500);
         }, 'Pasta adicionada. Escaneando…');
-      }) });
-    const acoes = el('details', { className: 'actions' }, el('summary', { textContent: '⋯', title: 'Mais ações' }));
-    acoes.firstChild.setAttribute('aria-label', 'Mais ações para ' + lib.Name);
-    acoes.append(el('div', {},
-      el('button', { className: 'btn small', textContent: 'Renomear', onclick: () => {
-        acoes.open = false;
-        acoes.firstChild.focus();
-        const n = prompt('Novo nome da biblioteca:', lib.Name);
-        if (n && n.trim() && n.trim() !== lib.Name) act(async () => {
+      }) }, icone('folder-plus', 'sm'), 'Adicionar pasta');
+    const acoes = menu('Mais ações para ' + lib.Name, [
+      ['Renomear', async () => {
+        const n = await pedirTexto('Renomear biblioteca', 'Novo nome da biblioteca', lib.Name);
+        if (n && n !== lib.Name) act(async () => {
           await api('POST', '/admin/api/folders/name?name=' + encodeURIComponent(lib.Name)
-            + '&newName=' + encodeURIComponent(n.trim()));
+            + '&newName=' + encodeURIComponent(n));
           await loadLibs();
         }, 'Biblioteca renomeada.');
-      } }),
-      el('button', { className: 'btn small danger', textContent: 'Excluir', onclick: () => {
-        acoes.open = false;
-        acoes.firstChild.focus();
-        if (confirm('Excluir a biblioteca "' + lib.Name + '"?\n'
-          + 'Os arquivos serão mantidos. Os itens somem do servidor na próxima varredura.')) act(async () => {
+      }, false, 'pencil'],
+      ['Excluir', async () => {
+        if (await confirmar('Os arquivos serão mantidos. Os itens somem do servidor na próxima varredura.',
+          { titulo: 'Excluir a biblioteca "' + lib.Name + '"?', rotulo: 'Excluir', perigo: true })) act(async () => {
           await api('DELETE', '/admin/api/folders?name=' + encodeURIComponent(lib.Name));
           await loadLibs();
           setTimeout(poll, 500);
         }, 'Biblioteca excluída.');
-      } })));
+      }, true, 'trash-2'],
+    ]);
     const quantidade = lib.Locations.length;
-    const pastas = el('details', { open: abertas.has(lib.Name) },
-      el('summary', { textContent: quantidade + (quantidade === 1 ? ' pasta' : ' pastas') }), list);
     const linha = el('article', { className: 'library' },
+      el('div', { className: 'ico' }, icone(lib.CollectionType === 'tvshows' ? 'tv' : 'film')),
       el('div', { className: 'library-identity' }, el('h3', { textContent: lib.Name }),
-        el('p', { className: 'hint', textContent: typeLabel[lib.CollectionType] || lib.CollectionType })),
-      el('div', { className: 'row library-tools' }, adicionar, acoes),
-      pastas);
+        el('div', { className: 'meta' },
+          el('span', { className: 'tag', textContent: typeLabel[lib.CollectionType] || lib.CollectionType }),
+          el('span', { className: 'hint', style: 'margin:0', textContent: quantidade + (quantidade === 1 ? ' pasta' : ' pastas') })),
+        list),
+      el('div', { className: 'library-tools' }, adicionar, acoes));
     linha.dataset.library = lib.Name;
     root.append(linha);
   }
@@ -1104,8 +1240,8 @@ async function browseTo(path) {
   $('pickUp').dataset.parent = r.parent || '';
   const list = $('pickList');
   list.replaceChildren();
-  if (!r.dirs.length) list.append(el('p', { className: 'empty', style: 'padding:10px 12px;margin:0', textContent: 'Sem subpastas aqui.' }));
-  r.dirs.forEach((d) => list.append(el('button', { textContent: d.name, onclick: () => browseTo(d.path).catch((e) => toast(e.message, true)) })));
+  if (!r.dirs.length) list.append(el('p', { className: 'empty', textContent: 'Sem subpastas aqui.' }));
+  r.dirs.forEach((d) => list.append(el('button', { type: 'button', onclick: () => browseTo(d.path).catch((e) => toast(e.message, true)) }, icone('folder', 'sm'), d.name)));
 }
 function pickFolder(cb) { pickCb = cb; $('pickDialog').showModal(); browseTo('').catch((e) => toast(e.message, true)); }
 $('pickUp').onclick = () => browseTo($('pickUp').dataset.parent).catch((e) => toast(e.message, true));
@@ -1129,21 +1265,26 @@ async function loadSessions() {
   $('revokeAll').disabled = !list.length;
   const root = $('sessions');
   root.replaceChildren();
-  if (!list.length) root.append(el('p', { className: 'empty', textContent: 'Nenhum dispositivo conectado.' }));
+  if (!list.length) {
+    root.append(vazio('monitor', 'Nenhum dispositivo conectado agora',
+      'Quando um app entrar, ele aparece aqui e você pode encerrar a sessão.'));
+  }
   for (const s of list) {
     const title = [s.device, s.client].filter(Boolean).join(' / ') || 'Dispositivo desconhecido';
-    root.append(el('div', { className: 'card' },
-      el('div', { className: 'row between' },
-        el('div', {},
-          el('div', { className: 'row' }, el('h3', { textContent: title }), el('span', { className: 'badge', textContent: s.userName })),
-          el('div', { className: 'hint', style: 'margin:4px 0 0', textContent: 'Último uso ' + ago(s.lastUsed) + '. Conectado ' + ago(s.createdAt) })),
-        el('button', { className: 'btn small danger', textContent: 'Encerrar', onclick: () => {
-          if (confirm('Encerrar a sessão de "' + title + '"?')) act(async () => { await api('DELETE', '/admin/api/sessions/' + s.id); await loadSessions(); }, 'Sessão encerrada.');
+    root.append(el('article', { className: 'person compact' },
+      el('div', { className: 'person-id' },
+        el('div', { className: 'row' }, el('h3', { textContent: title }), el('span', { className: 'badge', textContent: s.userName })),
+        el('p', { className: 'hint', textContent: 'Último uso ' + ago(s.lastUsed) + '. Conectado ' + ago(s.createdAt) })),
+      el('div', { className: 'person-tools' },
+        el('button', { className: 'btn small danger', type: 'button', textContent: 'Encerrar', onclick: async () => {
+          if (await confirmar('O aparelho volta à tela de login.', { titulo: 'Encerrar a sessão de "' + title + '"?',
+            rotulo: 'Encerrar', perigo: true })) act(async () => { await api('DELETE', '/admin/api/sessions/' + s.id); await loadSessions(); }, 'Sessão encerrada.');
         } }))));
   }
 }
-$('revokeAll').onclick = () => {
-  if (confirm('Encerrar TODAS as sessões?\nTodos os apps e TVs voltarão à tela de login.')) act(async () => { const r = await api('DELETE', '/admin/api/sessions'); await loadSessions(); toast(r.revoked + ' sessões encerradas.'); });
+$('revokeAll').onclick = async () => {
+  if (await confirmar('Todos os apps e TVs voltarão à tela de login.', { titulo: 'Encerrar todas as sessões?',
+    rotulo: 'Encerrar todas', perigo: true })) act(async () => { const r = await api('DELETE', '/admin/api/sessions'); await loadSessions(); toast(r.revoked + ' sessões encerradas.'); });
 };
 
 async function loadUsers() {
@@ -1152,35 +1293,38 @@ async function loadUsers() {
   const root = $('users');
   root.replaceChildren();
   const noPassAdmin = users.some((u) => u.isAdmin && !u.isDisabled && !u.hasPassword);
-  $('usersWarn').replaceChildren(noPassAdmin ? el('p', { className: 'hint', textContent: 'Senha é opcional: sem ela, o painel e os apps ficam abertos a quem está na sua rede local. Se quiser, defina uma senha para um administrador (o painel passa a pedir login).' }) : '');
-  if (!users.length) root.append(el('p', { className: 'empty',
-    textContent: 'Nenhum usuário. Crie o primeiro com “Novo usuário”.' }));
+  $('usersWarn').replaceChildren(noPassAdmin ? el('div', { className: 'warnbox' }, icone('triangle-alert'),
+    el('span', { textContent: 'Senha é opcional: sem ela, o painel e os apps ficam abertos a quem está na sua rede local. Se quiser, defina uma senha para um administrador (o painel passa a pedir login).' })) : '');
+  if (!users.length) {
+    root.append(vazio('users', 'Nenhum usuário', 'Crie o primeiro para entrar nos apps.', 'Novo usuário', () => $('newUser').click()));
+  }
   for (const u of users) {
-    const badges = el('span', { className: 'row' });
+    const badges = el('div', { className: 'meta' });
     if (u.isAdmin) badges.append(el('span', { className: 'badge', textContent: 'Administrador' }));
     if (u.isDisabled) badges.append(el('span', { className: 'badge bad', textContent: 'Desativado' }));
     if (u.isHidden) badges.append(el('span', { className: 'badge', textContent: 'Oculto' }));
-    badges.append(el('span', { className: 'badge', textContent: u.hasPassword ? 'com senha' : 'sem senha' }));
+    badges.append(el('span', { className: 'badge' + (u.hasPassword ? '' : ' warn'), textContent: u.hasPassword ? 'Com senha' : 'Sem senha' }));
     const names = u.allLibraries ? 'todas as bibliotecas' : (u.libraries.map((id) => (libs.find((l) => l.Id === id) || {}).Name).filter(Boolean).join(', ') || 'nenhuma biblioteca');
-    root.append(el('div', { className: 'card' },
-      el('div', { className: 'row between' },
-        el('div', { className: 'row', style: 'gap:12px' },
-          u.avatarTag
-            ? el('img', { src: '/Users/' + u.id + '/Images/Primary?tag=' + u.avatarTag, alt: '', style: 'width:44px;height:44px;border-radius:50%;object-fit:cover;border:1px solid var(--line)' })
-            : el('div', { textContent: u.name.slice(0, 1).toUpperCase(), style: 'width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--line);color:var(--muted);font-weight:600' }),
-          el('div', {}, el('div', { className: 'row' }, el('h3', { textContent: u.name }), badges), el('div', { className: 'hint', style: 'margin:4px 0 0', textContent: 'Acesso: ' + names }))),
-        el('div', { className: 'row' },
-          el('button', { className: 'btn small', textContent: 'Foto', onclick: () => pickAvatar(u) }),
-          u.avatarTag ? el('button', { className: 'btn small', textContent: 'Remover foto', onclick: () => act(async () => { await api('DELETE', '/admin/api/users/' + u.id + '/avatar'); await loadUsers(); }, 'Foto removida.') }) : '',
-          el('button', { className: 'btn small', textContent: u.hasPassword ? 'Alterar senha' : 'Definir senha', onclick: () => askPassword(u) }),
-          el('button', { className: 'btn small', textContent: 'Permissões', onclick: () => editPerms(u) }),
-          el('button', { className: 'btn small', textContent: 'Renomear', onclick: () => {
-            const n = prompt('Novo nome:', u.name);
-            if (n && n.trim() && n.trim() !== u.name) act(async () => { await api('POST', '/admin/api/users/' + u.id + '/rename', { name: n.trim() }); await loadUsers(); }, 'Usuário renomeado.');
-          } }),
-          el('button', { className: 'btn small danger', textContent: 'Excluir', onclick: () => {
-            if (confirm('Excluir o usuário "' + u.name + '"?\nO progresso e os favoritos dele também serão apagados.')) act(async () => { await api('DELETE', '/admin/api/users/' + u.id); await loadUsers(); }, 'Usuário excluído.');
-          } })))));
+    const avatar = u.avatarTag
+      ? el('div', { className: 'ico avatar' }, el('img', { src: '/Users/' + u.id + '/Images/Primary?tag=' + u.avatarTag, alt: '' }))
+      : el('div', { className: 'ico avatar', textContent: u.name.slice(0, 1).toUpperCase() });
+    const itens = [['Foto', () => pickAvatar(u), false, 'camera']];
+    if (u.avatarTag) itens.push(['Remover foto', () => act(async () => { await api('DELETE', '/admin/api/users/' + u.id + '/avatar'); await loadUsers(); }, 'Foto removida.'), false, 'image']);
+    itens.push(['Renomear', async () => {
+      const n = await pedirTexto('Renomear usuário', 'Novo nome', u.name);
+      if (n && n !== u.name) act(async () => { await api('POST', '/admin/api/users/' + u.id + '/rename', { name: n }); await loadUsers(); }, 'Usuário renomeado.');
+    }, false, 'pencil']);
+    itens.push(['Excluir', async () => {
+      if (await confirmar('O progresso e os favoritos dele também serão apagados.', { titulo: 'Excluir o usuário "' + u.name + '"?',
+        rotulo: 'Excluir', perigo: true })) act(async () => { await api('DELETE', '/admin/api/users/' + u.id); await loadUsers(); }, 'Usuário excluído.');
+    }, true, 'trash-2']);
+    root.append(el('article', { className: 'person' }, avatar,
+      el('div', { className: 'person-id' }, el('h3', { textContent: u.name }), badges,
+        el('p', { className: 'hint', textContent: 'Acesso: ' + names })),
+      el('div', { className: 'person-tools' },
+        el('button', { className: 'btn small', type: 'button', onclick: () => askPassword(u) }, icone('key-round', 'sm'), u.hasPassword ? 'Alterar senha' : 'Definir senha'),
+        el('button', { className: 'btn small', type: 'button', textContent: 'Permissões', onclick: () => editPerms(u) }),
+        menu('Mais ações para ' + u.name, itens))));
   }
 }
 function pickAvatar(u) {
@@ -1223,8 +1367,8 @@ function editPerms(u) {
   $('permAdmin').checked = u.isAdmin; $('permDisabled').checked = u.isDisabled; $('permHidden').checked = u.isHidden; $('permAll').checked = u.allLibraries;
   const box = $('permLibs'); box.replaceChildren();
   allLibs.forEach((l) => {
-    const cb = el('input', { type: 'checkbox', value: l.Id, checked: u.libraries.includes(l.Id), style: 'width:auto' });
-    box.append(el('label', { style: 'display:flex;gap:8px;align-items:center;font-weight:500;margin:6px 0' }, cb, l.Name));
+    const cb = el('input', { type: 'checkbox', value: l.Id, checked: u.libraries.includes(l.Id) });
+    box.append(el('label', { className: 'check' }, cb, l.Name));
   });
   const sync = () => box.querySelectorAll('input').forEach((i) => (i.disabled = $('permAll').checked));
   $('permAll').onchange = sync; sync();
@@ -1252,7 +1396,30 @@ async function loadSettings() {
   const st = $('tmdbState');
   st.textContent = s.tmdbConfigured ? 'configurada' : 'não configurada';
   st.className = 'badge ' + (s.tmdbConfigured ? 'ok' : 'warn');
+  fixarBase();
 }
+// Salvar só vale com algo alterado; Descartar volta ao que está no servidor.
+const camposServidor = ['srvName', 'srvScan', 'srvTx'];
+const camposTmdb = ['tmdbKey', 'tmdbLang'];
+let valoresBase = {};
+const mudou = (ids) => ids.some((id) => $(id).value !== valoresBase[id]);
+function atualizarSujeira() {
+  const a = mudou(camposServidor);
+  const b = mudou(camposTmdb);
+  $('saveServer').disabled = $('descartarServidor').disabled = !a;
+  $('saveSettings').disabled = $('descartarTmdb').disabled = !b;
+  for (const [id, sujo] of [['estadoServidor', a], ['estadoTmdb', b]]) {
+    $(id).textContent = sujo ? 'Alterações não salvas' : 'Nenhuma alteração';
+    $(id).classList.toggle('dirty', sujo);
+  }
+}
+function fixarBase() {
+  valoresBase = Object.fromEntries([...camposServidor, ...camposTmdb].map((id) => [id, $(id).value]));
+  atualizarSujeira();
+}
+for (const id of [...camposServidor, ...camposTmdb]) $(id).addEventListener('input', atualizarSujeira);
+$('descartarServidor').onclick = () => { for (const id of camposServidor) $(id).value = valoresBase[id]; atualizarSujeira(); };
+$('descartarTmdb').onclick = () => { for (const id of camposTmdb) $(id).value = valoresBase[id]; atualizarSujeira(); };
 $('saveServer').onclick = () => act(async () => {
   await api('PUT', '/admin/api/settings', {
     serverName: $('srvName').value.trim(),
@@ -1267,7 +1434,7 @@ $('saveSettings').onclick = () => act(async () => {
   await api('PUT', '/admin/api/settings', body);
   await loadSettings();
 }, 'Configurações salvas.');
-$('clearKey').onclick = () => { if (confirm('Remover a chave do TMDB salva?')) act(async () => { await api('PUT', '/admin/api/settings', { tmdbApiKey: '' }); await loadSettings(); }, 'Chave removida.'); };
+$('clearKey').onclick = async () => { if (await confirmar('Os metadados online param até você informar outra chave.', { titulo: 'Remover a chave do TMDB?', rotulo: 'Remover', perigo: true })) act(async () => { await api('PUT', '/admin/api/settings', { tmdbApiKey: '' }); await loadSettings(); }, 'Chave removida.'); };
 
 // ---- diagnóstico de reprodução
 const motivosReproducao = {
@@ -1569,10 +1736,20 @@ $('legExcluir').onclick = () => operarLegenda(async () => {
 // ---- diagnóstico e varredura
 const metrica = (nome, valor) => el('div', {}, el('dt', { textContent: nome }),
   el('dd', { textContent: valor }));
-const servico = (nome, estado, detalhe, classe = '') => el('div', { className: 'service' },
-  el('dt', { textContent: nome }),
-  el('dd', {}, el('strong', { className: classe, textContent: estado }),
-    el('small', { textContent: detalhe })));
+const servico = (nome, estado, detalhe, classe = '') => el('div', { className: 'service ' + classe, role: 'listitem' },
+  icone(classe === 'ok' ? 'circle-check' : 'triangle-alert'),
+  el('div', {}, el('h4', { textContent: nome }), el('p', { textContent: detalhe })),
+  el('span', { className: 'badge ' + classe, textContent: estado }));
+// A barra do topo mostra só o que precisa de atenção; o resto fica no Diagnóstico.
+function atualizarSaude(s) {
+  const itens = [];
+  if (!s.ffmpeg.available) itens.push(['bad', 'triangle-alert', 'FFmpeg ausente', '#status']);
+  if (!s.passwordProtected) itens.push(['warn', 'triangle-alert', 'Painel sem senha', '#users']);
+  const pendentes = s.scan.signaturesPending || 0;
+  if (pendentes) itens.push(['', 'loader-circle', pendentes + (pendentes === 1 ? ' assinatura pendente' : ' assinaturas pendentes'), '#libs']);
+  $('saude').replaceChildren(...itens.map(([classe, nome, texto, destino]) => el('a', { className: ('chip ' + classe).trim(), href: destino },
+    icone(nome), texto)));
+}
 let consultaStatus;
 let varreduraSolicitada = false;
 let ultimoDiagnostico;
@@ -1585,6 +1762,7 @@ async function loadStatus() {
 async function atualizarStatus() {
   const s = await api('GET', '/admin/api/status');
   $('srv').textContent = s.serverName + ' (v' + s.version + ', porta ' + s.port + ')';
+  atualizarSaude(s);
   const sc = s.scan;
   const anterior = sc.lastFinished
     ? 'Última conclusão: ' + new Date(sc.lastFinished * 1000).toLocaleString('pt-BR')
@@ -1593,6 +1771,11 @@ async function atualizarStatus() {
   const texto = sc.running ? 'Em andamento. ' + anterior
     : sc.pending ? 'Aguardando início. ' + anterior : anterior;
   if ($('scanState').textContent !== texto) $('scanState').textContent = texto;
+  $('scanBar').hidden = !sc.running;
+  const pendentes = sc.signaturesPending || 0;
+  $('assinaturas').hidden = !pendentes;
+  $('assinaturas').textContent = pendentes
+    ? 'Assinaturas pendentes: ' + pendentes + '. Indexar áudio e cenas e ajustar legendas funcionam quando chegar a zero.' : '';
   $('scanBtn').disabled = varreduraSolicitada || sc.running || sc.pending;
   $('retryScan').hidden = true;
   const diagnostico = JSON.stringify([s.items, s.libraries, s.users, s.ffmpeg,
@@ -1605,7 +1788,7 @@ async function atualizarStatus() {
       metrica('Séries', s.items.series), metrica('Episódios', s.items.episodes),
       metrica('Bibliotecas', s.libraries), metrica('Usuários', s.users)),
     el('h3', { textContent: 'Serviços' }),
-    el('dl', { className: 'records' },
+    el('div', { className: 'records', role: 'list' },
       servico('FFmpeg', s.ffmpeg.available ? 'Ativo' : 'Ausente',
         s.ffmpeg.available ? 'Encoder ' + s.ffmpeg.encoder + ', até ' + s.ffmpeg.maxTranscodes
           + ' transcodificações' : 'Apenas Direct Play (' + s.ffmpeg.path + ')',
@@ -1651,6 +1834,60 @@ $('scanBtn').onclick = async () => {
     varreduraSolicitada = false;
     await poll();
   }
+};
+// ---- tema claro ou escuro (a escolha fica neste navegador)
+const raiz = document.documentElement;
+function aplicarTema(tema) {
+  raiz.dataset.theme = tema;
+  $('marca').src = tema === 'dark' ? '/admin/logo-dark.png' : '/admin/logo.png';
+}
+aplicarTema(raiz.dataset.theme || 'light');
+$('tema').onclick = () => {
+  const proximo = raiz.dataset.theme === 'dark' ? 'light' : 'dark';
+  aplicarTema(proximo);
+  try { localStorage.setItem('rustyfin-tema', proximo); } catch (_) { /* navegador sem armazenamento */ }
+};
+
+// ---- paleta de comandos (Ctrl K)
+const comandos = [
+  ['Ir para Bibliotecas', 'tela', () => navegar('libs')], ['Ir para Usuários', 'tela', () => navegar('users')],
+  ['Ir para Sessões', 'tela', () => navegar('sessions')], ['Ir para Configurações', 'tela', () => navegar('settings')],
+  ['Ir para Diagnóstico', 'tela', () => navegar('status')],
+  ['Iniciar varredura do acervo', 'ação', () => { navegar('libs'); $('scanBtn').click(); }],
+  ['Nova biblioteca', 'ação', () => { navegar('libs'); $('newLib').click(); }],
+  ['Novo usuário', 'ação', () => { navegar('users'); $('newUser').click(); }],
+  ['Encerrar todas as sessões', 'ação', () => { navegar('sessions'); $('revokeAll').click(); }],
+  ['Abrir a busca de cenas', 'página', () => { location.href = '/cenas'; }],
+  ['Alternar tema claro e escuro', 'ação', () => $('tema').click()],
+];
+const paleta = $('paleta');
+let selecionado = 0;
+let visiveis = comandos;
+function desenharPaleta() {
+  const termo = $('palIn').value.trim().toLowerCase();
+  visiveis = comandos.filter(([nome]) => nome.toLowerCase().includes(termo));
+  selecionado = Math.min(selecionado, Math.max(visiveis.length - 1, 0));
+  $('palLista').replaceChildren(...(visiveis.length ? visiveis.map(([nome, tipo, acao], i) => {
+    const item = el('li', { onclick: () => executar(acao) }, el('span', { textContent: nome }), el('small', { textContent: tipo }));
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', String(i === selecionado));
+    return item;
+  }) : [el('li', { textContent: 'Nada encontrado' })]));
+}
+function executar(acao) { paleta.close(); acao(); }
+function abrirPaleta() { $('palIn').value = ''; selecionado = 0; desenharPaleta(); paleta.showModal(); $('palIn').focus(); }
+$('abrePaleta').onclick = abrirPaleta;
+document.addEventListener('keydown', (evento) => {
+  if ((evento.ctrlKey || evento.metaKey) && evento.key.toLowerCase() === 'k') {
+    evento.preventDefault();
+    if (paleta.open) paleta.close(); else abrirPaleta();
+  }
+});
+$('palIn').oninput = () => { selecionado = 0; desenharPaleta(); };
+$('palIn').onkeydown = (evento) => {
+  if (evento.key === 'ArrowDown') { selecionado = Math.min(selecionado + 1, visiveis.length - 1); desenharPaleta(); evento.preventDefault(); }
+  else if (evento.key === 'ArrowUp') { selecionado = Math.max(selecionado - 1, 0); desenharPaleta(); evento.preventDefault(); }
+  else if (evento.key === 'Enter' && visiveis[selecionado]) executar(visiveis[selecionado][2]);
 };
 abrirAba();
 poll();
