@@ -5,6 +5,11 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.27.1] - 2026-11-18
+
+### Corrigido
+- Um teste do AniList não passava no clippy mais novo do CI (`manual_assert_eq`); o código do servidor não mudou.
+
 ## [0.27.0] - 2026-11-18
 
 ### Adicionado

@@ -462,7 +462,7 @@ mod tests {
         assert_eq!(sinopse, "Sinopse em português");
         assert!((nota - 9.1).abs() < 1e-9);
         assert_eq!(anilist, 154_587);
-        assert!(std::fs::read(poster.unwrap()).unwrap() == b"imagem");
+        assert_eq!(std::fs::read(poster.unwrap()).unwrap(), b"imagem");
         assert!(fundo.is_some());
         // Biblioteca de séries comuns: nunca consultada.
         let comum: Option<(String,)> = sqlx::query_as("SELECT id FROM series WHERE id = 's-comum'").fetch_optional(&pool).await.unwrap();
