@@ -5,6 +5,18 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.23.1] - 2026-11-18
+
+### Corrigido
+- Moonfin na TV Samsung (Tizen): as capas e os fundos apareciam quebrados. A TV os carrega com `<img>`, que não envia
+  token, e o servidor respondia 401. Agora `GET /Items/{id}/Images/...` abre sem token **para clientes da rede local**,
+  como o Jellyfin faz; de fora da rede e com `RUSTYFIN_IMAGENS_ANONIMAS=false` as imagens voltam a exigir token. O resto
+  continua exigindo token.
+
+### Adicionado
+- Com `RUST_LOG=rustyfin=debug`, o log registra cada requisição recusada com 401 (só o caminho, sem a query, e o aparelho),
+  o que permite achar o motivo de uma tela quebrada num app.
+
 ## [0.23.0] - 2026-11-18
 
 ### Adicionado

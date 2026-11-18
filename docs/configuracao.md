@@ -48,6 +48,7 @@ Para as configurações que existem nos dois lugares, **o valor salvo no painel 
 | Variável | Padrão | Descrição |
 |---|---|---|
 | `RUSTYFIN_ADMIN_PASSWORD` | vazio | Senha extra do painel (HTTP Basic, qualquer usuário). Útil antes de criar um administrador com senha |
+| `RUSTYFIN_IMAGENS_ANONIMAS` | `true` | Capas e fundos abertos sem token para clientes da rede local (necessário para o Moonfin na TV Samsung). `false` exige token nas imagens e as capas somem nos apps que não o enviam. Veja [usuários e segurança](usuarios-e-seguranca.md) |
 | `RUSTYFIN_TOKEN_TTL_DAYS` | `0` (nunca) | Dias sem uso para um dispositivo perder o login e voltar à tela de entrada |
 
 ### Metadados (TMDB)

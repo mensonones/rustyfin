@@ -17,6 +17,10 @@ pub struct AppConfig {
     pub watch_enabled: bool,
     /// Responde à descoberta automática (UDP 7359).
     pub discovery_enabled: bool,
+    /// Capas e fundos de títulos (`/Items/{id}/Images/*`) abertos aos clientes da rede local que não enviam token. Os apps
+    /// que carregam imagens com `<img>` (como o Moonfin na TV Samsung) não conseguem enviar cabeçalhos; o Jellyfin também
+    /// serve as imagens sem login. Fora da rede local, e com `false`, as imagens exigem token.
+    pub anonymous_images: bool,
     /// Se definida, o painel `/admin` exige essa senha (HTTP Basic, qualquer usuário).
     pub admin_password: Option<String>,
     /// Endereço HTTP anunciado na descoberta (obrigatório na prática em Docker).
@@ -69,6 +73,8 @@ impl AppConfig {
         let video_encoder =
             std::env::var("RUSTYFIN_VIDEO_ENCODER").unwrap_or_else(|_| "auto".to_string());
         let discovery_enabled = std::env::var("RUSTYFIN_DISCOVERY")
+            .map_or(true, |v| !matches!(v.trim().to_lowercase().as_str(), "0" | "false" | "no" | "off"));
+        let anonymous_images = std::env::var("RUSTYFIN_IMAGENS_ANONIMAS")
             .map_or(true, |v| !matches!(v.trim().to_lowercase().as_str(), "0" | "false" | "no" | "off"));
         let admin_password = std::env::var("RUSTYFIN_ADMIN_PASSWORD")
             .ok()
@@ -134,6 +140,7 @@ impl AppConfig {
             scan_interval_secs,
             watch_enabled,
             discovery_enabled,
+            anonymous_images,
             admin_password,
             public_url,
             ffmpeg_path,

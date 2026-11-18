@@ -153,7 +153,10 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
         .layer(axum::Extension(reproducao_admin::Perfis::default()))
         .layer(axum::Extension(preparos::Preparos::default()))
         // Toda rota (exceto as públicas) exige token válido; o CORS fica por fora para o preflight passar
-        .layer(from_fn_with_state(pool.clone(), auth::require_user))
+        .layer(from_fn_with_state(
+            auth::AuthState { pool: pool.clone(), anonymous_images: config.anonymous_images },
+            auth::require_user,
+        ))
         // Allow permissive CORS for web clients and cross-origin mobile apps
         .layer(CorsLayer::permissive())
         // Log por requisição (nível DEBUG): RUST_LOG=tower_http=debug

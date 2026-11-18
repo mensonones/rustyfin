@@ -137,16 +137,59 @@ pub fn is_public(path: &str) -> bool {
         || (path.starts_with("/Users/") && path.contains("/Images/")) // avatar: 404 em vez de 401
 }
 
-pub async fn require_user(State(pool): State<DbPool>, mut req: Request, next: Next) -> Response {
+/// Registra (nível `debug`) uma requisição recusada com 401: só o caminho, sem a query, que pode trazer `api_key`.
+fn recusada(req: &Request, motivo: &str) {
+    let agente = req
+        .headers()
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("-");
+    tracing::debug!(caminho = req.uri().path(), agente, "401: {motivo}");
+}
+
+/// Estado do middleware de autenticação.
+#[derive(Clone)]
+pub struct AuthState {
+    pub pool: DbPool,
+    pub anonymous_images: bool,
+}
+
+/// `GET /Items/{id}/Images/...`: capas e fundos que os apps pedem sem token (veja `AppConfig::anonymous_images`).
+fn is_item_image(method: &axum::http::Method, path: &str) -> bool {
+    matches!(*method, axum::http::Method::GET | axum::http::Method::HEAD)
+        && path.strip_prefix("/Items/").is_some_and(|rest| rest.contains("/Images/"))
+}
+
+/// O visitante da rede local que só vê imagens: sem usuário, mas com acesso a todas as bibliotecas.
+fn visitante_de_imagens() -> AuthUser {
+    AuthUser { id: "visitante".into(), name: "Visitante".into(), is_admin: false, allowed_libraries: None }
+}
+
+pub async fn require_user(State(state): State<AuthState>, mut req: Request, next: Next) -> Response {
+    let pool = state.pool;
     let creds = extract_credentials(req.headers(), req.uri().query());
     let public = is_public(req.uri().path());
+    if creds.token.is_none() && state.anonymous_images && is_item_image(req.method(), req.uri().path()) {
+        let da_rede_local = req
+            .extensions()
+            .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+            .is_some_and(|c| crate::api::admin::is_private(c.0.ip()));
+        if da_rede_local {
+            req.extensions_mut().insert(visitante_de_imagens());
+            req.extensions_mut().insert(creds);
+            return next.run(req).await;
+        }
+    }
 
     if let Some(token) = &creds.token {
         match users::lookup_token(&pool, token).await {
             Ok(Some(user)) => {
                 req.extensions_mut().insert(user);
             }
-            Ok(None) if !public => return StatusCode::UNAUTHORIZED.into_response(),
+            Ok(None) if !public => {
+                recusada(&req, "token inválido, expirado ou revogado");
+                return StatusCode::UNAUTHORIZED.into_response();
+            }
             Ok(None) => {}
             Err(e) => {
                 tracing::error!("Erro ao validar token: {}", e);
@@ -154,6 +197,7 @@ pub async fn require_user(State(pool): State<DbPool>, mut req: Request, next: Ne
             }
         }
     } else if !public {
+        recusada(&req, "requisição sem token");
         return StatusCode::UNAUTHORIZED.into_response();
     }
     req.extensions_mut().insert(creds);

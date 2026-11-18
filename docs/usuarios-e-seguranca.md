@@ -45,11 +45,16 @@ Para os apps funcionarem, algumas rotas são públicas:
 | `GET /System/Info/Public`, `/System/Ping`, `/Branding/*`, `/QuickConnect/Enabled` | Descoberta e tela de conexão |
 | `GET /Users/Public`, `POST /Users/AuthenticateByName` | Tela de login |
 | Avatares de usuários (`/Users/{id}/Images/*`) | Os apps carregam os avatares na tela de login |
+| Capas e fundos (`/Items/{id}/Images/*`), só da rede local | Os apps que usam `<img>` não enviam token (veja abaixo) |
 
 Todo o resto (listagens, detalhes, streaming, reprodução, administração de usuários) exige um token válido, aceito em
 `Authorization: MediaBrowser Token="..."`, `X-Emby-Token`, `X-MediaBrowser-Token` ou `api_key`/`ApiKey` na URL.
 
-Capas e fundos exigem token, inclusive quando o cliente os busca em uma requisição separada. No HLS, o servidor
+**Capas e fundos** (`GET /Items/{id}/Images/...`) abrem sem token **para clientes da rede local**. Os apps que carregam
+imagens com `<img>`, como o Moonfin na TV Samsung, não conseguem enviar cabeçalhos, e o Jellyfin também serve as imagens sem
+login. De fora da rede local, ou com `RUSTYFIN_IMAGENS_ANONIMAS=false`, as imagens exigem token. Só as imagens são abertas:
+listagens, detalhes, streaming e o resto continuam exigindo token. Como a imagem anônima não tem usuário, o acesso por
+biblioteca não filtra capas: quem está na rede local e conhece o ID de um título vê a capa dele. No HLS, o servidor
 inclui `api_key` nas URLs das playlists e dos segmentos para players que não reenviam cabeçalhos. As URLs
 de reprodução contêm uma credencial e devem ser tratadas como privadas.
 

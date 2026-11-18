@@ -41,6 +41,8 @@ O servidor responde ao broadcast UDP `who is JellyfinServer?` na porta 7359 com 
 
 - O player da TV só toca bem arquivos MP4 quando a URL termina em `.mov` (o servidor já informa isso), e só lê por
   trechos quando o servidor **não** envia `DirectStreamUrl`. O Rustyfin segue o mesmo comportamento do Jellyfin.
+- A TV carrega as capas e os fundos com `<img>`, que **não envia token**. O servidor as serve sem token para a rede local
+  (`RUSTYFIN_IMAGENS_ANONIMAS`, ligado por padrão); sem isso as capas aparecem quebradas.
 - A TV envia um perfil próprio ("Moonfin Tizen 6"); com `RUST_LOG=rustyfin=debug` o log mostra o perfil recebido e a decisão tomada.
 - Se o Direct Play falha, o app cai para HLS depois de um tempo: lento para iniciar e, se o arquivo for
   recodificado, com a playlist completa para permitir o avanço.

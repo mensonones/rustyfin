@@ -29,6 +29,7 @@ fn test_config(dir: &std::path::Path) -> AppConfig {
         scan_interval_secs: 0,
         watch_enabled: false,
         discovery_enabled: false,
+        anonymous_images: true,
         admin_password: None,
         public_url: None,
         ffmpeg_path: "ffmpeg".into(),
@@ -162,8 +163,6 @@ async fn midia_protegida_rejeita_requisicoes_sem_token() {
     let s = server("midia").await;
     let token = login(&s.app, "Admin").await;
     for rota in [
-        "/Items/abc/Images/Primary",
-        "/Items/abc/Images/Backdrop/0",
         "/Videos/abc/hls/0123456789abcdef/seg_00000.ts",
         "/Videos/abc/hls/0123456789abcdef/init.mp4",
     ] {
@@ -796,4 +795,47 @@ async fn aba_acervo_lista_com_selos_filtros_busca_e_paginacao() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, _) = call(&s.app, Method::GET, "/admin/api/acervo?biblioteca=nao-existe", None, None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// Requisição `GET` sem token, vinda do endereço informado.
+async fn get_anonimo(app: &axum::Router, uri: &str, de: &str) -> StatusCode {
+    let mut req = Request::builder().method(Method::GET).uri(uri).body(Body::empty()).unwrap();
+    let addr: SocketAddr = format!("{de}:40000").parse().unwrap();
+    req.extensions_mut().insert(ConnectInfo(addr));
+    app.clone().oneshot(req).await.unwrap().status()
+}
+
+#[tokio::test]
+async fn capas_abrem_para_a_rede_local_sem_token_mas_nao_para_fora_nem_com_a_opcao_desligada() {
+    // O Moonfin na TV Samsung carrega as capas com <img>, que não envia token.
+    let s = server("capas-anonimas").await;
+    let config = Arc::new(test_config(&s.dir));
+    let pool = db::init_db(&config.database_url).await.unwrap();
+    let id = "0123456789abcdef0123456789abcdef";
+    item_com_legenda(&pool, &s.dir, id, LEGENDA_CENAS).await;
+    let capa = s.dir.join("capa.jpg");
+    std::fs::write(&capa, b"imagem-de-teste").unwrap();
+    sqlx::query("UPDATE items SET poster_path = ? WHERE id = ?")
+        .bind(capa.to_str().unwrap())
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let uri = format!("/Items/{id}/Images/Primary?maxWidth=0");
+
+    assert_eq!(get_anonimo(&s.app, &uri, "192.168.1.50").await, StatusCode::OK, "rede local");
+    assert_eq!(get_anonimo(&s.app, "/Items/inexistente/Images/Backdrop/0", "192.168.1.50").await, StatusCode::NOT_FOUND);
+    assert_eq!(get_anonimo(&s.app, &uri, "203.0.113.9").await, StatusCode::UNAUTHORIZED, "fora da rede local");
+    // Só imagens: o resto continua exigindo token, mesmo da rede local.
+    assert_eq!(get_anonimo(&s.app, &format!("/Items/{id}"), "192.168.1.50").await, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        get_anonimo(&s.app, &format!("/Videos/{id}/stream"), "192.168.1.50").await,
+        StatusCode::UNAUTHORIZED
+    );
+
+    // Com `RUSTYFIN_IMAGENS_ANONIMAS=false` as imagens voltam a exigir token.
+    let mut fechada = test_config(&s.dir);
+    fechada.anonymous_images = false;
+    let app = api::build_router(Arc::new(fechada), pool.clone(), Arc::new(tokio::sync::Notify::new()));
+    assert_eq!(get_anonimo(&app, &uri, "192.168.1.50").await, StatusCode::UNAUTHORIZED);
 }
