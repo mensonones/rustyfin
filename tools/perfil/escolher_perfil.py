@@ -4,8 +4,10 @@
 Perfis comparados (os que a máquina permitir):
   docker-cpu    container Docker, libx264 (processador)
   docker-gpu    container Docker com a GPU repassada (Linux: /dev/dri, VAAPI)
+  docker-nvidia container Docker com `--gpus all` (NVIDIA; Docker Desktop com WSL 2 ou NVIDIA Container Toolkit)
   nativo-cpu    ffmpeg direto no sistema, libx264
   nativo-gpu    ffmpeg direto no sistema com a GPU (Windows: Quick Sync; Linux: VAAPI)
+  nativo-nvidia ffmpeg direto no sistema com NVENC (NVIDIA)
 
 O teste usa os mesmos argumentos de ffmpeg do servidor (veja `src/transcode/args.rs`): um vídeo H.264 de 1080p é reduzido
 para 720p a 4 Mbps, decodificando e codificando na GPU quando o perfil é de GPU. Mede a velocidade (múltiplos do tempo
@@ -114,8 +116,8 @@ def achar_imagem(pedida):
 class Ffmpeg:
     """ffmpeg do sistema (nativo) ou de uma imagem Docker."""
 
-    def __init__(self, tipo, pasta=None, imagem=None, cpus=None, gpu=False):
-        self.tipo, self.imagem, self.cpus, self.gpu = tipo, imagem, cpus, gpu
+    def __init__(self, tipo, pasta=None, imagem=None, cpus=None, gpu=False, nvidia=False):
+        self.tipo, self.imagem, self.cpus, self.gpu, self.nvidia = tipo, imagem, cpus, gpu, nvidia
         exe = ".exe" if WINDOWS else ""
         self.caminho = str(Path(pasta) / f"ffmpeg{exe}") if pasta else (shutil.which("ffmpeg") or "ffmpeg")
 
@@ -125,6 +127,9 @@ class Ffmpeg:
         cmd = ["docker", "run", "--rm", "--entrypoint", "ffmpeg"]
         if self.cpus:
             cmd += ["--cpus", str(self.cpus)]
+        if self.nvidia:
+            # NVIDIA no Docker: `--gpus all` (Docker Desktop com WSL 2 ou NVIDIA Container Toolkit no Linux) e a capacidade `video`
+            cmd += ["--gpus", "all", "-e", "NVIDIA_DRIVER_CAPABILITIES=compute,video,utility"]
         if self.gpu:
             cmd += ["--device", "/dev/dri:/dev/dri"]
             gid = grupo_render()
@@ -162,6 +167,10 @@ def args_encoder(perfil, entrada, duracao):
         return [*comum, "-i", entrada, "-vf", "scale=1280:720", "-c:v", "libx264", "-preset", "veryfast",
                 "-pix_fmt", "yuv420p", "-crf", "23", "-maxrate", BITRATE, "-bufsize", "8000000", "-an",
                 "-x264-params", "subme=0:me_range=16:rc_lookahead=10:me=hex:open_gop=0", *saida]
+    if perfil["encoder"] == "h264_nvenc":
+        # Como o servidor usa um encoder sem pipeline próprio: decodifica e reduz na CPU, codifica na NVIDIA.
+        return [*comum, "-i", entrada, "-vf", "scale=1280:720,format=yuv420p", "-c:v", "h264_nvenc", "-preset", "p4",
+                "-b:v", BITRATE, "-maxrate", BITRATE, "-bufsize", "8000000", "-an", *saida]
     if perfil["encoder"] == "h264_vaapi":
         disp = perfil.get("dispositivo", "/dev/dri/renderD128")
         return [*comum, "-init_hw_device", f"vaapi=hw:{disp}", "-filter_hw_device", "hw", "-hwaccel", "vaapi",
@@ -236,6 +245,8 @@ def medir(ff, perfil, pasta, duracao, repeticoes, nucleos):
 COMANDOS = {
     "docker-cpu": "docker compose up -d --build   (nenhuma configuração extra)",
     "docker-gpu": "sh tools/gpu-setup.sh && docker compose up -d   (Linux; liga o repasse de /dev/dri)",
+    "docker-nvidia": "no serviço do compose: `gpus: all` e `NVIDIA_DRIVER_CAPABILITIES=compute,video,utility`, com RUSTYFIN_VIDEO_ENCODER=h264_nvenc",
+    "nativo-nvidia": "RUSTYFIN_FFMPEG=<caminho do ffmpeg com nvenc> RUSTYFIN_VIDEO_ENCODER=h264_nvenc ./rustyfin",
     "nativo-cpu": "RUSTYFIN_FFMPEG=<caminho do ffmpeg> RUSTYFIN_VIDEO_ENCODER=libx264 ./rustyfin   (ou cargo run --release)",
     "nativo-gpu": "RUSTYFIN_FFMPEG=<caminho do ffmpeg com o encoder> RUSTYFIN_VIDEO_ENCODER=auto ./rustyfin   (ou cargo run --release)",
 }
@@ -250,7 +261,7 @@ def recomendar(resultados):
     if not ok:
         return {"perfil": None, "motivo": "nenhum perfil pôde ser medido; veja o motivo de cada um em `perfis`."}
     cpu = {k: v for k, v in ok.items() if k.endswith("cpu")}
-    gpu = {k: v for k, v in ok.items() if k.endswith("gpu")}
+    gpu = {k: v for k, v in ok.items() if not k.endswith("cpu")}
     melhor_cpu = max(cpu, key=lambda k: cpu[k]["x_tempo_real"]) if cpu else None
     melhor_gpu = max(gpu, key=lambda k: gpu[k]["x_tempo_real"]) if gpu else None
     # Entre perfis de processador, o Docker ganha em praticidade quando perde menos de 10% de velocidade.
@@ -276,7 +287,7 @@ def recomendar(resultados):
         motivo += (f" O Docker ficou a {round(cpu['docker-cpu']['x_tempo_real'] / cpu['nativo-cpu']['x_tempo_real'] * 100)}% do nativo, "
                    "dentro do que vale a praticidade.")
     return {"perfil": escolha, "motivo": motivo, "como_aplicar": (COMANDOS_WINDOWS if WINDOWS else COMANDOS).get(escolha) or COMANDOS.get(escolha),
-            "alternativa_sem_gpu": melhor_cpu if escolha.endswith("gpu") else None}
+            "alternativa_sem_gpu": melhor_cpu if not escolha.endswith("cpu") else None}
 
 
 # ---------------------------------------------------------------- principal
@@ -336,6 +347,8 @@ def main():
                 resultados["docker-gpu"] = {"disponivel": False, "motivo": "sem /dev/dri no sistema (não há GPU de renderização)"}
             else:
                 tentar("docker-gpu", Ffmpeg("docker", imagem=imagem, cpus=a.docker_cpus, gpu=True), {"encoder": "h264_vaapi"}, nuc)
+            if any("NVIDIA" in p.upper() for p in ambiente["placas_de_video"]):
+                tentar("docker-nvidia", Ffmpeg("docker", imagem=imagem, cpus=a.docker_cpus, nvidia=True), {"encoder": "h264_nvenc"}, nuc)
         elif docker.get("disponivel"):
             resultados["docker-cpu"] = resultados["docker-gpu"] = {"disponivel": False, "motivo": "imagem do Rustyfin não encontrada"}
         if nativo_ok:
@@ -346,6 +359,8 @@ def main():
                 tentar("nativo-gpu", nativo, {"encoder": hw}, os.cpu_count())
             else:
                 resultados["nativo-gpu"] = {"disponivel": False, "motivo": "este ffmpeg não tem o encoder de GPU (h264_qsv no Windows, h264_vaapi no Linux)"}
+            if "h264_nvenc" in enc and any("NVIDIA" in p.upper() for p in ambiente["placas_de_video"]):
+                tentar("nativo-nvidia", nativo, {"encoder": "h264_nvenc"}, os.cpu_count())
         elif not a.sem_nativo:
             for nome in ("nativo-cpu", "nativo-gpu"):
                 resultados[nome] = {"disponivel": False, "motivo": "ffmpeg nativo não encontrado (use --ffmpeg-dir)"}
@@ -358,7 +373,7 @@ def main():
         return
     say("\nResultado (30 s de 1080p reduzidos para 720p a 4 Mbps):")
     say(f"  {'perfil':12s} {'velocidade':>12s} {'núcleos':>9s} {'CPU do sistema':>15s}  situação")
-    for nome in ("docker-cpu", "docker-gpu", "nativo-cpu", "nativo-gpu"):
+    for nome in ("docker-cpu", "docker-gpu", "docker-nvidia", "nativo-cpu", "nativo-gpu", "nativo-nvidia"):
         r = resultados.get(nome)
         if not r:
             continue

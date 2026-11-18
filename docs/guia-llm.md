@@ -51,12 +51,13 @@ perfis.<nome>.nucleos_ocupados      CPU gasta pelo ffmpeg, em núcleos
 perfis.<nome>.cpu_pct_do_sistema    o mesmo, em % da máquina
 perfis.<nome>.sessoes_simultaneas_estimadas   teto teórico (parte inteira da velocidade)
 perfis.<nome>.variacao_pct          melhor contra pior repetição
-recomendacao.perfil                 docker-cpu | docker-gpu | nativo-cpu | nativo-gpu | null
+recomendacao.perfil                 um dos perfis acima, ou null
 recomendacao.motivo, .como_aplicar, .alternativa_sem_gpu
 notas[]                             avisos (por exemplo, imagem do Rustyfin ausente)
 ```
 
-`<nome>` é um destes: `docker-cpu`, `docker-gpu`, `nativo-cpu`, `nativo-gpu`.
+`<nome>` é um destes: `docker-cpu`, `docker-gpu`, `docker-nvidia`, `nativo-cpu`, `nativo-gpu`, `nativo-nvidia`. Os de NVIDIA
+só aparecem se o script achar uma placa NVIDIA.
 
 ## 4. Confira a qualidade da medição
 
@@ -84,7 +85,7 @@ Casos que você deve reconhecer:
 | Windows, GPU Intel, `nativo-gpu` disponível e mais rápido | Rodar **direto no Windows** com Quick Sync. O Docker Desktop não usa a GPU Intel |
 | Linux, GPU Intel ou AMD, `docker-gpu` disponível | Docker com `tools/gpu-setup.sh`. Avise que o VAAPI no Linux ainda não foi validado numa GPU real pelo projeto |
 | `docker-gpu` indisponível no Linux | Veja o `motivo`: sem `/dev/dri` ou sem permissão. `docker compose exec rustyfin sh /app/gpu-check.sh` diagnostica |
-| Só NVIDIA, ou nenhuma GPU | `docker-cpu` (o foco do projeto é Intel e AMD; NVIDIA não é medida) |
+| Só NVIDIA, ou nenhuma GPU | Em geral `docker-cpu`: com NVIDIA o servidor decodifica na CPU e só codifica na GPU, então o ganho tende a ser pequeno. Use a medição de `docker-nvidia` ou `nativo-nvidia` para confirmar; se a NVIDIA vencer, diga que o servidor não tem pipeline completo para ela |
 | `docker-cpu` ≈ `nativo-cpu` | Docker. Cite a diferença medida |
 | Pouca CPU (NAS) | Rode com `--docker-cpus <n>` e mostre `sessoes_simultaneas_estimadas` |
 

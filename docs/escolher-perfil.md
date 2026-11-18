@@ -1,6 +1,6 @@
 # Qual perfil de execução escolher
 
-O Rustyfin roda de quatro jeitos, e a diferença entre eles é de **velocidade e de uso da CPU** na transcodificação:
+O Rustyfin roda de seis jeitos (os quatro principais abaixo e as duas variantes com NVIDIA), e a diferença entre eles é de **velocidade e de uso da CPU** na transcodificação:
 
 | Perfil | O que é |
 |---|---|
@@ -8,6 +8,7 @@ O Rustyfin roda de quatro jeitos, e a diferença entre eles é de **velocidade e
 | `docker-gpu` | Container Docker com a GPU repassada (Linux, VAAPI) |
 | `nativo-cpu` | O binário direto no sistema, no processador |
 | `nativo-gpu` | O binário direto no sistema com a GPU (Windows: Quick Sync; Linux: VAAPI) |
+| `docker-nvidia`, `nativo-nvidia` | Com uma GPU NVIDIA (NVENC): no Docker pelo `--gpus all`, ou direto no sistema |
 
 Para tocar sem transcodificar (Direct Play) a escolha **não muda nada**: o servidor só entrega o arquivo.
 
@@ -17,7 +18,7 @@ Para tocar sem transcodificar (Direct Play) a escolha **não muda nada**: o serv
 |---|---|---|
 | **Windows com GPU Intel** | **`nativo-gpu`** (sem Docker) | O Docker Desktop não repassa a GPU Intel ao container. Direto no Windows o Quick Sync funciona |
 | **Linux com GPU Intel ou AMD** | `docker-gpu` | O Docker repassa `/dev/dri`; `sh tools/gpu-setup.sh` liga. (Validado só nos comandos, ainda não numa GPU Linux real) |
-| **Sem GPU, ou só NVIDIA** | `docker-cpu` | O Docker perde pouco para o nativo (veja abaixo) e é bem mais simples |
+| **Sem GPU, ou só NVIDIA** | `docker-cpu` | O Docker perde pouco para o nativo (veja abaixo) e é bem mais simples. A NVIDIA funciona no Docker, mas hoje não acelera (veja abaixo) |
 | **Só reproduz sem transcodificar** | `docker-cpu` | Tanto faz; o Docker é o mais fácil |
 
 Se a sua máquina é diferente ou você quer números, **rode o script** (abaixo). Ele mede e recomenda.
@@ -32,6 +33,7 @@ Desktop. Teste: 30 s de vídeo H.264 1080p reduzidos para 720p a 4 Mbps, mediana
 |---|---|---|---|
 | `docker-cpu` | 5,1× o tempo real | 11,8 de 16 | funciona |
 | `docker-gpu` | | | **indisponível**: o Docker Desktop não repassa a GPU Intel |
+| `docker-nvidia` | 5,2× | 9,5 de 16 | funciona, sem ganho |
 | `nativo-cpu` | 5,2× | 14,5 de 16 | funciona |
 | **`nativo-gpu`** | **8,2×** | **0,6 de 16** | **o melhor** |
 
@@ -39,6 +41,11 @@ Desktop. Teste: 30 s de vídeo H.264 1080p reduzidos para 720p a 4 Mbps, mediana
   atende mais telas ao mesmo tempo.
 - **Docker x nativo, no processador, é praticamente igual** (5,1× contra 5,2×): o Docker custa cerca de 3% de velocidade. Por
   isso, sem GPU, vale ficar no Docker.
+- **NVIDIA no Docker:** a [documentação do Docker Desktop](https://docs.docker.com/desktop/features/gpu/) cobre só GPUs
+  NVIDIA no Windows com WSL 2 (`--gpus all`), e **nada sobre GPU Intel**. Testei: o `h264_nvenc` roda dentro do container
+  desta máquina, mas dá 5,2× (contra 5,1× no processador), porque o servidor decodifica e reduz o vídeo na CPU e só codifica
+  na NVIDIA. Um pipeline todo na GPU (`-hwaccel cuda`, `scale_cuda`) ficou mais lento (3,7×) dentro do Docker Desktop, por
+  causa da virtualização da GPU no WSL 2. Por isso a NVIDIA não compensa aqui, e o servidor não tem pipeline próprio para ela.
 - **Nesta máquina, a escolha certa é rodar o Rustyfin direto no Windows com Quick Sync**, não pelo Docker.
 
 A GPU não ganha em tudo. Com fontes AV1 ou com legendas de imagem queimadas, a decodificação ou o filtro ficam na CPU e o
@@ -91,7 +98,8 @@ Como ler a saída:
   comportam de outro jeito; o desempenho completo está em [desempenho](desempenho.md).
 - A CPU medida é a do processo `ffmpeg`. O trabalho que o driver da GPU faz fora dele não entra; por isso o uso do sistema
   num teste completo (cerca de 21%) é maior que os 0,6 núcleos acima.
-- NVIDIA não é medida: a máquina de teste a tem, mas o foco do projeto é Intel e AMD.
+- NVIDIA: o script mede `docker-nvidia` e `nativo-nvidia` quando acha uma placa NVIDIA, mas o servidor só tem pipeline de GPU
+  completo para Intel e AMD (decodificar e codificar na GPU). Com NVIDIA a decodificação fica na CPU.
 - O número de sessões que o servidor aceita ao mesmo tempo é um limite à parte (`RUSTYFIN_MAX_TRANSCODES`, padrão 4 com GPU
   e metade das CPUs sem ela).
 

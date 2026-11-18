@@ -129,6 +129,8 @@ NVIDIA (`h264_nvenc`) pode ser usada pelo mesmo mecanismo de encoder, mas não �
 
 - **Docker Desktop (WSL2):** a GPU Intel não é repassada ao container (só o `/dev/dxg`, que serve à NVIDIA). O Rustyfin
   detecta isso, avisa no log e transcodifica em software. O Jellyfin tem a mesma limitação.
+- **NVIDIA no Docker Desktop:** o `--gpus all` funciona com WSL 2 ([documentação](https://docs.docker.com/desktop/features/gpu/),
+  só NVIDIA). O `h264_nvenc` roda dentro do container, mas sem ganho: a decodificação fica na CPU (medido 5,2× contra 5,1×).
 - **Rustyfin direto no Windows:** o Quick Sync funciona. Você precisa de uma GPU Intel com o driver atualizado, de um
   `ffmpeg` com QSV (por exemplo os builds `win64-gpl` do projeto `FFmpeg-Builds`, usados nos testes) com o `ffprobe` na mesma
   pasta, e de:

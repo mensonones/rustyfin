@@ -5,6 +5,13 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.23.3] - 2026-11-18
+
+### Adicionado
+- `tools/perfil/escolher_perfil.py` mede também `docker-nvidia` (`--gpus all`) e `nativo-nvidia` (NVENC) quando acha uma
+  placa NVIDIA. Medido numa RTX 3060 no Docker Desktop: o NVENC funciona no container, mas sem ganho (5,2× contra 5,1× no
+  processador), porque o servidor decodifica na CPU; um pipeline todo em CUDA ficou mais lento (3,7×).
+
 ## [0.23.2] - 2026-11-18
 
 ### Alterado
