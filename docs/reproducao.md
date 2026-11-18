@@ -146,12 +146,23 @@ NVIDIA (`h264_nvenc`) pode ser usada pelo mesmo mecanismo de encoder, mas não �
 **O que foi testado na GPU Intel real** (Rustyfin nativo no Windows, Quick Sync, vídeos sintéticos de 1080p): H.264 de 8 e de
 10 bits, HEVC de 8 e de 10 bits, HDR10 com conversão para SDR, VP9, segmentos HLS de 6 s exatos, avanço para qualquer ponto,
 ABR com duas qualidades, segmentos fMP4, stream progressivo, três sessões simultâneas (4,8× cada usando ~34% da CPU, contra
-2,5× cada e ~97% do `libx264`) e a volta para software com uma GPU que falha.
+2,5× cada e ~97% do `libx264`) e a volta para software com uma GPU que falha. Também foram testados 4K, AV1, vídeo
+entrelaçado e legenda de imagem (PGS) queimada:
+
+| Origem (1080p, salvo 4K) | `libx264` | Quick Sync | Como a GPU trabalha |
+|---|---|---|---|
+| 4K H.264 e HEVC | 2,3× | **3,1×** | decodifica e codifica na GPU |
+| AV1 | **8,8×** | 4,4× | decodifica na CPU, codifica na GPU (a GPU não decodifica AV1 neste Gen12) |
+| H.264 entrelaçado | **12,9×** | 8,9× | decodifica e codifica na GPU |
+| Legenda PGS queimada (H.264 / HEVC) | 3,3× / 4,0× | 3,1× / 4,1× | decodifica na CPU, filtra na CPU, codifica na GPU |
+
+A legenda queimada saiu no vídeo nos dois casos (a região do retângulo ficou branca, ~253 contra ~130 sem a legenda). Nos
+casos em que a CPU decodifica, o Quick Sync não ganha em velocidade numa CPU forte (aqui, 16 threads); o ganho está em
+poupar a CPU (por volta da metade). Os números são de uma sessão única, não de várias ao mesmo tempo.
 
 > **Estado da validação:** o Quick Sync foi exercitado numa GPU Intel real. O VAAPI no Linux é coberto por testes dos comandos
 > e dos fallbacks e ainda não foi exercitado numa GPU real. Se você testar numa máquina Linux com GPU Intel ou AMD, rode
-> `docker compose exec rustyfin sh /app/gpu-check.sh` e relate o resumo numa issue. Ainda sem teste: legendas de imagem
-> queimadas com a GPU, 4K, AV1 e vídeo entrelaçado.
+> `docker compose exec rustyfin sh /app/gpu-check.sh` e relate o resumo numa issue.
 
 ## HDR
 

@@ -5,6 +5,10 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+### Testado
+- Na GPU Intel real (Quick Sync, Windows nativo) com arquivos gerados: 4K (H.264 e HEVC), AV1, H.264 entrelaçado e legenda de
+  imagem (PGS) queimada, em H.264 e em HEVC. Todos funcionam; resultados em `docs/reproducao.md`.
+
 ## [0.20.2] - 2026-11-18
 
 ### Corrigido
