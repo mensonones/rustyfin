@@ -57,12 +57,15 @@ jobs:
           if command -v sha256sum > /dev/null; then sha256sum "$arquivo" > "$arquivo.sha256"; else shasum -a 256 "$arquivo" > "$arquivo.sha256"; fi
           echo "ARQUIVO=$arquivo" >> "$GITHUB_ENV"
       # O setup ainda é novo: se falhar, os demais pacotes saem do mesmo jeito (continue-on-error).
+      - name: Instala o Inno Setup
+        if: matrix.nome == 'windows-x86_64'
+        continue-on-error: true
+        uses: ./.github/actions/inno-setup
       - name: Setup do Windows (Inno Setup)
         if: matrix.nome == 'windows-x86_64'
         continue-on-error: true
         shell: pwsh
         run: |
-          choco install innosetup --version=6.7.4 --no-progress -y
           $versao = "${env:GITHUB_REF_NAME}".TrimStart("v")
           $exe = (Resolve-Path "target/${{ matrix.target }}/release/rustyfin.exe").Path
           & "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe" "/DAppVersion=$versao" "/DExePath=$exe" "packaging/windows/rustyfin.iss"

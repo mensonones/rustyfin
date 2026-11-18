@@ -36,7 +36,7 @@ jobs:
             "${nome}: $($v.ProductName) $($v.ProductVersion), $($v.FileDescription)"
           }
       - name: Instala o Inno Setup
-        run: choco install innosetup --version=6.7.4 --no-progress -y
+        uses: ./.github/actions/inno-setup
       - name: Compila o setup
         shell: pwsh
         run: |

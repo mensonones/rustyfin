@@ -1,0 +1,24 @@
+name: Instala o Inno Setup
+description: Baixa o Inno Setup 6.7.4 do repositório oficial, confere o SHA-256 e a assinatura digital e instala sem telas.
+
+runs:
+  using: composite
+  steps:
+    - name: Baixa, confere e instala
+      shell: pwsh
+      run: |
+        $url = "https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe"
+        $esperado = "a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c"
+        $arquivo = Join-Path $env:RUNNER_TEMP "innosetup-6.7.4.exe"
+        Invoke-WebRequest -Uri $url -OutFile $arquivo
+        $hash = (Get-FileHash $arquivo -Algorithm SHA256).Hash.ToLower()
+        if ($hash -ne $esperado) { throw "SHA-256 inesperado para o Inno Setup: $hash" }
+        $assinatura = Get-AuthenticodeSignature $arquivo
+        if ($assinatura.Status -ne "Valid" -or $assinatura.SignerCertificate.Subject -notlike "*Pyrsys B.V.*") {
+          throw "A assinatura do instalador do Inno Setup não confere: $($assinatura.Status) $($assinatura.SignerCertificate.Subject)"
+        }
+        $p = Start-Process -FilePath $arquivo -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-" -Wait -PassThru
+        if ($p.ExitCode -ne 0) { throw "A instalação do Inno Setup terminou com o código $($p.ExitCode)" }
+        $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+        if (-not (Test-Path $iscc)) { throw "ISCC.exe não encontrado em $iscc" }
+        "Inno Setup instalado: $iscc"
