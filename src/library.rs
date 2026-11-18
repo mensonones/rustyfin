@@ -135,6 +135,7 @@ pub fn spawn_autoscan(pool: DbPool, config: Arc<AppConfig>, trigger: ScanTrigger
             RUNNING.store(true, Ordering::Relaxed);
             let files = scanner::run_scan(&pool, &libs).await;
             metadata::enrich_pending(&pool, &config).await;
+            crate::api::facets::invalidar();
             // Assinaturas de conteúdo que a varredura adiou: não atrasam a biblioteca.
             static HASHING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
             if !HASHING.swap(true, Ordering::AcqRel) {

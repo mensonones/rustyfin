@@ -5,6 +5,11 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+### Corrigido
+- Listas de gêneros, estúdios, pessoas e filtros (`/Genres`, `/Studios`, `/Persons`, `/Items/Filters`): ficam guardadas por 60 s
+  por escopo de bibliotecas e são refeitas no fim de cada varredura, em vez de ler e decodificar o JSON de todos os itens
+  a cada chamada.
+
 ## [0.25.4] - 2026-11-18
 
 Correções de uma revisão de código (Argus) sobre a 0.25.3.

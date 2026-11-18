@@ -17,7 +17,8 @@ use axum::{
 use serde_json::json;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
-    sync::Arc,
+    sync::{Arc, Mutex, OnceLock},
+    time::{Duration, Instant},
 };
 use uuid::Uuid;
 
@@ -107,7 +108,55 @@ struct Facets {
     years: BTreeSet<i32>,
 }
 
-async fn collect(pool: &DbPool, user: &crate::users::AuthUser) -> Result<Facets, sqlx::Error> {
+/// Validade do cache das listas: o catálogo só muda na varredura (que o invalida) ou por ações do painel.
+const CACHE_TTL: Duration = Duration::from_secs(60);
+/// Quantos escopos de biblioteca distintos ficam guardados (um por combinação de bibliotecas permitidas).
+const CACHE_MAX: usize = 32;
+
+type Cache = HashMap<String, (Instant, Arc<Facets>)>;
+
+fn cache() -> &'static Mutex<Cache> {
+    static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Descarta as listas guardadas (chamado quando a varredura termina).
+pub fn invalidar() {
+    if let Ok(mut c) = cache().lock() {
+        c.clear();
+    }
+}
+
+/// As listas do escopo de bibliotecas do usuário. Reconstruí-las lê e decodifica o JSON de todos os itens, então
+/// `/Genres`, `/Persons`, `/Studios` e `/Items/Filters` compartilham um resultado por escopo, em vez de refazer a
+/// varredura do catálogo a cada chamada (os apps as pedem juntas ao abrir uma biblioteca).
+async fn collect(pool: &DbPool, user: &crate::users::AuthUser) -> Result<Arc<Facets>, sqlx::Error> {
+    // O banco entra na chave: processos com mais de um banco (os testes) não misturam listas.
+    let banco = pool.connect_options().get_filename().to_string_lossy().into_owned();
+    let chave = match user.library_clause("i.library_id") {
+        None => format!("{banco}|*"),
+        Some((_, mut ids)) => {
+            ids.sort();
+            format!("{banco}|{}", ids.join(","))
+        }
+    };
+    if let Some((quando, f)) = cache().lock().ok().and_then(|c| c.get(&chave).cloned()) {
+        if quando.elapsed() < CACHE_TTL {
+            return Ok(f);
+        }
+    }
+    let f = Arc::new(montar(pool, user).await?);
+    if let Ok(mut c) = cache().lock() {
+        c.retain(|_, (quando, _)| quando.elapsed() < CACHE_TTL);
+        if c.len() >= CACHE_MAX {
+            c.clear();
+        }
+        c.insert(chave, (Instant::now(), f.clone()));
+    }
+    Ok(f)
+}
+
+async fn montar(pool: &DbPool, user: &crate::users::AuthUser) -> Result<Facets, sqlx::Error> {
     let mut sql = String::from(
         "SELECT DISTINCT i.genres, COALESCE(i.extra, s.extra), COALESCE(i.production_year, s.year)
          FROM items i LEFT JOIN series s ON s.id = i.series_id WHERE 1 = 1",
@@ -239,6 +288,42 @@ pub async fn filters(State((_, pool)): St, CurrentUser(user): CurrentUser) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn as_listas_sao_guardadas_e_a_invalidacao_as_refaz() {
+        let arquivo = std::env::temp_dir().join(format!("rustyfin-facets-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&arquivo);
+        let pool = crate::db::init_db(&format!("sqlite://{}", arquivo.display())).await.unwrap();
+        let usuario = crate::users::AuthUser {
+            id: "u".into(),
+            name: "u".into(),
+            is_admin: true,
+            allowed_libraries: None,
+        };
+        let inserir = |id: &'static str, genero: &'static str| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query("INSERT INTO items (id, name, path, media_type, genres) VALUES (?, ?, ?, 'Movie', ?)")
+                    .bind(id)
+                    .bind(id)
+                    .bind(format!("/m/{id}.mp4"))
+                    .bind(format!("[\"{genero}\"]"))
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            }
+        };
+        inserir("a", "Ação").await;
+        let antes = collect(&pool, &usuario).await.unwrap();
+        assert_eq!(antes.genres.len(), 1);
+        inserir("b", "Drama").await;
+        let guardada = collect(&pool, &usuario).await.unwrap();
+        assert!(Arc::ptr_eq(&antes, &guardada), "a segunda chamada reaproveita o resultado");
+        invalidar();
+        assert_eq!(collect(&pool, &usuario).await.unwrap().genres.len(), 2);
+        pool.close().await;
+        let _ = std::fs::remove_file(&arquivo);
+    }
 
     #[test]
     fn ids_are_stable_and_case_insensitive() {
