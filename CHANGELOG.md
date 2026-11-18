@@ -5,6 +5,13 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+### Documentação
+- Novo guia [Primeiros passos](docs/primeiros-passos.md): instalação com Docker, como montar as pastas de mídia, painel,
+  conexão do app, GPU, atualização, backup e acesso de fora de casa.
+- Novo [Migrando do Jellyfin](docs/migrando-do-jellyfin.md): quando vale a pena trocar (e quando não), o que o Rustyfin tem a
+  mais e a menos e como testar lado a lado sem risco.
+- README com a seção "Por que usar" e um início rápido que cobre a montagem das pastas.
+
 ## [0.21.1] - 2026-11-18
 
 ### Alterado

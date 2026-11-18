@@ -13,6 +13,7 @@
 [![Versão](https://img.shields.io/github/v/tag/mensonones/rustyfin?label=vers%C3%A3o&color=success)](CHANGELOG.md)
 
 [Início rápido](#início-rápido) ·
+[Por que usar](#por-que-usar) ·
 [Recursos](#recursos) ·
 [Compatibilidade](#compatibilidade) ·
 [Documentação](#documentação) ·
@@ -42,6 +43,23 @@ sobe em segundos e usa **poucas dezenas de megabytes de memória**.
 > **1 CPU e 512 MB** o Rustyfin também vence em tudo o que foi medido. Só na transcodificação com 4 sessões simultâneas os
 > dois empatam. Números, metodologia, ressalvas e as correções feitas a partir do teste em
 > [docs/desempenho.md](docs/desempenho.md).
+
+## Por que usar
+
+- **Leve de verdade.** Cerca de 10 MB de memória em repouso e menos de um segundo para subir. Roda sem notar em um mini
+  PC, em um NAS ou ao lado de outros serviços.
+- **Seus apps de sempre.** Moonfin, Swiftfin e Findroid conectam como em um Jellyfin. Nada para instalar no celular ou na TV.
+- **Instalação em três comandos**, com Docker, `ffmpeg` e drivers de GPU Intel já na imagem. Sem banco para configurar, sem
+  plugin para instalar.
+- **GPU Intel e AMD sem dor de cabeça.** Um script liga o Quick Sync ou o VAAPI; se a GPU falhar, o servidor volta para o
+  processador sozinho.
+- **Recursos que o Jellyfin não tem:** [busca de cenas](docs/reproducao.md#áudio-cenas-e-versões-preparadas) por fala,
+  [ajuste de legendas](docs/reproducao.md#corrigir-uma-faixa-srt) no painel e
+  [revisão do acervo](docs/arquitetura.md#revisar-alterações-do-acervo) que preserva favoritos e progresso ao trocar a edição.
+- **Seus arquivos ficam intactos.** Monte as pastas em somente leitura e o servidor só lê.
+
+Quer saber o que muda e o que falta? Leia [Migrando do Jellyfin](docs/migrando-do-jellyfin.md): ele diz quando **não**
+vale a pena trocar.
 
 ## Recursos
 
@@ -81,27 +99,29 @@ Veja [docs/clientes.md](docs/clientes.md) para o passo a passo de cada app e as 
 
 ## Início rápido
 
-### Docker (recomendado)
-
-A imagem já inclui o `ffmpeg`.
+Você precisa do **Docker** e de uma pasta com vídeos. A imagem já inclui o `ffmpeg`.
 
 ```bash
 git clone https://github.com/mensonones/rustyfin.git
 cd rustyfin
-cp .env.example .env       # ajuste o IP do PC em RUSTYFIN_PUBLIC_URL
+cp .env.example .env       # troque o IP pelo do seu PC em RUSTYFIN_PUBLIC_URL
 docker compose up -d --build
 ```
 
-Coloque os vídeos em `./media` (ou monte outra pasta em `docker-compose.yml`) e abra
-**http://localhost:8096/admin** para criar as bibliotecas. Nos apps, use o endereço `http://<ip-do-pc>:8096`
-e o usuário `Admin` (sem senha na rede local).
+Depois:
 
-> No Docker, o container só enxerga as pastas **montadas como volume**.
+1. **Mostre seus vídeos ao container.** Ele só enxerga pastas montadas como volume. Crie um `docker-compose.override.yml`
+   com `- "D:/Videos:/mnt/videos:ro"` em `volumes` (ou coloque os arquivos em `./media`).
+2. Abra **http://localhost:8096/admin**, crie as bibliotecas e aponte para `/mnt/videos`.
+3. No app, adicione `http://<ip-do-pc>:8096` (ou use a descoberta automática) e entre como **`Admin`**, sem senha na rede
+   local.
 
-Com uma GPU Intel ou AMD no Linux, `sh tools/gpu-setup.sh` antes do `docker compose up -d` liga a transcodificação por
-hardware ([detalhes](docs/reproducao.md#aceleração-por-hardware)). No Docker Desktop do Windows a GPU Intel não é repassada;
+O passo a passo completo, com Windows, firewall, senha, TMDB, GPU, atualização e backup, está em
+**[Primeiros passos](docs/primeiros-passos.md)**.
+
+**GPU Intel ou AMD no Linux:** rode `sh tools/gpu-setup.sh` antes do `docker compose up -d`
+([detalhes](docs/reproducao.md#aceleração-por-hardware)). No Docker Desktop do Windows a GPU Intel não é repassada;
 rodando o Rustyfin direto no Windows o Quick Sync funciona ([como](docs/reproducao.md#windows)).
-> Veja [docs/configuracao.md](docs/configuracao.md#usando-pastas-do-seu-pc-no-docker).
 
 ### Compilando
 
@@ -115,6 +135,7 @@ cargo run --release
 
 ![Diretório de bibliotecas com varredura e manutenção ao lado](docs/assets/diretorio-bibliotecas.jpg)
 
+Bibliotecas, usuários, sessões, configurações e diagnóstico, com tema claro e escuro e paleta de comandos (`Ctrl K`).
 O painel só é acessível pela rede local e pode exigir senha. Detalhes em
 [docs/usuarios-e-seguranca.md](docs/usuarios-e-seguranca.md).
 
@@ -122,10 +143,16 @@ O painel só é acessível pela rede local e pode exigir senha. Detalhes em
 
 ![Busca de cenas com horários, falas encontradas e filtro de spoilers](docs/assets/busca-cenas.jpg)
 
+Lembra de uma fala, mas não do filme? Em `/cenas`, entre com o seu perfil e procure pelo trecho: o Rustyfin mostra o título
+e o minuto, e esconde o que você ainda não assistiu. Como indexar as legendas:
+[reprodução](docs/reproducao.md#áudio-cenas-e-versões-preparadas).
+
 ## Documentação
 
 | Documento | Conteúdo |
 |---|---|
+| [Primeiros passos](docs/primeiros-passos.md) | Do zero ao primeiro filme: Docker, pastas, painel, app, atualização e backup |
+| [Migrando do Jellyfin](docs/migrando-do-jellyfin.md) | O que você ganha, o que perde e como testar lado a lado |
 | [Configuração](docs/configuracao.md) | Variáveis de ambiente, configurações do painel, pastas, TMDB e nomes de arquivo |
 | [Usuários e segurança](docs/usuarios-e-seguranca.md) | Contas, senhas, tokens, sessões, acesso por biblioteca e o que é público |
 | [Reprodução](docs/reproducao.md) | Direct Play, remux, transcode, HLS, legendas e HDR |
