@@ -27,6 +27,20 @@ não está instalado.
 
 O celular ou a TV precisam estar **na mesma rede** que o servidor.
 
+### Conexão pelo IP no Windows
+
+Se o Rustyfin abre no PC, mas o celular não conecta pelo IP, confira o perfil da conexão no Windows.
+As regras de firewall criadas pelo instalador valem apenas para o perfil **Privado**. Se a conexão
+estiver no perfil **Público**, essas regras não liberam o acesso.
+
+Na sua rede doméstica ou em outra rede de confiança, vá a **Configurações → Rede e Internet**,
+abra as propriedades da conexão **Ethernet** ou **Wi-Fi** em uso no PC e selecione **Rede privada**
+em **Tipo de perfil de rede**.
+
+No navegador do celular, acesse `http://<ip-do-pc>:8096/System/Info/Public` usando o IP e a porta
+do servidor. Se aparecer uma resposta em JSON, use o mesmo endereço e porta no app, sem o caminho
+`/System/Info/Public`.
+
 ### Descoberta automática
 
 O servidor responde ao broadcast UDP `who is JellyfinServer?` na porta 7359 com o nome e o endereço dele.
