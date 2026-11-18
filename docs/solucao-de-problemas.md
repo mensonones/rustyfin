@@ -40,6 +40,8 @@ leia com `docker compose logs -f`.
 | "Mídia não suportada" | O arquivo precisa ser transcodificado e o `ffmpeg` não está disponível: veja Status → ffmpeg |
 | Erro 503 ao tocar | Atingiu o limite de transcodificações simultâneas (`RUSTYFIN_MAX_TRANSCODES`, também no painel) |
 | Transcode lento | `libx264` roda na CPU. Com GPU Intel ou AMD no Linux, repasse `/dev/dri` ao container e o encoder `auto` a usa (veja [aceleração por hardware](reproducao.md#aceleração-por-hardware)). O log diz qual encoder está em uso e por que a GPU foi recusada |
+| A GPU não é usada (o log diz `encoder libx264`) | Rode `docker compose exec rustyfin sh /app/gpu-check.sh`: ele mostra se o dispositivo existe, se há permissão e se a codificação funciona. Sem `/dev/dri`, rode `sh tools/gpu-setup.sh`. No Docker Desktop (Windows) a GPU Intel não chega ao container: rode o Rustyfin direto no Windows |
+| O log diz "refazendo em software" | O ffmpeg com GPU falhou numa sessão e o servidor voltou para o processador. O erro do ffmpeg aparece logo acima no log; se for recorrente, defina `RUSTYFIN_VIDEO_ENCODER=libx264` e relate |
 | Sem legenda | SRT precisa ter o mesmo nome do vídeo. Legendas de imagem (PGS/DVD) só aparecem queimadas, o que força transcode |
 
 ## Metadados (TMDB)

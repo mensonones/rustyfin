@@ -37,6 +37,7 @@ cargo test --locked                                  # unitários e de integraç
 | Unitários | no próprio arquivo (`#[cfg(test)]`) | Parser de nomes, decisão de reprodução, argumentos do ffmpeg, Range, usuários, filtros |
 | Integração | `tests/` | O roteador completo com um SQLite temporário: rotas públicas, token obrigatório, perfis ocultos, sessões |
 | Fluxo de um app | `tools/client_probe.py` | Sequência de um cliente Jellyfin contra um servidor em execução |
+| GPU | `tools/gpu-check.sh` | Diagnóstico da aceleração por hardware dentro do container (veja [reprodução](reproducao.md#aceleração-por-hardware)) |
 
 ```bash
 python tools/client_probe.py http://127.0.0.1:8096

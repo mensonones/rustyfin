@@ -41,6 +41,8 @@ struct Recipe {
     params: TranscodeParams,
     created: Instant,
     play_session: Option<String>,
+    /// O ffmpeg com GPU falhou nesta sessão: as próximas execuções usam `libx264`.
+    software: bool,
 }
 
 /// Quanto tempo sem pedidos uma sessão precisa ter para ceder a vaga a outra quando o limite de
@@ -130,6 +132,7 @@ pub async fn start_vod(
                 params: params.clone(),
                 created: Instant::now(),
                 play_session: play_session.map(str::to_owned),
+                software: false,
             },
         );
     }
@@ -169,7 +172,8 @@ async fn restart_vod(
     let mut params = recipe.params.clone();
     params.vod_start = Some(seg);
     params.start_secs = f64::from(seg * HLS_SEGMENT_SECS);
-    let args = build_args(&s.encoder, &recipe.input, &params, Some(&dir));
+    let encoder = if recipe.software { "libx264" } else { s.encoder.as_str() };
+    let args = build_args(encoder, &recipe.input, &params, Some(&dir));
     let child = Command::new(&s.ffmpeg)
         .args(&args)
         .stdin(Stdio::null())
@@ -191,6 +195,16 @@ async fn restart_vod(
         },
     );
     Ok(())
+}
+
+/// O ffmpeg terminou por conta própria com código de erro (não foi encerrado por nós, que o tiramos do mapa antes).
+fn exited_with_error(estado: &std::io::Result<Option<std::process::ExitStatus>>) -> bool {
+    matches!(estado, Ok(Some(st)) if !st.success())
+}
+
+/// Volta para `libx264` quando um encoder de hardware falhou e a sessão ainda não está em software.
+fn should_fall_back_to_software(crashed: bool, encoder: &str, already_software: bool) -> bool {
+    crashed && !already_software && super::Hw::from_encoder(encoder).is_some()
 }
 
 /// Divide `seg_high_00012.ts` em (`seg_high`, 12, `ts`).
@@ -219,22 +233,31 @@ pub async fn ensure_segment(key: &str, file: &str, timeout: Duration) -> Result<
         return Ok(Some(path));
     }
     let recipe = recipes().lock().await.get(key).cloned();
-    let Some(recipe) = recipe else {
+    let Some(mut recipe) = recipe else {
         return Ok(wait_for_file(key, file, timeout).await);
     };
 
     let parts = segment_parts(file);
     let wanted = parts.map(|p| p.1);
-    let (running, start) = {
+    let (running, start, crashed) = {
         let mut map = sessions().lock().await;
         match map.get_mut(key) {
             Some(sess) => {
                 sess.last_access = Instant::now();
-                (matches!(sess.child.try_wait(), Ok(None)), Some(sess.start_seg))
+                let estado = sess.child.try_wait();
+                (matches!(estado, Ok(None)), Some(sess.start_seg), exited_with_error(&estado))
             }
-            None => (false, None),
+            None => (false, None, false),
         }
     };
+    // Um ffmpeg com GPU que morreu com erro não deve ser reiniciado do mesmo jeito (falharia de novo): refaz em software.
+    if should_fall_back_to_software(crashed, &s.encoder, recipe.software) {
+        warn!("O ffmpeg com {} falhou na sessão {key}; refazendo em software (libx264).", s.encoder);
+        recipe.software = true;
+        if let Some(r) = recipes().lock().await.get_mut(key) {
+            r.software = true;
+        }
+    }
     let restart_at = match (start, wanted) {
         // Sem sessão: começa onde foi pedido (ou no início, para o arquivo de inicialização).
         (None, w) => Some(w.unwrap_or(0)),
@@ -264,7 +287,31 @@ pub async fn ensure_segment(key: &str, file: &str, timeout: Duration) -> Result<
             restart_vod(&mut map, key, &recipe, seg, s).await?;
         }
     }
-    Ok(wait_for_file(key, file, timeout).await)
+    let pronto = wait_for_file(key, file, timeout).await;
+    if pronto.is_some() {
+        return Ok(pronto);
+    }
+    // O ffmpeg com GPU pode ter morrido enquanto esperávamos o segmento: refaz já em software, no mesmo ponto,
+    // em vez de devolver 404 e deixar o player tentar de novo com o mesmo erro.
+    let caiu = {
+        let mut map = sessions().lock().await;
+        map.get_mut(key).map(|sess| (exited_with_error(&sess.child.try_wait()), sess.start_seg))
+    };
+    match caiu {
+        Some((true, seg)) if should_fall_back_to_software(true, &s.encoder, recipe.software) => {
+            warn!("O ffmpeg com {} falhou na sessão {key}; refazendo em software (libx264).", s.encoder);
+            recipe.software = true;
+            if let Some(r) = recipes().lock().await.get_mut(key) {
+                r.software = true;
+            }
+            {
+                let mut map = sessions().lock().await;
+                restart_vod(&mut map, key, &recipe, seg, s).await?;
+            }
+            Ok(wait_for_file(key, file, timeout).await)
+        }
+        _ => Ok(None),
+    }
 }
 
 /// Playlist VOD completa: todos os segmentos de `HLS_SEGMENT_SECS`, para o cliente poder avançar
@@ -458,6 +505,17 @@ pub(super) async fn reaper() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn so_cai_para_software_quando_o_encoder_de_hardware_falhou() {
+        assert!(should_fall_back_to_software(true, "h264_qsv", false));
+        assert!(should_fall_back_to_software(true, "h264_vaapi", false));
+        // em software não há para onde cair, e uma falha repetida não reinicia o mesmo ciclo
+        assert!(!should_fall_back_to_software(true, "libx264", false));
+        assert!(!should_fall_back_to_software(true, "h264_qsv", true));
+        // sem falha, nada muda
+        assert!(!should_fall_back_to_software(false, "h264_qsv", false));
+    }
 
     #[test]
     fn evicts_only_the_longest_idle_session_past_the_threshold() {

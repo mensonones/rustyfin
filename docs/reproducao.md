@@ -13,7 +13,8 @@ de entrega menos custosa.
 | **Transcode** | O codec de vídeo não é aceito ou o bitrate do arquivo passa do limite do cliente | Alto: o vídeo é recodificado para H.264 |
 
 Sem `ffmpeg`, o servidor continua só em Direct Play. O limite de transcodificações simultâneas é
-`RUSTYFIN_MAX_TRANSCODES` (as excedentes recebem 503).
+`RUSTYFIN_MAX_TRANSCODES` (as excedentes recebem 503); sem valor, o servidor o calcula pelo hardware (veja
+[aceleração por hardware](#aceleração-por-hardware)).
 
 ## Direct Play
 
@@ -70,7 +71,7 @@ O transcode usa `libx264` (processador) por padrão. Com uma **GPU Intel** (Quic
 para decodificar e codificar, o que libera a CPU e atende mais sessões ao mesmo tempo.
 
 O encoder padrão é `auto`: na subida o servidor procura a GPU, codifica um quadro de teste e, se funcionar, a usa; se não,
-usa `libx264` sem nada de errado. O log mostra a decisão (por exemplo `Aceleração por hardware ativa: h264_qsv (decodifica e
+continua no processador (`libx264`), sem erro. O log mostra a decisão (por exemplo `Aceleração por hardware ativa: h264_qsv (decodifica e
 codifica na GPU)`), e o painel mostra o encoder em uso.
 
 | Onde o Rustyfin roda | Encoder escolhido por `auto` | O que é preciso |
@@ -101,10 +102,15 @@ e a decodificação na GPU e mede a velocidade contra o `libx264`, e imprime um 
 **Limite de sessões:** sem `RUSTYFIN_MAX_TRANSCODES` definido, o servidor escolhe quantas transcodificações simultâneas
 aceitar pelo hardware: 4 com GPU, senão metade das CPUs (de 2 a 8). O valor em uso aparece no log e no painel.
 
-**Como funciona:** com um vídeo H.264 ou HEVC (8 ou 10 bits, 4:2:0) a GPU decodifica, converte o formato e codifica sem que
-os quadros passem pela CPU. Legendas queimadas, HDR para SDR e ABR precisam dos quadros na CPU: nesses casos o ffmpeg
-decodifica e filtra na CPU e só então envia os quadros à GPU para codificar. O vídeo copiado (remux) nunca usa a GPU. Na
-subida o servidor testa a decodificação com um vídeo de exemplo; se ela falhar, a GPU só codifica.
+**Como funciona:** com um vídeo H.264 de 8 bits ou HEVC de 8 ou 10 bits (4:2:0) a GPU decodifica, converte o formato e
+codifica sem que os quadros passem pela CPU. Legendas queimadas, HDR para SDR e ABR precisam dos quadros na CPU: nesses
+casos, e para os codecs que a GPU não decodifica (H.264 de 10 bits, VP9, AV1...), o ffmpeg decodifica e filtra na CPU e só
+então envia os quadros à GPU para codificar. O vídeo copiado (remux) nunca usa a GPU. Na subida o servidor testa a
+decodificação com um vídeo de exemplo; se ela falhar, a GPU só codifica.
+
+**Se a GPU falhar no meio da reprodução:** quando o ffmpeg com GPU encerra com erro numa sessão HLS, o servidor refaz a sessão em
+software (`libx264`) no mesmo ponto, registra um aviso no log e o player recebe o segmento sem perceber (só demora um pouco
+mais). O stream progressivo (fora do HLS, pouco usado) não tem essa volta automática.
 
 **Opções:** `RUSTYFIN_VIDEO_ENCODER=h264_vaapi` força o VAAPI, e `h264_qsv` usa o Quick Sync (no Linux o VAAPI é o caminho mais
 simples, com o mesmo resultado em GPU Intel). Se o encoder escolhido não funcionar, o servidor registra o motivo e volta para
@@ -137,9 +143,15 @@ NVIDIA (`h264_nvenc`) pode ser usada pelo mesmo mecanismo de encoder, mas não �
   O encoder `auto` escolhe `h264_qsv` e o log mostra `Aceleração por hardware ativa: h264_qsv`. O dispositivo vem do D3D11
   (`vendor_id=0x8086`), então em notebooks com GPU Intel e NVIDIA o Quick Sync usa a Intel.
 
-> **Estado da validação:** o Quick Sync foi exercitado numa GPU Intel real (Rustyfin nativo no Windows). O VAAPI no Linux é
-> coberto por testes dos comandos e dos fallbacks e ainda não foi exercitado numa GPU real. Se você testar numa máquina Linux
-> com GPU Intel ou AMD, rode `docker compose exec rustyfin sh /app/gpu-check.sh` e relate o resumo numa issue.
+**O que foi testado na GPU Intel real** (Rustyfin nativo no Windows, Quick Sync, vídeos sintéticos de 1080p): H.264 de 8 e de
+10 bits, HEVC de 8 e de 10 bits, HDR10 com conversão para SDR, VP9, segmentos HLS de 6 s exatos, avanço para qualquer ponto,
+ABR com duas qualidades, segmentos fMP4, stream progressivo, três sessões simultâneas (4,8× cada usando ~34% da CPU, contra
+2,5× cada e ~97% do `libx264`) e a volta para software com uma GPU que falha.
+
+> **Estado da validação:** o Quick Sync foi exercitado numa GPU Intel real. O VAAPI no Linux é coberto por testes dos comandos
+> e dos fallbacks e ainda não foi exercitado numa GPU real. Se você testar numa máquina Linux com GPU Intel ou AMD, rode
+> `docker compose exec rustyfin sh /app/gpu-check.sh` e relate o resumo numa issue. Ainda sem teste: legendas de imagem
+> queimadas com a GPU, 4K, AV1 e vídeo entrelaçado.
 
 ## HDR
 

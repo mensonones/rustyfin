@@ -124,10 +124,19 @@ pub struct HwSource {
     pub gop: Option<u32>,
 }
 
+/// A GPU decodifica este codec neste formato de pixel? 10 bits só no HEVC: as GPUs Intel não decodificam `H.264 Hi10P` em
+/// hardware, e o ffmpeg falha em vez de cair para a CPU.
+fn gpu_decodes(codec: Option<&str>, pix_fmt: Option<&str>) -> bool {
+    matches!(
+        (codec, pix_fmt),
+        (Some("hevc"), Some("yuv420p" | "yuvj420p" | "yuv420p10le")) | (Some("h264"), Some("yuv420p" | "yuvj420p"))
+    )
+}
+
 /// Lê (com o ffprobe, ~50 ms) o formato de pixel e a taxa de quadros do primeiro vídeo. Só é chamada com um encoder de
 /// hardware ativo; com `libx264` devolve o padrão sem tocar no arquivo.
 ///
-/// `decode`: a GPU decodifica este vídeo? Só H.264 e HEVC de 8 ou 10 bits 4:2:0 (o que as GPUs Intel decodificam em
+/// `decode`: a GPU decodifica este vídeo? Só H.264 de 8 bits e HEVC de 8 ou 10 bits, 4:2:0 (o que as GPUs Intel decodificam em
 /// hardware), e só se o teste da subida confirmou a decodificação na GPU. `gop`: `ceil(6 s × fps)`, usado como intervalo
 /// de quadros-chave pelo Quick Sync (o `-force_key_frames` não vale para ele).
 pub async fn hw_source(path: &std::path::Path, streams_json: Option<&str>) -> HwSource {
@@ -137,7 +146,6 @@ pub async fn hw_source(path: &std::path::Path, streams_json: Option<&str>) -> Hw
     let codec = streams_json
         .and_then(|j| serde_json::from_str::<Vec<MediaStream>>(j).ok())
         .and_then(|streams| streams.into_iter().find(|s| s.r#type == "Video").map(|s| s.codec.to_ascii_lowercase()));
-    let codec_ok = matches!(codec.as_deref(), Some("h264" | "hevc"));
     let ffprobe = std::path::Path::new(ffmpeg_path())
         .parent()
         .map(|d| d.join(if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" }))
@@ -156,13 +164,13 @@ pub async fn hw_source(path: &std::path::Path, streams_json: Option<&str>) -> Hw
         return HwSource::default();
     };
     let stream = &json["streams"][0];
-    let pix_ok = matches!(stream["pix_fmt"].as_str(), Some("yuv420p" | "yuvj420p" | "yuv420p10le"));
+    let gpu_ok = gpu_decodes(codec.as_deref(), stream["pix_fmt"].as_str());
     let fps = stream["avg_frame_rate"].as_str().and_then(|r| {
         let (n, d) = r.split_once('/')?;
         let (n, d) = (n.parse::<f64>().ok()?, d.parse::<f64>().ok()?);
         (d > 0.0 && n > 0.0).then(|| n / d)
     });
-    HwSource { decode: settings.hw_decode && codec_ok && pix_ok, gop: fps.map(|f| (f * f64::from(HLS_SEGMENT_SECS)).ceil() as u32) }
+    HwSource { decode: settings.hw_decode && gpu_ok, gop: fps.map(|f| (f * f64::from(HLS_SEGMENT_SECS)).ceil() as u32) }
 }
 
 /// Limite automático de transcodificações simultâneas, quando ninguém o define: com GPU a codificação sai do

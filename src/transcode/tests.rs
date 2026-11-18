@@ -491,3 +491,16 @@ fn o_limite_automatico_acompanha_o_hardware() {
 fn sem_a_gpu_nao_ha_dica_de_permissao() {
     assert_eq!(device_permission_hint("/dev/dri/renderD999-inexistente"), None);
 }
+
+#[test]
+fn a_gpu_so_decodifica_o_que_o_hardware_suporta() {
+    assert!(gpu_decodes(Some("h264"), Some("yuv420p")));
+    assert!(gpu_decodes(Some("hevc"), Some("yuv420p")));
+    assert!(gpu_decodes(Some("hevc"), Some("yuv420p10le")));
+    // H.264 de 10 bits (Hi10P) não tem decodificação em hardware nas GPUs Intel
+    assert!(!gpu_decodes(Some("h264"), Some("yuv420p10le")));
+    // 4:2:2, 4:4:4 e outros codecs ficam na CPU
+    assert!(!gpu_decodes(Some("hevc"), Some("yuv422p10le")));
+    assert!(!gpu_decodes(Some("vp9"), Some("yuv420p")));
+    assert!(!gpu_decodes(None, Some("yuv420p")));
+}

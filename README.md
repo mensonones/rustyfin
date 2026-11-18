@@ -97,6 +97,10 @@ Coloque os vídeos em `./media` (ou monte outra pasta em `docker-compose.yml`) e
 e o usuário `Admin` (sem senha na rede local).
 
 > No Docker, o container só enxerga as pastas **montadas como volume**.
+
+Com uma GPU Intel ou AMD no Linux, `sh tools/gpu-setup.sh` antes do `docker compose up -d` liga a transcodificação por
+hardware ([detalhes](docs/reproducao.md#aceleração-por-hardware)). No Docker Desktop do Windows a GPU Intel não é repassada;
+rodando o Rustyfin direto no Windows o Quick Sync funciona ([como](docs/reproducao.md#windows)).
 > Veja [docs/configuracao.md](docs/configuracao.md#usando-pastas-do-seu-pc-no-docker).
 
 ### Compilando

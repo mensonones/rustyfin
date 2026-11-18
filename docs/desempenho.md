@@ -112,8 +112,10 @@ O comparativo foi feito para achar pontos fracos, e estes foram corrigidos:
 - O Jellyfin não terminou a varredura de 3.000 clipes em 15 minutos (limite do teste); o número real é maior.
 - O Jellyfin usa o `jellyfin-ffmpeg` próprio e segmentos de 3 s; o Rustyfin usa o `ffmpeg` da imagem Debian e segmentos
   de 6 s. A velocidade é medida sobre a mesma quantidade de vídeo, não sobre o mesmo número de segmentos.
+- **Aceleração por hardware** não entra neste comparativo (o Docker Desktop não repassa a GPU); as medidas numa Intel real
+  estão em [reprodução](reproducao.md#aceleração-por-hardware).
 - **Não medido:** legendas, HDR, ABR comparável (o Jellyfin tem uma qualidade só nesse perfil), TMDB, bibliotecas com
-  muitos metadados, aceleração de hardware e os clientes reais (Moonfin, Swiftfin, Findroid).
+  muitos metadados e os clientes reais (Moonfin, Swiftfin, Findroid).
 
 ## Resultados completos
 

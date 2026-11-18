@@ -29,7 +29,7 @@ O Rustyfin é **um único binário** (`rustyfin`) sobre uma biblioteca de mesmo 
 | `src/users.rs` | Usuários, senhas (Argon2), tokens, sessões e permissões por biblioteca |
 | `src/discovery.rs` | Descoberta automática (UDP 7359) |
 | `src/models.rs` | DTOs do contrato Jellyfin (PascalCase) |
-| `src/transcode/` | Decisão Direct Play/Remux/Transcode, argumentos do ffmpeg, processos e sessões HLS |
+| `src/transcode/` | Decisão Direct Play/Remux/Transcode, argumentos do ffmpeg (software, VAAPI e Quick Sync), escolha do encoder na subida, processos e sessões HLS |
 | `src/api/` | Rotas: itens, séries, imagens, streaming, transcodificação, legendas, usuários, painel |
 | `src/admin.html` | Painel de administração (página única, embutida no binário) |
 | `tests/` | Testes de integração do roteador |
