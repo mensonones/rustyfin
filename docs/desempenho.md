@@ -23,11 +23,12 @@ No perfil **folgado** (4 CPUs, 4 GB por container) e na mesma biblioteca:
 | Varredura de 3.000 clipes em uma pasta | **62,3 s** | não terminou em 15 min | |
 | Arquivo novo aparece (1.000 clipes) | **1,0 s** | 3,9 s | 4× |
 | 1ª varredura de 18 vídeos reais (~30 GB) | **3,0 s** (v0.17.3; era 286 s na v0.16.0) | 58 s | 19× |
-| **Transcodificação, 1 sessão (4 CPUs)** | 13,4× tempo real (v0.17.4; era 2,97×) | **20,5×** | **Jellyfin 1,5× mais rápido** |
-| **Transcodificação, 4 sessões simultâneas** | 4 de 4 concluíram, 1,4× cada (v0.17.4; antes 2 de 4) | 4 de 4, **2,3× cada** | **Jellyfin 1,6× mais rápido** |
+| Transcodificação, 1 sessão (4 CPUs) | **13,8×** tempo real (v0.17.4) | 12,2× | 1,1× |
+| Transcodificação, 2 sessões simultâneas | **4,5×** cada | 3,2× cada | 1,4× |
+| Transcodificação, 4 sessões simultâneas | 1,24× cada, 4 de 4 concluíram (antes 2 de 4) | 1,27× cada | empate |
 
 No perfil **restrito** (1 CPU, 512 MB) o Rustyfin segue na frente em tudo o que foi medido, inclusive na transcodificação
-de 1 sessão (3,07× contra 0,95× tempo real, na v0.17.4). A 1ª varredura desse perfil (188 s) também foi medida na v0.16.0, antes da
+de 1 sessão (3,3× contra 2,6× tempo real, na v0.17.4). A 1ª varredura desse perfil (188 s) também foi medida na v0.16.0, antes da
 correção descrita abaixo.
 
 ## Onde o Rustyfin perde (e por quê)
@@ -40,12 +41,16 @@ correção descrita abaixo.
    (1,0 s até os itens aparecerem), com o resultado completo em segundo plano. O custo é uma janela curta depois da
    primeira varredura em que um arquivo movido ainda não tem hash: ele não é movido sozinho e vai para a fila de revisão
    do acervo, em vez de perder o histórico em silêncio.
-2. **Transcodificação por sessão.** Com 4 CPUs o Jellyfin ainda é mais rápido (20,5× contra 13,4× com 1 sessão; 2,3× contra
-   1,4× com 4). Na v0.17.4 o x264 passou a usar os mesmos ajustes de busca de movimento do Jellyfin (`subme=0`, `me=hex`,
-   `rc_lookahead=10`), o que levou 1 sessão de 2,97× para 13,4×; a diferença restante não foi investigada. As **4 sessões
-   simultâneas** que falhavam (2 de 4, `playlist sem segmentos`) foram corrigidas: o ffmpeg de uma sessão encerrada seguia
-   ocupando a vaga até a limpeza de 90 s e o cliente recebia 503. Agora `Sessions/Playing/Stopped` libera a vaga na hora e,
-   com o limite cheio, a sessão parada há mais de 12 s cede a vaga. No perfil restrito (1 CPU) o Rustyfin segue na frente.
+2. ~~**Transcodificação.**~~ **Corrigido na v0.17.4.** Havia dois problemas. As **4 sessões simultâneas** falhavam
+   (2 de 4, `playlist sem segmentos`): o ffmpeg de uma sessão encerrada seguia ocupando a vaga até a limpeza de 90 s e o
+   cliente recebia 503. Agora `Sessions/Playing/Stopped` libera a vaga na hora e, com o limite cheio, a sessão parada há
+   mais de 12 s cede a vaga. E a velocidade de 1 sessão era 2,97×: o x264 passou a usar os mesmos ajustes de busca de
+   movimento do Jellyfin (`subme=0`, `me=hex`, `rc_lookahead=10`) e foi a 13,8×. Com 4 CPUs o Rustyfin agora fica à frente
+   com 1 e 2 sessões e empata com 4 (1,24× contra 1,27×).
+
+   > **Correção de medição.** A primeira versão desta página dava ao Jellyfin 5,42× (1 sessão) e 20,5× depois, porque o
+   > *harness* contava 6 s por segmento e o Jellyfin usa segmentos de 3 s: ele baixava 18 s de vídeo e era creditado com
+   > 36 s. O cálculo agora soma a duração real (`#EXTINF`) dos segmentos e os dois baixam a mesma quantidade de vídeo.
 3. **Reinício a quente: 3,8 s contra 2,6 s** no perfil folgado (no restrito o Rustyfin ganha: 3,7 s contra 6,2 s). O
    tempo inclui o `docker restart`, que espera o encerramento do processo.
 
@@ -73,7 +78,7 @@ correção descrita abaixo.
   transcodificação.
 - **Transcodificação:** o perfil do cliente limita o bitrate a 700 kbps (abaixo do arquivo, que tem ~1 Mbps) para os dois
   **recodificarem** o vídeo H.264 para HLS em uma qualidade. Sem isso o Jellyfin apenas copia o vídeo, o que não é o mesmo
-  trabalho. Cada sessão baixa 6 segmentos de 6 s; a "velocidade" é 36 s de vídeo dividido pelo tempo total. O Jellyfin usa
+  trabalho. Cada sessão baixa 36 s de vídeo (a duração real dos segmentos, somada pelo `#EXTINF`: 6 s no Rustyfin e 3 s no Jellyfin); a "velocidade" é esses 36 s divididos pelo tempo total. O Jellyfin usa
   o `jellyfin-ffmpeg` próprio dele; o Rustyfin usa o `ffmpeg` da imagem Debian.
 - **Estabilidade:** 5 minutos de carga mista (2 leitores de arquivo, navegação pela API e uma transcodificação em
   repetição). A memória é medida **em repouso, antes e depois**, porque durante a carga o `docker stats` soma os
@@ -160,17 +165,17 @@ correção descrita abaixo.
 | 10 streams simultâneos, vazão agregada (MB/s) | 226 | 205 | 1,1× |
 | 20 streams simultâneos, vazão agregada (MB/s) | 228 | 206 | 1,1× |
 
-**Transcodificação HLS (H.264, uma qualidade; 6 segmentos = 36 s de vídeo)**
+**Transcodificação HLS (H.264, uma qualidade; 36 s de vídeo)**
 
 | Sessões | Sistema | OK | 1º segmento (s) | Velocidade por sessão (× tempo real) | CPU máx (%) | RAM máx (MiB) |
 |---|---|---|---|---|---|---|
-| 1 | Rustyfin | 1/1 | 0,6 | 13,42 | 360 | 247 |
-| 1 | Jellyfin | 1/1 | 0,7 | 20,45 | 389 | 683 |
-| 2 | Rustyfin | 2/2 | 1,7 | 4,62 | 395 | 475 |
-| 2 | Jellyfin | 2/2 | 2,0 | 5,81 | 403 | 955 |
-| 4 | Rustyfin | 4/4 | 4,8 | 1,39 | 412 | 938 |
-| 4 | Jellyfin | 4/4 | 4,9 | 2,29 | 412 | 1 473 |
-| 1 (ABR, 2 qualidades) | Rustyfin | 1/1 | 0,6 | 14,19 | 344 | 248 |
+| 1 | Rustyfin | 1/1 | 0,6 | 13,76 | 356 | 240 |
+| 1 | Jellyfin | 1/1 | 0,7 | 12,17 | 389 | 665 |
+| 2 | Rustyfin | 2/2 | 1,7 | 4,47 | 398 | 474 |
+| 2 | Jellyfin | 2/2 | 1,9 | 3,24 | 405 | 952 |
+| 4 | Rustyfin | 4/4 | 5,2 | 1,24 | 407 | 932 |
+| 4 | Jellyfin | 4/4 | 4,9 | 1,27 | 404 | 1 507 |
+| 1 (ABR, 2 qualidades) | Rustyfin | 1/1 | 0,6 | 13,97 | 357 | 242 |
 
 **Estabilidade (Rustyfin, 5 min de carga mista)**: RAM em repouso 54 → 53 MiB (pico durante a carga 1 486), 1187 requisições de API, 0 erros.
 
@@ -228,13 +233,13 @@ correção descrita abaixo.
 | 10 streams simultâneos, vazão agregada (MB/s) | 252 | 202 | 1,2× |
 | 20 streams simultâneos, vazão agregada (MB/s) | 209 | 194 | 1,1× |
 
-**Transcodificação HLS (H.264, uma qualidade; 6 segmentos = 36 s de vídeo)**
+**Transcodificação HLS (H.264, uma qualidade; 36 s de vídeo)**
 
 | Sessões | Sistema | OK | 1º segmento (s) | Velocidade por sessão (× tempo real) | CPU máx (%) | RAM máx (MiB) |
 |---|---|---|---|---|---|---|
-| 1 | Rustyfin | 1/1 | 2,2 | 3,07 | 100 | 245 |
-| 1 | Jellyfin | 1/1 | 22,1 | 0,95 | 104 | 512 |
-| 1 (ABR, 2 qualidades) | Rustyfin | 1/1 | 2,1 | 3,29 | 100 | 246 |
+| 1 | Rustyfin | 1/1 | 2,1 | 3,29 | 99 | 238 |
+| 1 | Jellyfin | 1/1 | 2,2 | 2,60 | 100 | 510 |
+| 1 (ABR, 2 qualidades) | Rustyfin | 1/1 | 2,1 | 3,30 | 99 | 238 |
 
 </details>
 

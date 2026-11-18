@@ -35,7 +35,7 @@ sobe em segundos e usa **poucas dezenas de megabytes de memória**.
 | Varredura de 1.000 arquivos numa pasta | 22 s | 413 s |
 
 > Medido em 17/11/2026 (Rustyfin v0.16.0; transcodificação refeita na v0.17.4; 4 CPUs, mesma biblioteca, sem metadados
-> online). **O Jellyfin ainda ganha** na velocidade de transcodificação por sessão (20,5× contra 13,4× com 1 sessão). Números, metodologia, ressalvas e os pontos fracos em
+> online). Na transcodificação o Rustyfin faz 13,8× o tempo real com 1 sessão contra 12,2× do Jellyfin, e empata com 4 sessões. Números, metodologia, ressalvas e os pontos fracos em
 > [docs/desempenho.md](docs/desempenho.md).
 
 ## Recursos

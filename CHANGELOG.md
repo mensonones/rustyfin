@@ -11,7 +11,7 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 - Parar um filme transcodificado e abrir outro em seguida podia devolver 503 por até 90 s, porque o ffmpeg do primeiro seguia ocupando a vaga. Agora `Sessions/Playing/Stopped` encerra o ffmpeg na hora, e com o limite cheio a sessão parada há mais de 12 s cede a vaga. No benchmark, as 4 sessões simultâneas passaram de 2 para 4 bem-sucedidas.
 
 ### Alterado
-- O x264 usa os mesmos ajustes de busca de movimento do Jellyfin (`subme=0`, `me=hex`, `rc_lookahead=10`): a velocidade de uma sessão transcodificada subiu de 3,0x para 13,4x o tempo real em 4 CPUs.
+- O x264 usa os mesmos ajustes de busca de movimento do Jellyfin (`subme=0`, `me=hex`, `rc_lookahead=10`): a velocidade de uma sessão transcodificada subiu de 3,0x para 13,8x o tempo real em 4 CPUs (Jellyfin: 12,2x). O benchmark contava 6 s por segmento e o Jellyfin usa 3 s, o que inflava o número dele; agora soma a duração real.
 
 ## [0.17.3] - 2026-11-17
 

@@ -11,7 +11,8 @@
     "cpus": "1",
     "memory": "512m"
    }
-  }
+  },
+  "nota_transcode": "Cenário E refeito na v0.17.4 somando a duração real (EXTINF) dos segmentos: o Jellyfin usa segmentos de 3 s e o Rustyfin de 6 s."
  },
  "folgado": {
   "rustyfin": {
@@ -179,51 +180,51 @@
    "E_transcode": {
     "1_sessoes": {
      "ok_de": "1/1",
-     "first_seg_s": 0.6224232999957167,
-     "x_realtime_each": 13.422697677467555,
-     "cpu_pct_max": 359.83,
-     "mem_mib_max": 247.2,
+     "first_seg_s": 0.6253529000096023,
+     "x_realtime_each": 13.758746645494496,
+     "cpu_pct_max": 355.84,
+     "mem_mib_max": 240.2,
      "erros": []
     },
     "2_sessoes": {
      "ok_de": "2/2",
-     "first_seg_s": 1.6563300999841886,
-     "x_realtime_each": 4.624108949369626,
-     "cpu_pct_max": 395.29,
-     "mem_mib_max": 475.4,
+     "first_seg_s": 1.7163261999958195,
+     "x_realtime_each": 4.4719226083246895,
+     "cpu_pct_max": 398.32,
+     "mem_mib_max": 474.0,
      "erros": []
     },
     "4_sessoes": {
      "ok_de": "4/4",
-     "first_seg_s": 4.773213349995785,
-     "x_realtime_each": 1.3946667636132661,
-     "cpu_pct_max": 412.12,
-     "mem_mib_max": 938.0,
+     "first_seg_s": 5.21262609999394,
+     "x_realtime_each": 1.242725895323478,
+     "cpu_pct_max": 406.88,
+     "mem_mib_max": 931.7,
      "erros": []
     }
    },
    "E_transcode_recursos": {
-    "mem_mib_med": 843.75,
-    "mem_mib_max": 941.7,
-    "cpu_pct_med": 398.675,
-    "cpu_pct_max": 413.68,
-    "n": 72
+    "mem_mib_med": 852.0,
+    "mem_mib_max": 934.4,
+    "cpu_pct_med": 394.05,
+    "cpu_pct_max": 411.98,
+    "n": 76
    },
    "E_transcode_abr": {
     "1_sessoes": {
      "ok_de": "1/1",
-     "first_seg_s": 0.6415561999892816,
-     "x_realtime_each": 14.194431138159182,
-     "cpu_pct_max": 343.93,
-     "mem_mib_max": 248.0,
+     "first_seg_s": 0.6221861000231002,
+     "x_realtime_each": 13.971414021119015,
+     "cpu_pct_max": 357.0,
+     "mem_mib_max": 242.4,
      "erros": []
     }
    },
    "E_transcode_abr_recursos": {
-    "mem_mib_med": 21.74,
-    "mem_mib_max": 248.5,
-    "cpu_pct_med": 0.02,
-    "cpu_pct_max": 343.93,
+    "mem_mib_med": 15.77,
+    "mem_mib_max": 242.4,
+    "cpu_pct_med": 15.09,
+    "cpu_pct_max": 361.06,
     "n": 11
    },
    "F_soak": {
@@ -446,42 +447,42 @@
    "E_transcode": {
     "1_sessoes": {
      "ok_de": "1/1",
-     "first_seg_s": 0.7119058999815024,
-     "x_realtime_each": 20.452787212131476,
-     "cpu_pct_max": 388.66,
-     "mem_mib_max": 682.7,
+     "first_seg_s": 0.7284478999790736,
+     "x_realtime_each": 12.165362145595218,
+     "cpu_pct_max": 389.0,
+     "mem_mib_max": 664.9,
      "erros": []
     },
     "2_sessoes": {
      "ok_de": "2/2",
-     "first_seg_s": 1.9658181999839144,
-     "x_realtime_each": 5.810088064967947,
-     "cpu_pct_max": 402.68,
-     "mem_mib_max": 955.2,
+     "first_seg_s": 1.9002504499949282,
+     "x_realtime_each": 3.2365940589663422,
+     "cpu_pct_max": 404.9,
+     "mem_mib_max": 952.0,
      "erros": []
     },
     "4_sessoes": {
      "ok_de": "4/4",
-     "first_seg_s": 4.906312849998358,
-     "x_realtime_each": 2.287103891280863,
-     "cpu_pct_max": 411.8,
-     "mem_mib_max": 1472.512,
+     "first_seg_s": 4.891625500007649,
+     "x_realtime_each": 1.2730713009585513,
+     "cpu_pct_max": 404.12,
+     "mem_mib_max": 1507.328,
      "erros": []
     }
    },
    "E_transcode_recursos": {
-    "mem_mib_med": 931.6,
-    "mem_mib_max": 1476.608,
-    "cpu_pct_med": 393.86,
-    "cpu_pct_max": 414.89,
-    "n": 62
+    "mem_mib_med": 945.45,
+    "mem_mib_max": 1539.072,
+    "cpu_pct_med": 395.22,
+    "cpu_pct_max": 413.71,
+    "n": 92
    },
    "E_transcode_abr": {},
    "E_transcode_abr_recursos": {
-    "mem_mib_med": 499.3,
-    "mem_mib_max": 499.3,
-    "cpu_pct_med": 4.0,
-    "cpu_pct_max": 4.0,
+    "mem_mib_med": 533.5,
+    "mem_mib_max": 533.5,
+    "cpu_pct_med": 0.01,
+    "cpu_pct_max": 0.01,
     "n": 1
    },
    "F_soak": {

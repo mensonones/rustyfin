@@ -361,7 +361,7 @@ PROFILE_HLS = {"MaxStreamingBitrate": FORCE_BITRATE,
 
 
 def hls_session(srv, item, nseg, strip_abr=False):
-    """Pede uma sessão HLS transcodificada e baixa `nseg` segmentos em sequência."""
+    """Pede uma sessão HLS transcodificada e baixa `nseg * 6` s de vídeo em sequência (some a duração real dos segmentos)."""
     t0 = time.perf_counter()
     body = {"DeviceProfile": PROFILE_HLS, "EnableDirectPlay": False, "EnableDirectStream": False, "EnableTranscoding": True,
             "UserId": srv.http.uid, "MaxStreamingBitrate": FORCE_BITRATE}
@@ -378,11 +378,26 @@ def hls_session(srv, item, nseg, strip_abr=False):
     base = url.split("?")[0].rsplit("/", 1)[0]
     pl_url = lines[0] if lines[0].startswith("/") else base + "/" + lines[0]
     code, pl, _ = srv.http.req(pl_url + ("&" if "?" in pl_url else "?") + f"api_key={srv.http.token}", raw=True)
-    segs = [l for l in pl.decode().splitlines() if l and not l.startswith("#")]
+    linhas = pl.decode().splitlines()
+    segs = [l for l in linhas if l and not l.startswith("#")]
+    # Duração real de cada segmento (#EXTINF): o Jellyfin usa 3 s e o Rustyfin 6 s, então contar "6 s por segmento"
+    # inflaria a velocidade de quem tem segmentos menores.
+    duracoes = []
+    for l in linhas:
+        if l.startswith("#EXTINF:"):
+            try:
+                duracoes.append(float(l[8:].split(",")[0]))
+            except ValueError:
+                duracoes.append(0.0)
     if not segs:
         raise RuntimeError("playlist sem segmentos")
     first = None
-    for i, s in enumerate(segs[:nseg]):
+    alvo_s = nseg * 6.0  # mesma quantidade de vídeo nos dois sistemas, qualquer que seja a duração do segmento
+    baixado_s = 0.0
+    for i, s in enumerate(segs):
+        if baixado_s >= alvo_s - 1e-6:
+            break
+        baixado_s += duracoes[i] if i < len(duracoes) else 6.0
         su = s if s.startswith("/") else base + "/" + s
         code, d, _ = srv.http.req(su + ("&" if "?" in su else "?") + f"api_key={srv.http.token}", raw=True, timeout=120)
         if code != 200 or len(d) < 1000:
@@ -396,7 +411,7 @@ def hls_session(srv, item, nseg, strip_abr=False):
         srv.http.req("/Sessions/Playing/Stopped", "POST", {"ItemId": item, "PositionTicks": 0, "PlaySessionId": psid})
     except Exception:
         pass
-    return {"first_seg_s": first, "total_s": total, "x_realtime": nseg * 6 / total}
+    return {"first_seg_s": first, "total_s": total, "video_s": baixado_s, "x_realtime": baixado_s / total}
 
 
 def scenario_transcode(srv, item, sessions=(1, 2, 4), nseg=6, reps=3, strip_abr=False):
