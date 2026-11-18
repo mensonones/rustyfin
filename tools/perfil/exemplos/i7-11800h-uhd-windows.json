@@ -1,0 +1,77 @@
+{
+  "ambiente": {
+    "script": 1,
+    "sistema": "Windows-11-10.0.26300-SP0",
+    "so": "windows",
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+    "nucleos": 16,
+    "memoria_gib": 31.8,
+    "placas_de_video": [
+      "Intel(R) UHD Graphics",
+      "NVIDIA GeForce RTX 3060 Laptop GPU"
+    ],
+    "docker": {
+      "disponivel": true,
+      "sistema": "Docker Desktop",
+      "desktop": true,
+      "cpus": 16,
+      "memoria_gib": 15.5
+    },
+    "duracao_teste_s": 30
+  },
+  "perfis": {
+    "docker-cpu": {
+      "disponivel": true,
+      "x_tempo_real": 5.1,
+      "nucleos_ocupados": 11.78,
+      "cpu_pct_do_sistema": 73.6,
+      "x_tempo_real_por_nucleo": 0.43,
+      "sessoes_simultaneas_estimadas": 5,
+      "repeticoes": [
+        5.1,
+        4.95,
+        5.11
+      ],
+      "variacao_pct": 3.2
+    },
+    "docker-gpu": {
+      "disponivel": false,
+      "motivo": "o Docker Desktop não repassa a GPU Intel ao container (Windows e macOS)"
+    },
+    "nativo-cpu": {
+      "disponivel": true,
+      "x_tempo_real": 5.24,
+      "nucleos_ocupados": 14.47,
+      "cpu_pct_do_sistema": 90.4,
+      "x_tempo_real_por_nucleo": 0.36,
+      "sessoes_simultaneas_estimadas": 5,
+      "repeticoes": [
+        5.25,
+        5.24,
+        5.17
+      ],
+      "variacao_pct": 1.5
+    },
+    "nativo-gpu": {
+      "disponivel": true,
+      "x_tempo_real": 8.23,
+      "nucleos_ocupados": 0.57,
+      "cpu_pct_do_sistema": 3.6,
+      "x_tempo_real_por_nucleo": 14.45,
+      "sessoes_simultaneas_estimadas": 8,
+      "repeticoes": [
+        8.23,
+        8.26,
+        8.22
+      ],
+      "variacao_pct": 0.5
+    }
+  },
+  "recomendacao": {
+    "perfil": "nativo-gpu",
+    "motivo": "a GPU transcodifica 8.23× o tempo real usando 0.57 núcleos, contra 5.1× e 11.78 núcleos do processador (docker-cpu).",
+    "como_aplicar": "RUSTYFIN_FFMPEG=<caminho do ffmpeg com o encoder> RUSTYFIN_VIDEO_ENCODER=auto ./rustyfin   (ou cargo run --release)",
+    "alternativa_sem_gpu": "docker-cpu"
+  },
+  "notas": []
+}

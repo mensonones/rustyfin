@@ -122,6 +122,9 @@ docker compose up -d
 O script detecta a GPU e grava a configuração no `.env`. Procure no log a linha `Aceleração por hardware ativa`. Sem GPU,
 ou se algo falhar, o servidor usa o processador sozinho, sem erro.
 
+Não sabe se vale a pena? `python tools/perfil/escolher_perfil.py` mede Docker e nativo, com e sem GPU, e recomenda um
+([como ler](escolher-perfil.md)).
+
 No **Docker Desktop (Windows ou macOS)** a GPU não chega ao container. No Windows, rodar o Rustyfin direto (sem Docker)
 liga o Quick Sync: veja [Windows](reproducao.md#windows). Detalhes, diagnóstico e números medidos em
 [reprodução](reproducao.md#aceleração-por-hardware).
@@ -188,4 +191,5 @@ O Rustyfin foi pensado para a **rede doméstica**. Para assistir fora de casa:
 | Ver todas as opções do servidor | [Configuração](configuracao.md) |
 | Entender Direct Play, HLS, legendas e HDR | [Reprodução](reproducao.md) |
 | Vir do Jellyfin e saber o que muda | [Migrando do Jellyfin](migrando-do-jellyfin.md) |
+| Escolher entre Docker, nativo e GPU | [Qual perfil escolher](escolher-perfil.md) |
 | Resolver um problema | [Solução de problemas](solucao-de-problemas.md) |

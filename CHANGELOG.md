@@ -5,6 +5,15 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.23.0] - 2026-11-18
+
+### Adicionado
+- `tools/perfil/escolher_perfil.py`: mede a transcodificação em Docker e nativo, no processador e na GPU, com os mesmos
+  argumentos de `ffmpeg` do servidor, e recomenda o perfil. Saída em tabela ou em JSON (`--json`), sem alterar o sistema.
+- [Qual perfil escolher](docs/escolher-perfil.md), com o resultado de uma máquina real (Windows, Intel UHD): Quick Sync
+  nativo 8,2× o tempo real usando 0,6 núcleo, contra 5,1× e 11,8 núcleos do Docker no processador.
+- [Guia para LLM](docs/guia-llm.md): procedimento para um assistente de IA medir a máquina, interpretar o JSON e responder.
+
 ## [0.22.5] - 2026-11-18
 
 ### Alterado

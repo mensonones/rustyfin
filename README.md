@@ -119,6 +119,10 @@ Depois:
 O passo a passo completo, com Windows, firewall, senha, TMDB, GPU, atualização e backup, está em
 **[Primeiros passos](docs/primeiros-passos.md)**.
 
+**Qual perfil é o melhor na sua máquina?** `python tools/perfil/escolher_perfil.py` mede Docker e nativo, com e sem GPU, e
+recomenda um ([como ler](docs/escolher-perfil.md)). No Windows com GPU Intel, rodar direto (sem Docker) com Quick Sync foi
+1,6× mais rápido e usou cerca de 20× menos CPU.
+
 **GPU Intel ou AMD no Linux:** rode `sh tools/gpu-setup.sh` antes do `docker compose up -d`
 ([detalhes](docs/reproducao.md#aceleração-por-hardware)). No Docker Desktop do Windows a GPU Intel não é repassada;
 rodando o Rustyfin direto no Windows o Quick Sync funciona ([como](docs/reproducao.md#windows)).
@@ -163,6 +167,8 @@ e o minuto, e esconde o que você ainda não assistiu. Como indexar as legendas:
 | [Migrando do Jellyfin](docs/migrando-do-jellyfin.md) | O que você ganha, o que perde e como testar lado a lado |
 | [Configuração](docs/configuracao.md) | Variáveis de ambiente, configurações do painel, pastas, TMDB e nomes de arquivo |
 | [Usuários e segurança](docs/usuarios-e-seguranca.md) | Contas, senhas, tokens, sessões, acesso por biblioteca e o que é público |
+| [Qual perfil escolher](docs/escolher-perfil.md) | Docker ou nativo, com ou sem GPU: o que medir, o que escolher e o script que decide |
+| [Guia para LLM](docs/guia-llm.md) | Procedimento para um assistente de IA medir a máquina e recomendar o perfil |
 | [Reprodução](docs/reproducao.md) | Direct Play, remux, transcode, HLS, legendas e HDR |
 | [Clientes](docs/clientes.md) | Como conectar cada app e o que foi testado |
 | [Arquitetura](docs/arquitetura.md) | Módulos, fluxo de uma requisição, banco de dados e caches |
