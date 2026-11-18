@@ -368,7 +368,7 @@ async fn preparar(st: &AdminState, preparos: &Preparos, chave: &str, s: &Sugesta
     {
         return false;
     }
-    let medicao = Command::new("ffprobe")
+    let medicao = Command::new(crate::transcode::ffprobe_path())
         .args([
             "-v",
             "error",

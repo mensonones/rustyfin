@@ -1,10 +1,11 @@
 ﻿<#
 .SYNOPSIS
-  Instala o Rustyfin no Windows: sobe quando você entra na conta, reinicia se cair e guarda tudo em uma pasta.
+  Instala o Rustyfin no Windows pela linha de comando: sobe quando você entra na conta, reinicia se cair e guarda tudo em
+  uma pasta. (Para o assistente com telas, use o Rustyfin-Setup.exe.)
 
 .DESCRIPTION
-  Copia o rustyfin.exe para %LOCALAPPDATA%\Rustyfin, cria a configuração (rustyfin.env), um script de inicialização e uma
-  tarefa agendada "Rustyfin" (ao entrar na conta). Não precisa de administrador, exceto para -Firewall.
+  Copia o rustyfin.exe para %LOCALAPPDATA%\Rustyfin, cria a configuração (rustyfin.env), copia o script de inicialização
+  e registra a tarefa agendada "Rustyfin" (ao entrar na conta). Não precisa de administrador, exceto para -Firewall.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File packaging\windows\instalar.ps1 -Binario .\target\release\rustyfin.exe
@@ -25,19 +26,15 @@ param(
     [switch]$SomenteMostrar
 )
 $ErrorActionPreference = "Stop"
-$Tarefa = "Rustyfin"
 $AquiPacote = Split-Path -Parent $PSScriptRoot
+$Tarefa = Join-Path $PSScriptRoot "tarefa.ps1"
 
 function Passo($texto, [scriptblock]$acao) {
     if ($SomenteMostrar) { Write-Host "[simulação] $texto" } else { Write-Host $texto; & $acao }
 }
 
 if ($Remover) {
-    Passo "Parando e removendo a tarefa agendada '$Tarefa'" {
-        Stop-ScheduledTask -TaskName $Tarefa -ErrorAction SilentlyContinue
-        Unregister-ScheduledTask -TaskName $Tarefa -Confirm:$false -ErrorAction SilentlyContinue
-        Get-Process -Name rustyfin -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$Pasta*" } | Stop-Process -Force
-    }
+    Passo "Parando e removendo a tarefa agendada 'Rustyfin'" { & $Tarefa -Pasta $Pasta -Acao Remover }
     Passo "Removendo as regras de firewall do Rustyfin (se existirem)" {
         Get-NetFirewallRule -DisplayName "Rustyfin*" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
     }
@@ -58,54 +55,20 @@ if (-not $SomenteMostrar -and -not (Test-Path $Binario)) {
 }
 
 Passo "Criando $Pasta" { New-Item -ItemType Directory -Force -Path (Join-Path $Pasta "dados") | Out-Null }
-Passo "Parando a versão em execução, se houver" {
-    Stop-ScheduledTask -TaskName $Tarefa -ErrorAction SilentlyContinue
-    Get-Process -Name rustyfin -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$Pasta*" } | Stop-Process -Force
+Passo "Parando a versão em execução, se houver" { & $Tarefa -Pasta $Pasta -Acao Parar }
+Passo "Copiando o rustyfin.exe e o script de inicialização" {
+    Copy-Item -Force $Binario (Join-Path $Pasta "rustyfin.exe")
+    Copy-Item -Force (Join-Path $PSScriptRoot "iniciar.ps1") (Join-Path $Pasta "iniciar.ps1")
 }
-Passo "Copiando o rustyfin.exe" { Copy-Item -Force $Binario (Join-Path $Pasta "rustyfin.exe") }
 
-$ModeloEnv = Join-Path $AquiPacote "rustyfin.env.example"
 $ArquivoEnv = Join-Path $Pasta "rustyfin.env"
 if (-not (Test-Path $ArquivoEnv)) {
-    Passo "Criando a configuração $ArquivoEnv" { Copy-Item $ModeloEnv $ArquivoEnv }
+    Passo "Criando a configuração $ArquivoEnv" { Copy-Item (Join-Path $AquiPacote "rustyfin.env.example") $ArquivoEnv }
 }
 
-# O script lê o rustyfin.env (KEY=VALUE), define a pasta de dados e inicia o servidor, com o registro em rustyfin.log.
-$Inicio = @'
-$ErrorActionPreference = "Stop"
-$Pasta = Split-Path -Parent $MyInvocation.MyCommand.Path
-$env:RUSTYFIN_DATA_DIR = Join-Path $Pasta "dados"
-$arquivo = Join-Path $Pasta "rustyfin.env"
-if (Test-Path $arquivo) {
-    foreach ($linha in Get-Content $arquivo) {
-        $linha = $linha.Trim()
-        if ($linha -eq "" -or $linha.StartsWith("#") -or -not $linha.Contains("=")) { continue }
-        $nome, $valor = $linha.Split("=", 2)
-        [Environment]::SetEnvironmentVariable($nome.Trim(), $valor.Trim().Trim('"'), "Process")
-    }
-}
-$env:NO_COLOR = "1"
-$exe = Join-Path $Pasta "rustyfin.exe"
-$log = Join-Path $Pasta "rustyfin.log"
-# O cmd grava a saída em UTF-8 e sem as cores (o redirecionamento do PowerShell 5.1 gravaria UTF-16).
-# Se o servidor cair (código de saída diferente de zero), sobe de novo depois de 5 segundos.
-while ($true) {
-    cmd.exe /c "`"$exe`" >> `"$log`" 2>&1"
-    if ($LASTEXITCODE -eq 0) { break }
-    Add-Content -Path $log -Value "Rustyfin encerrou com o código $LASTEXITCODE; reiniciando em 5 segundos." -Encoding UTF8
-    Start-Sleep -Seconds 5
-}
-'@
-Passo "Criando o script de inicialização" { Set-Content -Path (Join-Path $Pasta "iniciar.ps1") -Value $Inicio -Encoding UTF8 }
-
-Passo "Registrando a tarefa agendada '$Tarefa' (ao entrar na conta)" {
-    $acao = New-ScheduledTaskAction -Execute "powershell.exe" `
-        -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$(Join-Path $Pasta 'iniciar.ps1')`""
-    $gatilho = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
-    $config = New-ScheduledTaskSettingsSet -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) `
-        -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-    Register-ScheduledTask -TaskName $Tarefa -Action $acao -Trigger $gatilho -Settings $config -Force | Out-Null
-    Start-ScheduledTask -TaskName $Tarefa
+Passo "Registrando a tarefa agendada 'Rustyfin' (ao entrar na conta)" {
+    & $Tarefa -Pasta $Pasta -Acao Registrar
+    & $Tarefa -Pasta $Pasta -Acao Iniciar
 }
 
 if ($Firewall) {

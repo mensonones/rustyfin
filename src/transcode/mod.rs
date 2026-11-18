@@ -146,12 +146,7 @@ pub async fn hw_source(path: &std::path::Path, streams_json: Option<&str>) -> Hw
     let codec = streams_json
         .and_then(|j| serde_json::from_str::<Vec<MediaStream>>(j).ok())
         .and_then(|streams| streams.into_iter().find(|s| s.r#type == "Video").map(|s| s.codec.to_ascii_lowercase()));
-    let ffprobe = std::path::Path::new(ffmpeg_path())
-        .parent()
-        .map(|d| d.join(if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" }))
-        .filter(|p| p.exists())
-        .map_or_else(|| "ffprobe".into(), std::path::PathBuf::into_os_string);
-    let out = Command::new(ffprobe)
+    let out = Command::new(ffprobe_path())
         .args(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=pix_fmt,avg_frame_rate", "-of", "json"])
         .arg(path)
         .stdin(Stdio::null())
@@ -291,6 +286,17 @@ pub fn hw_i965() -> bool {
 
 pub fn ffmpeg_path() -> &'static str {
     SETTINGS.get().map_or("ffmpeg", |s| s.ffmpeg.as_str())
+}
+
+/// Executável do `ffprobe`: o que fica ao lado do `ffmpeg` configurado (`RUSTYFIN_FFMPEG`) ou, sem ele, o do `PATH`.
+/// Assim um `ffmpeg` instalado numa pasta fora do `PATH` (o setup do Windows, por exemplo) basta para o servidor.
+#[must_use]
+pub fn ffprobe_path() -> std::ffi::OsString {
+    std::path::Path::new(ffmpeg_path())
+        .parent()
+        .map(|d| d.join(if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" }))
+        .filter(|p| p.exists())
+        .map_or_else(|| "ffprobe".into(), std::path::PathBuf::into_os_string)
 }
 
 pub fn can_transcode() -> bool {

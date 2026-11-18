@@ -686,7 +686,7 @@ async fn update_parsed(
 }
 
 async fn probe_file(path: &Path) -> Option<MediaMetadata> {
-    let output = Command::new("ffprobe")
+    let output = Command::new(crate::transcode::ffprobe_path())
         .args(["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams"])
         .arg(path)
         .kill_on_drop(true)
