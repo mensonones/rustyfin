@@ -61,3 +61,11 @@ sha2 = "0.10"
 
 [dev-dependencies]
 tower = { version = "0.5", default-features = false, features = ["util"] }
+
+# Binário final do Docker e do `cargo build --release`: otimização entre crates (LTO), uma unidade de geração de código
+# e símbolos removidos. Deliberadamente sem `panic = "abort"`: o Tokio isola o pânico de uma tarefa e o servidor
+# continua de pé; abortar derrubaria o processo inteiro.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
