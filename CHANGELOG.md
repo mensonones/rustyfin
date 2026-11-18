@@ -5,6 +5,12 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.22.4] - 2026-11-18
+
+### Corrigido
+- Configurações: os cartões Servidor e Metadados online têm a mesma largura e a mesma altura, com a barra de salvar
+  alinhada no pé de cada um, e não deixam mais uma coluna vazia em telas largas.
+
 ## [0.22.3] - 2026-11-18
 
 ### Corrigido

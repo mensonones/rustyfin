@@ -300,8 +300,12 @@
   .grade > .library, .grade > .person { background: var(--panel); border-radius: var(--radius); box-shadow: var(--edge); border-top: 0; }
   .library-directory .records.grade { border-radius: 0; }
   .directory-heading { background: none; box-shadow: none; padding: 0 0 12px; border-radius: 0; font-size: var(--text-lg); }
-  .settings > #settingsForm:not([hidden]) { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 16px; align-items: start; }
-  .settings .card { max-width: none; margin-bottom: 0; }
+  /* Duas colunas iguais e cartões da mesma altura, com a barra de salvar sempre no pé de cada um */
+  .settings > #settingsForm:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+  .settings .card { max-width: none; margin-bottom: 0; display: flex; flex-direction: column; }
+  .settings .card > .savebar { margin-top: auto; }
+  .settings .card > :has(+ .savebar) { margin-bottom: 24px; }
+  @media (max-width: 60rem) { .settings > #settingsForm:not([hidden]) { grid-template-columns: minmax(0, 1fr); } }
   #tab-status { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto auto auto 1fr; gap: 16px; align-items: start; }
   #tab-status > .page-heading, #tab-status > #statusGrid { grid-column: 1 / -1; }
   #tab-status .card { max-width: none; margin-bottom: 0; }
