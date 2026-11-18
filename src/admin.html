@@ -302,10 +302,17 @@
   .directory-heading { background: none; box-shadow: none; padding: 0 0 12px; border-radius: 0; font-size: var(--text-lg); }
   .settings > #settingsForm:not([hidden]) { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 16px; align-items: start; }
   .settings .card { max-width: none; margin-bottom: 0; }
-  #tab-status { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 16px; align-items: start; }
+  #tab-status { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto auto auto 1fr; gap: 16px; align-items: start; }
   #tab-status > .page-heading, #tab-status > #statusGrid { grid-column: 1 / -1; }
   #tab-status .card { max-width: none; margin-bottom: 0; }
-  #tab-status .legendas { grid-column: 1 / -1; }
+  /* Duas colunas alinhadas: as duas seções recolhidas empilham à esquerda e o diagnóstico fica à direita. */
+  #tab-status > #painelPreparos { grid-column: 1; grid-row: 3; }
+  #tab-status > #legPainel { grid-column: 1; grid-row: 4; }
+  #tab-status > section.preflight { grid-column: 2; grid-row: 3 / span 2; }
+  @media (max-width: 60rem) {
+    #tab-status { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
+    #tab-status > #painelPreparos, #tab-status > #legPainel, #tab-status > section.preflight { grid-column: 1; grid-row: auto; }
+  }
   #statusGrid .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
   #statusGrid .records { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
   #statusGrid .service { border-top: 0; }

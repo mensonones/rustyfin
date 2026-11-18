@@ -5,6 +5,12 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.22.3] - 2026-11-18
+
+### Corrigido
+- Diagnóstico: o fim da tela deixava uma coluna vazia e cartões de larguras diferentes. Agora são duas colunas iguais, com
+  as seções recolhidas empilhadas à esquerda e o diagnóstico antes do Play à direita; em telas estreitas vira uma coluna.
+
 ## [0.22.2] - 2026-11-18
 
 ### Adicionado
