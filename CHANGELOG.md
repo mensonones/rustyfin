@@ -17,6 +17,9 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 - O log avisa quando um login sem senha é recusado por vir de fora da rede local.
 
 ### Segurança
+- **Atenção ao atualizar:** quem já usa um proxy reverso (mesmo na rede local) precisa definir `RUSTYFIN_TRUSTED_PROXIES`
+  com o IP do proxy. Sem isso, o que passa por ele é tratado como da internet: usuários sem senha não entram e as capas
+  sem token somem. O log avisa.
 - Requisições com cabeçalhos de proxy vindas de quem **não** está em `RUSTYFIN_TRUSTED_PROXIES`, ou de um proxy confiável
   que não informa o cliente, são tratadas como da internet. Antes, um proxy no mesmo PC fazia todo visitante parecer da
   rede local, e o painel e o login sem senha ficavam abertos para a internet.

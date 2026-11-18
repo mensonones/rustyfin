@@ -27,6 +27,20 @@ RUSTYFIN_TRUSTED_PROXIES=172.16.0.0/12         # proxy em outro contêiner Docke
 > em vez de confiar em `127.0.0.1`. Assim, quem abre `http://localhost:8096/admin` direto no PC continua sendo reconhecido
 > como local (e o ícone da bandeja continua podendo desligar o servidor graciosamente).
 
+## Proxy dentro da rede local (o caso mais comum em casa)
+
+Se o proxy também está na sua rede e os aparelhos acessam por um nome interno (DNS local apontando `midia.exemplo.com`
+para o IP do proxy), **os clientes continuam sendo da rede local**: o proxy repassa o IP deles no `X-Forwarded-For`, e com o
+proxy em `RUSTYFIN_TRUSTED_PROXIES` tudo funciona como no acesso direto (painel, login sem senha, capas). Sem a variável,
+o servidor não confia no cabeçalho e **trata tudo o que passa pelo proxy como vindo da internet**: o app conecta, mas
+usuários sem senha não entram, as capas somem e o painel não abre por esse endereço. O log avisa na primeira requisição.
+O painel também abre pelo endereço direto (`http://IP-do-servidor:8096/admin`).
+
+Nesse cenário, a falha **"Could not connect to server" acontece antes do login**, ou seja, antes de qualquer regra do
+Rustyfin. Quase sempre é o certificado (um nome interno com certificado de uma autoridade própria, que o iOS e as TVs não
+conhecem, ou um certificado sem a cadeia completa) ou o proxy apontando para o destino errado. Rode o
+`tools/testar_proxy.py` de um aparelho da própria rede.
+
 ## O que fica só na rede local, de propósito
 
 - **O painel `/admin` e `/Library/VirtualFolders`** não abrem pela internet. Administre pela rede local ou por uma VPN
