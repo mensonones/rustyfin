@@ -29,6 +29,8 @@ struct HlsSession {
     permit: Option<OwnedSemaphorePermit>,
     /// Primeiro segmento que este ffmpeg gera (0 nas sessões que não são VOD).
     start_seg: u32,
+    /// `PlaySessionId` do cliente: permite encerrar o ffmpeg quando o app avisa que parou de assistir.
+    play_session: Option<String>,
 }
 
 /// Como (re)criar uma sessão HLS VOD: guardada além da vida do ffmpeg, para que um segmento pedido
@@ -38,6 +40,54 @@ struct Recipe {
     input: PathBuf,
     params: TranscodeParams,
     created: Instant,
+    play_session: Option<String>,
+}
+
+/// Quanto tempo sem pedidos uma sessão precisa ter para ceder a vaga a outra quando o limite de
+/// transcodificações está cheio. Um player ativo pede um segmento a cada poucos segundos.
+const EVICT_IDLE: Duration = Duration::from_secs(12);
+
+/// Escolhe a sessão que perde a vaga: a que está há mais tempo sem pedidos, desde que passe de `EVICT_IDLE`.
+fn pick_victim<'a>(idle: impl Iterator<Item = (&'a String, Duration)>) -> Option<String> {
+    idle.filter(|(_, d)| *d > EVICT_IDLE).max_by_key(|(_, d)| *d).map(|(k, _)| k.clone())
+}
+
+/// Pega uma vaga de transcodificação. Se o limite está cheio, encerra a sessão parada há mais tempo (um app
+/// que fechou o vídeo sem avisar segura a vaga até a limpeza de 90 s) em vez de recusar com 503.
+async fn acquire_or_evict(map: &mut HashMap<String, HlsSession>) -> Result<OwnedSemaphorePermit, SpawnError> {
+    match acquire_slot() {
+        Err(SpawnError::Busy) => {}
+        other => return other,
+    }
+    let victim = pick_victim(map.iter().map(|(k, s)| (k, s.last_access.elapsed())));
+    let Some(old) = victim.and_then(|k| map.remove(&k)) else {
+        return Err(SpawnError::Busy);
+    };
+    info!("Limite de transcodificações cheio: sessão parada {} cede a vaga", old.dir.display());
+    let HlsSession { dir, mut child, permit, .. } = old;
+    let _ = child.start_kill();
+    drop(permit);
+    let _ = tokio::fs::remove_dir_all(&dir).await;
+    acquire_slot()
+}
+
+/// O app avisou que parou de assistir (`Sessions/Playing/Stopped`): encerra o ffmpeg e libera a vaga na hora.
+/// A receita fica guardada, então retomar a reprodução recria a sessão.
+pub async fn stop_play_session(play_session: &str) {
+    let parados: Vec<HlsSession> = {
+        let mut map = sessions().lock().await;
+        let keys: Vec<String> = map
+            .iter()
+            .filter(|(_, s)| s.play_session.as_deref() == Some(play_session))
+            .map(|(k, _)| k.clone())
+            .collect();
+        keys.iter().filter_map(|k| map.remove(k)).collect()
+    };
+    for mut s in parados {
+        let _ = s.child.start_kill();
+        let _ = tokio::fs::remove_dir_all(&s.dir).await;
+        info!("Sessão HLS encerrada a pedido do cliente: {}", s.dir.display());
+    }
 }
 
 static RECIPES: OnceLock<Mutex<HashMap<String, Recipe>>> = OnceLock::new();
@@ -50,14 +100,25 @@ fn recipes() -> &'static Mutex<HashMap<String, Recipe>> {
 }
 
 /// Registra a receita da sessão VOD e inicia o ffmpeg no segmento inicial, sem esperar por ele.
-pub async fn start_vod(key: &str, input: &Path, params: &TranscodeParams, start_seg: u32) -> Result<(), SpawnError> {
+pub async fn start_vod(
+    key: &str,
+    input: &Path,
+    params: &TranscodeParams,
+    start_seg: u32,
+    play_session: Option<&str>,
+) -> Result<(), SpawnError> {
     let s = settings()?;
     {
         let mut r = recipes().lock().await;
         r.retain(|_, v| v.created.elapsed() < RECIPE_TTL);
         r.insert(
             key.to_string(),
-            Recipe { input: input.to_path_buf(), params: params.clone(), created: Instant::now() },
+            Recipe {
+                input: input.to_path_buf(),
+                params: params.clone(),
+                created: Instant::now(),
+                play_session: play_session.map(str::to_owned),
+            },
         );
     }
     let recipe = recipes().lock().await.get(key).cloned();
@@ -86,7 +147,7 @@ async fn restart_vod(
     };
     let permit = match permit {
         Some(p) => p,
-        None => acquire_slot()?,
+        None => acquire_or_evict(map).await?,
     };
     let dir = s.work_dir.join(key);
     tokio::fs::create_dir_all(&dir)
@@ -108,7 +169,14 @@ async fn restart_vod(
     info!("Sessão HLS {} (VOD) iniciada no segmento {} de {}", key, seg, recipe.input.display());
     map.insert(
         key.to_string(),
-        HlsSession { dir, last_access: Instant::now(), child, permit: Some(permit), start_seg: seg },
+        HlsSession {
+            dir,
+            last_access: Instant::now(),
+            child,
+            permit: Some(permit),
+            start_seg: seg,
+            play_session: recipe.play_session.clone(),
+        },
     );
     Ok(())
 }
@@ -282,7 +350,7 @@ pub fn rewrite_playlist(content: &str, prefix: &str) -> String {
 }
 
 /// Garante que existe um ffmpeg HLS para a sessão (inicia se necessário).
-pub async fn ensure_hls(key: &str, input: &Path, p: &TranscodeParams) -> Result<(), SpawnError> {
+pub async fn ensure_hls(key: &str, input: &Path, p: &TranscodeParams, play_session: Option<&str>) -> Result<(), SpawnError> {
     let s = settings()?;
     let mut map = sessions().lock().await;
     if let Some(sess) = map.get_mut(key) {
@@ -290,7 +358,7 @@ pub async fn ensure_hls(key: &str, input: &Path, p: &TranscodeParams) -> Result<
         return Ok(());
     }
 
-    let permit = acquire_slot()?;
+    let permit = acquire_or_evict(&mut map).await?;
     let dir = s.work_dir.join(key);
     let _ = tokio::fs::remove_dir_all(&dir).await;
     tokio::fs::create_dir_all(&dir)
@@ -310,7 +378,14 @@ pub async fn ensure_hls(key: &str, input: &Path, p: &TranscodeParams) -> Result<
     info!("Sessão HLS {} iniciada para {}", key, input.display());
     map.insert(
         key.to_string(),
-        HlsSession { dir, last_access: Instant::now(), child, permit: Some(permit), start_seg: 0 },
+        HlsSession {
+            dir,
+            last_access: Instant::now(),
+            child,
+            permit: Some(permit),
+            start_seg: 0,
+            play_session: play_session.map(str::to_owned),
+        },
     );
     Ok(())
 }
@@ -365,5 +440,19 @@ pub(super) async fn reaper() {
                 warn!("Falha ao limpar sessão HLS {}: {}", s.dir.display(), e);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn evicts_only_the_longest_idle_session_past_the_threshold() {
+        let (a, b, c) = ("a".to_string(), "b".to_string(), "c".to_string());
+        let ativos = [(&a, Duration::from_secs(3)), (&b, Duration::from_secs(8))];
+        assert_eq!(pick_victim(ativos.into_iter()), None, "ninguém passou do limite: segue recusando");
+        let mistos = [(&a, Duration::from_secs(3)), (&b, Duration::from_secs(40)), (&c, Duration::from_secs(20))];
+        assert_eq!(pick_victim(mistos.into_iter()).as_deref(), Some("b"));
     }
 }

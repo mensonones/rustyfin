@@ -248,6 +248,10 @@ pub(super) async fn report_stopped(
     Json(payload): Json<PlaybackProgressReport>,
 ) -> impl IntoResponse {
     preparos.relatar(&user.id, &payload, true).await;
+    // Parou de assistir: libera o ffmpeg e a vaga de transcodificação na hora (em vez de esperar os 90 s ociosos).
+    if let Some(play_session) = payload.play_session_id.as_deref() {
+        crate::transcode::stop_play_session(play_session).await;
+    }
     if let (Some(item_id), Some(position_ticks)) = (payload.item_id, payload.position_ticks) {
         let item_id = crate::api::shows::normalize_id(&item_id);
         if let Err(e) = save_position(&pool, &user.id, &item_id, position_ticks, true).await {

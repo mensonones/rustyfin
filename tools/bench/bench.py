@@ -390,6 +390,12 @@ def hls_session(srv, item, nseg, strip_abr=False):
         if first is None:
             first = time.perf_counter() - t0
     total = time.perf_counter() - t0
+    # Como um app de verdade, avisa que parou de assistir (libera a vaga de transcodificação no Rustyfin).
+    psid = (v or {}).get("PlaySessionId")
+    try:
+        srv.http.req("/Sessions/Playing/Stopped", "POST", {"ItemId": item, "PositionTicks": 0, "PlaySessionId": psid})
+    except Exception:
+        pass
     return {"first_seg_s": first, "total_s": total, "x_realtime": nseg * 6 / total}
 
 

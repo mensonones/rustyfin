@@ -318,3 +318,16 @@ O relatório lista isso explicitamente: é um comparativo **das funcionalidades 
 2. Incluir o cenário com **TMDB ligado** (usa a sua chave; depende da rede)?
 3. Perfis de recursos: *folgado* (4 CPU/4 GB) e *restrito* (1 CPU/512 MB)?
 4. Posso **parar o Rustyfin** durante as medidas do Jellyfin (portas) e depois religar?
+
+## Atualização v0.17.4: transcodificação
+
+Depois do benchmark completo, as duas fraquezas de transcodificação foram tratadas: as vagas presas por sessões já encerradas
+(2 de 4 sessões simultâneas falhavam) e a velocidade por sessão. Nova medição em 4 CPUs (uma qualidade, como o Jellyfin):
+
+| Sessões | Rustyfin | Jellyfin |
+| --- | --- | --- |
+| 1 | 13,4x | 20,5x |
+| 2 | 4,6x | 5,8x |
+| 4 | 1,4x | 2,3x |
+
+As 4 sessões simultâneas agora terminam sem erro. O Jellyfin ainda é mais rápido por sessão; a diferença restante não foi investigada.

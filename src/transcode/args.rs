@@ -119,6 +119,12 @@ pub fn build_args(
         add(&mut a, "-b:v");
         add(&mut a, p.video_bitrate.unwrap_or(8_000_000).to_string());
     }
+    if encoder == "libx264" && !p.video_copy {
+        // Mesmos ajustes de busca de movimento do Jellyfin: mais rápido que o `veryfast` puro, com perda
+        // de qualidade imperceptível em streaming ao vivo.
+        add(&mut a, "-x264opts");
+        add(&mut a, "subme=0:me_range=16:rc_lookahead=10:me=hex:open_gop=0");
+    }
     if !p.video_copy && p.hls {
         // Keyframes alinhados aos segmentos HLS.
         add(&mut a, "-force_key_frames");

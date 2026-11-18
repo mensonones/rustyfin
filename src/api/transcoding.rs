@@ -208,6 +208,10 @@ async fn hls_playlist(
         params.tone_map_hdr = transcode::tone_map_hdr(input.streams_json.as_deref());
     }
     params.has_audio = input.has_audio;
+    let play_session = q
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("PlaySessionId"))
+        .map(|(_, v)| v.clone());
     remover_tokens(&mut q);
     let chave = transcode::session_key(&id, &q, params.tone_map_hdr);
     let prefixo = format!("/Videos/{id}/hls/{chave}/");
@@ -220,7 +224,7 @@ async fn hls_playlist(
     if !params.video_copy && duration_secs > 0.0 {
         let count = (duration_secs / f64::from(transcode::HLS_SEGMENT_SECS)).ceil().max(1.0) as u32;
         let start_seg = ((params.start_secs / f64::from(transcode::HLS_SEGMENT_SECS)) as u32).min(count - 1);
-        transcode::start_vod(&key, std::path::Path::new(&input.path), &params, start_seg)
+        transcode::start_vod(&key, std::path::Path::new(&input.path), &params, start_seg, play_session.as_deref())
             .await
             .map_err(spawn_status)?;
         let rendition = match (params.abr, low) {
@@ -234,7 +238,7 @@ async fn hls_playlist(
         return text_response(PLAYLIST_MIME, autorizar_segmentos(&playlist, &prefixo, &credencial));
     }
 
-    transcode::ensure_hls(&key, std::path::Path::new(&input.path), &params)
+    transcode::ensure_hls(&key, std::path::Path::new(&input.path), &params, play_session.as_deref())
         .await
         .map_err(spawn_status)?;
 
