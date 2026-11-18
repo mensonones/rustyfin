@@ -135,9 +135,17 @@ cargo run --release
 
 ![Diretório de bibliotecas com varredura e manutenção ao lado](docs/assets/diretorio-bibliotecas.jpg)
 
-Bibliotecas, usuários, sessões, configurações e diagnóstico, com tema claro e escuro e paleta de comandos (`Ctrl K`).
+Bibliotecas, acervo, usuários, sessões, configurações e diagnóstico, com tema claro e escuro e paleta de comandos (`Ctrl K`).
 O painel só é acessível pela rede local e pode exigir senha. Detalhes em
 [docs/usuarios-e-seguranca.md](docs/usuarios-e-seguranca.md).
+
+### Acervo
+
+![Aba Acervo, com filtros de situação, busca e a lista de títulos](docs/assets/painel-acervo.png)
+
+A aba **Acervo** lista todos os filmes e episódios que a varredura encontrou e mostra o que falta em cada um: metadados,
+capa, legenda, assinatura e cenas indexadas. Filtre por problema, busque por título ou caminho e rode as ações (indexar
+cenas e áudio, ajustar legenda) direto na linha. Serve para achar um nome mal entendido ou uma capa ausente sem abrir o app.
 
 ## Busca de cenas
 

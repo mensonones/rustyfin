@@ -2,6 +2,7 @@ pub mod admin;
 pub mod auth;
 pub mod avatars;
 pub mod compat;
+mod acervo_admin;
 mod cenas;
 mod preparos;
 pub mod facets;

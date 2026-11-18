@@ -79,6 +79,8 @@ Abra **http://localhost:8096/admin** no navegador do PC.
 2. Escolha o tipo (**Filmes** ou **Séries**), dê um nome e escolha a pasta. O seletor mostra o sistema de arquivos *do
    container*; navegue até `/mnt/videos` (ou o caminho que você montou).
 3. Salve. A varredura começa na hora e os títulos vão aparecendo. Uma biblioteca grande leva segundos, não minutos.
+4. Abra a aba **Acervo** para conferir o resultado: ela lista cada filme e episódio e mostra o que falta (metadados, capa,
+   legenda). Se um título apareceu com o nome errado, renomeie o arquivo (veja os padrões abaixo) e a varredura corrige.
 
 Os arquivos precisam de nomes razoáveis: `Filme (2020).mkv`, `Serie S01E02.mkv` ou `Serie/Season 1/...`. Veja todos os
 padrões em [configuração](configuracao.md#nomes-de-arquivo-e-pastas).

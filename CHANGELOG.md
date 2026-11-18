@@ -5,6 +5,15 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.22.0] - 2026-11-18
+
+### Adicionado
+- Aba **Acervo** no painel: lista paginada de filmes e episódios com busca por título, série ou caminho, filtro por
+  biblioteca e por situação (sem metadados, sem capa, sem legenda, assinatura pendente, sem cenas, não analisados), com
+  as contagens de cada filtro. Cada linha mostra a biblioteca, o formato, os codecs, o tamanho e a duração, e tem
+  ações para indexar cenas e áudio, ajustar a legenda e copiar o caminho. Também está na paleta de comandos.
+- Rota `GET /admin/api/acervo`, com teste de integração (selos, busca, filtros, biblioteca e paginação).
+
 ### Documentação
 - Novo guia [Primeiros passos](docs/primeiros-passos.md): instalação com Docker, como montar as pastas de mídia, painel,
   conexão do app, GPU, atualização, backup e acesso de fora de casa.

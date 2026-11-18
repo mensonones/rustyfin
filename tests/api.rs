@@ -700,3 +700,75 @@ async fn as_fontes_do_painel_sao_publicas_e_estaticas() {
     let (status, _) = corpo(&s.app, Method::GET, "/assets/fontes/outra-coisa.woff2", None, None).await;
     assert_ne!(status, StatusCode::OK, "só as duas fontes embutidas são servidas");
 }
+
+#[tokio::test]
+async fn aba_acervo_lista_com_selos_filtros_busca_e_paginacao() {
+    let s = server("acervo").await;
+    let config = Arc::new(test_config(&s.dir));
+    let pool = db::init_db(&config.database_url).await.unwrap();
+    let id = "0123456789abcdef0123456789abcdef";
+    item_com_legenda(&pool, &s.dir, id, LEGENDA_CENAS).await;
+    sqlx::query(
+        "INSERT INTO items (id, name, path, media_type, series_name, season_number, episode_number, \
+         library_id, probed) VALUES ('ep1', 'Piloto', '/x/serie/s01e01.mkv', 'Episode', 'Série X', 1, 1, 'lib2', 1)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO libraries (id, name, collection_type) VALUES ('lib2', 'Séries', 'tvshows')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    for n in 0..60 {
+        sqlx::query("INSERT INTO items (id, name, path, media_type, library_id) VALUES (?, ?, ?, 'Movie', 'lib1')")
+            .bind(format!("filme{n:02}"))
+            .bind(format!("Lote {n:02}"))
+            .bind(format!("/x/lote/{n}.mkv"))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    // O painel exige o mesmo acesso das outras rotas de administração.
+    let (status, lista) = call(&s.app, Method::GET, "/admin/api/acervo", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(lista["total"], 62);
+    assert_eq!(lista["porPagina"], 50);
+    assert_eq!(lista["itens"].as_array().unwrap().len(), 50);
+    assert_eq!(lista["resumo"]["filmes"], 61);
+    assert_eq!(lista["resumo"]["episodios"], 1);
+    assert_eq!(lista["resumo"]["semAssinatura"], 61);
+    assert_eq!(lista["resumo"]["naoAnalisados"], 61);
+
+    // Segunda página com o que sobrou.
+    let (_, segunda) = call(&s.app, Method::GET, "/admin/api/acervo?pagina=2", None, None).await;
+    assert_eq!(segunda["itens"].as_array().unwrap().len(), 12);
+
+    // Busca por nome, por série e por caminho, sem diferenciar maiúsculas.
+    let (_, por_serie) = call(&s.app, Method::GET, "/admin/api/acervo?busca=S%C3%89RIE%20x", None, None).await;
+    assert_eq!(por_serie["total"], 1);
+    assert_eq!(por_serie["itens"][0]["nome"], "Piloto");
+    assert_eq!(por_serie["itens"][0]["biblioteca"], "Séries");
+    let (_, por_caminho) = call(&s.app, Method::GET, "/admin/api/acervo?busca=lote/7", None, None).await;
+    assert_eq!(por_caminho["total"], 1);
+
+    // Selos do título com legenda externa e assinatura, ainda sem cenas indexadas.
+    let (_, filme) = call(&s.app, Method::GET, &format!("/admin/api/acervo?busca={id}"), None, None).await;
+    let selos = &filme["itens"][0]["selos"];
+    assert_eq!((selos["legenda"].clone(), selos["assinatura"].clone(), selos["cenas"].clone()),
+        (json!(true), json!(true), json!(false)));
+    let (_, indexado) = call(&s.app, Method::POST, &format!("/admin/api/cenas/{id}"), None, None).await;
+    assert_eq!(indexado["trechos"], 3);
+    let (_, filme) = call(&s.app, Method::GET, &format!("/admin/api/acervo?busca={id}"), None, None).await;
+    assert_eq!(filme["itens"][0]["selos"]["cenas"], true);
+
+    // Filtros de problema e de biblioteca.
+    let (_, sem_assinatura) = call(&s.app, Method::GET, "/admin/api/acervo?problema=assinatura", None, None).await;
+    assert_eq!(sem_assinatura["total"], 61);
+    let (_, sem_legenda) = call(&s.app, Method::GET, "/admin/api/acervo?problema=legenda&biblioteca=lib2", None, None).await;
+    assert_eq!(sem_legenda["total"], 1);
+    let (status, _) = call(&s.app, Method::GET, "/admin/api/acervo?problema=inventado", None, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = call(&s.app, Method::GET, "/admin/api/acervo?biblioteca=nao-existe", None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

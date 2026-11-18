@@ -265,6 +265,29 @@
   .pal-list small { color: var(--muted); }
   noscript p { padding: 24px; }
 
+  /* Acervo */
+  .filtros { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .filtros button { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border: 1px solid var(--rule-2); border-radius: var(--radius-pill); background: transparent; color: var(--ink-2); font-size: var(--text-sm); font-weight: 500; cursor: pointer; transition: background var(--dur-micro) var(--ease); }
+  .filtros button:hover { background: var(--paper-2); }
+  .filtros button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: transparent; }
+  .filtros b { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .busca-acervo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 14rem); gap: 16px; margin-bottom: 16px; }
+  .tabela-acervo { background: var(--panel); border-radius: var(--radius); box-shadow: var(--edge); }
+  .tabela-acervo table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+  .tabela-acervo th { text-align: left; font-weight: 500; color: var(--muted); padding: 12px 16px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  .tabela-acervo td { padding: 12px 16px; border-top: 1px solid var(--rule); vertical-align: top; }
+  .tabela-acervo tbody tr:first-child td { border-top: 0; }
+  .tabela-acervo tbody tr:hover { background: var(--paper-2); }
+  .titulo-acervo { font-weight: 500; overflow-wrap: anywhere; }
+  .titulo-acervo small, .caminho-acervo { display: block; color: var(--muted); font-size: var(--text-xs); font-weight: 400; overflow-wrap: anywhere; }
+  .caminho-acervo { font-family: var(--mono); margin-top: 4px; }
+  .midia-acervo { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .midia-acervo small { display: block; color: var(--muted); font-size: var(--text-xs); }
+  .selos { display: flex; flex-wrap: wrap; gap: 4px; }
+  .paginacao { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; color: var(--muted); font-size: var(--text-sm); }
+  @media (max-width: 60rem) { .col-acervo-midia, .col-acervo-biblioteca { display: none; } }
+  @media (max-width: 40rem) { .busca-acervo { grid-template-columns: minmax(0, 1fr); } }
+
   /* Telas largas: as listas viram grades de cartões e as abas aproveitam a largura */
   .library-workspace { grid-template-columns: minmax(0, 1fr) clamp(340px, 24vw, 440px); }
   .grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr)); gap: 16px; align-items: start; background: none; box-shadow: none; border-radius: 0; }
@@ -355,6 +378,7 @@
     </h1>
     <nav role="tablist" aria-label="Administração" aria-orientation="horizontal">
       <button id="nav-libs" role="tab" aria-controls="tab-libs" data-tab="libs" aria-selected="true" tabindex="0"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg>Bibliotecas</button>
+      <button id="nav-acervo" role="tab" aria-controls="tab-acervo" data-tab="acervo" aria-selected="false" tabindex="-1"><svg class="i" aria-hidden="true"><use href="#i-film"/></svg>Acervo</button>
       <button id="nav-users" role="tab" aria-controls="tab-users" data-tab="users" aria-selected="false" tabindex="-1"><svg class="i" aria-hidden="true"><use href="#i-users"/></svg>Usuários</button>
       <button id="nav-sessions" role="tab" aria-controls="tab-sessions" data-tab="sessions" aria-selected="false" tabindex="-1"><svg class="i" aria-hidden="true"><use href="#i-monitor"/></svg>Sessões</button>
       <button id="nav-settings" role="tab" aria-controls="tab-settings" data-tab="settings" aria-selected="false" tabindex="-1"><svg class="i" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg>Configurações</button>
@@ -424,6 +448,32 @@
     </details>
     </section>
     </div>
+    </div>
+  </section>
+
+  <section id="tab-acervo" role="tabpanel" aria-label="Acervo" hidden>
+    <div class="page-heading">
+      <h2>Acervo</h2>
+      <p class="hint">Todos os filmes e episódios que a varredura encontrou, com o que falta em cada um. Use para achar nomes mal entendidos, capas ausentes e arquivos ainda sem assinatura.</p>
+    </div>
+    <div id="acervoPainel" hidden>
+      <div class="filtros" id="acervoFiltros" role="group" aria-label="Filtrar por situação"></div>
+      <form class="busca-acervo" id="acervoBusca" role="search">
+        <div>
+          <label for="acervoTermo">Buscar por título, série ou caminho</label>
+          <input id="acervoTermo" type="search" maxlength="128" autocomplete="off">
+        </div>
+        <div>
+          <label for="acervoBiblioteca">Biblioteca</label>
+          <select id="acervoBiblioteca"><option value="">Todas</option></select>
+        </div>
+      </form>
+      <div id="acervoLista" aria-live="polite"></div>
+      <nav class="paginacao" id="acervoPaginas" aria-label="Páginas do acervo" hidden>
+        <button class="btn small" type="button" id="acervoAnterior">Anterior</button>
+        <span id="acervoPosicao"></span>
+        <button class="btn small" type="button" id="acervoProxima">Próxima</button>
+      </nav>
     </div>
   </section>
 
@@ -1866,9 +1916,159 @@ $('tema').onclick = () => {
 };
 
 // ---- paleta de comandos (Ctrl K)
+// ---- acervo
+const acervo = { busca: '', biblioteca: '', problema: '', pagina: 1, tmdb: false, preparado: false, tokenBusca: 0 };
+const filtrosAcervo = [
+  ['', 'Todos', 'total'], ['metadados', 'Sem metadados', 'semMetadados'], ['capa', 'Sem capa', 'semCapa'],
+  ['legenda', 'Sem legenda', 'semLegenda'], ['assinatura', 'Assinatura pendente', 'semAssinatura'],
+  ['cenas', 'Sem cenas indexadas', 'semCenas'], ['analise', 'Não analisados', 'naoAnalisados'],
+];
+const numeroBr = (n) => Number(n).toLocaleString('pt-BR');
+function tamanhoLegivel(bytes) {
+  if (!bytes) return '';
+  const unidades = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  let v = bytes;
+  while (v >= 1024 && i < unidades.length - 1) { v /= 1024; i += 1; }
+  return v.toFixed(i > 1 ? 1 : 0).replace('.', ',') + ' ' + unidades[i];
+}
+function duracaoLegivel(segundos) {
+  if (!segundos) return '';
+  const h = Math.floor(segundos / 3600);
+  const m = Math.floor((segundos % 3600) / 60);
+  return h ? h + ' h ' + String(m).padStart(2, '0') + ' min' : m + ' min';
+}
+function selosDoTitulo(t) {
+  const s = t.selos;
+  const faltas = [];
+  const aviso = (texto, importante) => faltas.push(el('span', { className: 'badge' + (importante ? ' warn' : ''), textContent: texto }));
+  if (!s.analisado) aviso('Não analisado', true);
+  if (!s.metadados) aviso('Sem metadados', acervo.tmdb);
+  if (!s.capa) aviso('Sem capa', acervo.tmdb);
+  if (!s.assinatura) aviso('Assinatura pendente', true);
+  if (!s.legenda) aviso('Sem legenda', false);
+  if (!s.cenas) aviso('Sem cenas', false);
+  if (!faltas.length) faltas.push(el('span', { className: 'badge ok', textContent: 'Completo' }));
+  return el('div', { className: 'selos' }, ...faltas);
+}
+function rotuloEpisodio(t) {
+  if (!t.serie) return '';
+  const marca = t.temporada != null && t.episodio != null ? 'S' + t.temporada + 'E' + t.episodio : '';
+  return [t.serie, marca].filter(Boolean).join(' ');
+}
+async function acaoNoTitulo(rota, sucesso, t) {
+  try {
+    const dados = await api('POST', rota + encodeURIComponent(t.id));
+    toast(sucesso(dados));
+    carregarAcervo().catch((e) => toast(mensagemErro(e), true));
+  } catch (erro) {
+    toast(erro.status === 409 ? 'A assinatura do arquivo ainda está sendo calculada. Tente de novo em alguns minutos.'
+      : erro.status === 422 ? 'Áudio ou legenda indisponível, ou indexação ocupada.' : mensagemErro(erro), true);
+  }
+}
+function linhaAcervo(t) {
+  const episodio = rotuloEpisodio(t);
+  const nome = el('div', { className: 'titulo-acervo' }, episodio || t.nome + (t.ano ? ' (' + t.ano + ')' : ''));
+  if (episodio) nome.append(el('small', { textContent: t.nome }));
+  nome.append(el('span', { className: 'caminho-acervo', textContent: t.caminho }));
+  const formato = [t.altura ? t.altura + 'p' : '', (t.container || '').toUpperCase()].filter(Boolean).join(' ');
+  const detalhes = [[t.videoCodec, t.audioCodec].filter(Boolean).join(' + '), tamanhoLegivel(t.tamanho),
+    duracaoLegivel(t.duracaoSegundos)].filter(Boolean).join(', ');
+  const midia = el('div', { className: 'midia-acervo' }, formato || '-', el('small', { textContent: detalhes }));
+  const acoes = menu('Ações de ' + t.nome, [
+    ['Indexar cenas', () => acaoNoTitulo('/admin/api/cenas/', (d) => d.trechos + ' trechos indexados.', t), false, 'subtitles'],
+    ['Indexar áudio', () => acaoNoTitulo('/admin/api/acervo/audio/', () => 'Áudio indexado.', t), false, 'activity'],
+    ['Ajustar legenda', () => {
+      navegar('status');
+      $('legPainel').open = true;
+      $('legTermo').value = t.nome;
+      $('legBusca').requestSubmit();
+      $('legPainel').scrollIntoView({ block: 'start' });
+    }, false, 'pencil'],
+    ['Copiar caminho', () => navigator.clipboard?.writeText(t.caminho)
+      .then(() => toast('Caminho copiado.'), () => toast('Não foi possível copiar.', true)), false, 'external-link'],
+  ]);
+  return el('tr', {}, el('td', {}, nome),
+    el('td', { className: 'col-acervo-biblioteca', textContent: t.biblioteca || '-' }),
+    el('td', { className: 'col-acervo-midia' }, midia), el('td', {}, selosDoTitulo(t)), el('td', {}, acoes));
+}
+function desenharFiltros(resumo) {
+  $('acervoFiltros').replaceChildren(...filtrosAcervo.map(([valor, rotulo, campo]) => {
+    const botao = el('button', { type: 'button', onclick: () => {
+      acervo.problema = valor;
+      acervo.pagina = 1;
+      carregarAcervo().catch((e) => toast(mensagemErro(e), true));
+    } }, rotulo, el('b', { textContent: numeroBr(resumo[campo]) }));
+    botao.setAttribute('aria-pressed', String(acervo.problema === valor));
+    return botao;
+  }));
+}
+async function carregarAcervo() {
+  const marca = ++acervo.tokenBusca;
+  const consulta = new URLSearchParams({ pagina: acervo.pagina });
+  if (acervo.busca) consulta.set('busca', acervo.busca);
+  if (acervo.biblioteca) consulta.set('biblioteca', acervo.biblioteca);
+  if (acervo.problema) consulta.set('problema', acervo.problema);
+  const dados = await api('GET', '/admin/api/acervo?' + consulta);
+  if (marca !== acervo.tokenBusca) return;
+  desenharFiltros(dados.resumo);
+  const lista = $('acervoLista');
+  if (!dados.itens.length) {
+    lista.replaceChildren(dados.resumo.total
+      ? vazio('search', 'Nada encontrado', 'Nenhum título combina com a busca e o filtro escolhidos.', 'Limpar filtros', () => {
+        Object.assign(acervo, { busca: '', biblioteca: '', problema: '', pagina: 1 });
+        $('acervoTermo').value = '';
+        $('acervoBiblioteca').value = '';
+        carregarAcervo().catch((e) => toast(mensagemErro(e), true));
+      })
+      : vazio('film', 'O acervo está vazio', 'Crie uma biblioteca e inicie a varredura para ver os títulos aqui.',
+        'Ir para Bibliotecas', () => navegar('libs')));
+    $('acervoPaginas').hidden = true;
+    return;
+  }
+  const cabecalho = el('tr', {}, el('th', { textContent: 'Título' }),
+    el('th', { className: 'col-acervo-biblioteca', textContent: 'Biblioteca' }),
+    el('th', { className: 'col-acervo-midia', textContent: 'Mídia' }),
+    el('th', { textContent: 'Situação' }), el('th', { textContent: 'Ações' }));
+  const tabela = el('table', {}, el('thead', {}, cabecalho), el('tbody', {}, ...dados.itens.map(linhaAcervo)));
+  lista.replaceChildren(el('div', { className: 'tabela-acervo' }, tabela));
+  const paginas = Math.max(1, Math.ceil(dados.total / dados.porPagina));
+  $('acervoPaginas').hidden = paginas < 2;
+  $('acervoPosicao').textContent = 'Página ' + dados.pagina + ' de ' + paginas + ', ' + numeroBr(dados.total) + ' títulos';
+  $('acervoAnterior').disabled = dados.pagina <= 1;
+  $('acervoProxima').disabled = dados.pagina >= paginas;
+}
+async function loadAcervo() {
+  const [libs, estado] = await Promise.all([api('GET', '/admin/api/folders'), api('GET', '/admin/api/status')]);
+  acervo.tmdb = Boolean(estado.tmdb?.configured);
+  const caixa = $('acervoBiblioteca');
+  caixa.replaceChildren(opcao('', 'Todas'), ...libs.map((l) => opcao(l.ItemId, l.Name)));
+  caixa.value = libs.some((l) => l.ItemId === acervo.biblioteca) ? acervo.biblioteca : '';
+  acervo.biblioteca = caixa.value;
+  if (!acervo.preparado) {
+    acervo.preparado = true;
+    const falha = (e) => toast(mensagemErro(e), true);
+    let espera;
+    $('acervoTermo').oninput = () => {
+      clearTimeout(espera);
+      espera = setTimeout(() => {
+        acervo.busca = $('acervoTermo').value.trim();
+        acervo.pagina = 1;
+        carregarAcervo().catch(falha);
+      }, 250);
+    };
+    $('acervoBusca').onsubmit = (e) => e.preventDefault();
+    caixa.onchange = () => { acervo.biblioteca = caixa.value; acervo.pagina = 1; carregarAcervo().catch(falha); };
+    $('acervoAnterior').onclick = () => { acervo.pagina -= 1; carregarAcervo().catch(falha); };
+    $('acervoProxima').onclick = () => { acervo.pagina += 1; carregarAcervo().catch(falha); };
+  }
+  await carregarAcervo();
+}
+consultas.acervo = ['acervoPainel', loadAcervo];
+
 const comandos = [
   ['Ir para Bibliotecas', 'tela', () => navegar('libs')], ['Ir para Usuários', 'tela', () => navegar('users')],
-  ['Ir para Sessões', 'tela', () => navegar('sessions')], ['Ir para Configurações', 'tela', () => navegar('settings')],
+  ['Ir para Acervo', 'tela', () => navegar('acervo')], ['Ir para Sessões', 'tela', () => navegar('sessions')], ['Ir para Configurações', 'tela', () => navegar('settings')],
   ['Ir para Diagnóstico', 'tela', () => navegar('status')],
   ['Iniciar varredura do acervo', 'ação', () => { navegar('libs'); $('scanBtn').click(); }],
   ['Nova biblioteca', 'ação', () => { navegar('libs'); $('newLib').click(); }],
