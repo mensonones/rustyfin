@@ -194,7 +194,13 @@ A busca limita as prévias às bibliotecas permitidas e aos trechos que terminam
 assistida. Títulos marcados como assistidos têm todas as falas disponíveis. É possível liberar
 spoilers explicitamente. Ao alternar esse filtro, a página refaz a busca preenchida. Cada resultado
 mostra o horário à esquerda e a fala abaixo do título. Reindexe
-depois de trocar a legenda ou seu ajuste.
+depois de trocar a legenda ou seu ajuste: enquanto o arquivo não for reindexado, a busca não devolve o texto antigo.
+
+A busca varre as falas indexadas com `instr()`, sem índice de texto. Medido com a consulta real: **1 milhão de falas (cerca
+de 1.000 filmes indexados) responde em 0,2 a 0,3 s e 3 milhões (cerca de 3.000), em 0,6 a 1,0 s**, crescendo de forma
+linear; numa biblioteca doméstica (algumas centenas de títulos) fica abaixo de 0,15 s. Um índice FTS5 com o tokenizador
+`trigram` levaria uma busca rara a milissegundos, mas soma cerca de 75% ao tamanho dos dados de cenas e depende de um
+`rowid` estável; só vale a pena a partir de milhares de títulos indexados.
 
 Em **Diagnóstico → Versões recomendadas**, o servidor recomenda MP4 progressivo após duas
 sessões relatadas com a mesma configuração elegível. O preparo usa a faixa de áudio padrão,

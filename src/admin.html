@@ -949,7 +949,11 @@ $('buscarIndices').onsubmit = async (e) => {
     const titulos = await api('GET', '/admin/api/reproducao/titulos?busca=' + encodeURIComponent(termo));
     $('tituloIndices').replaceChildren(...titulos.map((t) => opcao(t.id, rotuloTitulo(t))));
     $('opcoesIndices').hidden = !titulos.length;
-    $('mensagemIndices').textContent = titulos.length ? '' : 'Nenhum título encontrado.';
+    // Logo depois da primeira varredura o hash de cada arquivo ainda é calculado em segundo plano; até lá indexar responde 409.
+    const pendentes = titulos.length ? ((await api('GET', '/admin/api/status')).scan?.signaturesPending || 0) : 0;
+    $('mensagemIndices').textContent = !titulos.length ? 'Nenhum título encontrado.'
+      : pendentes ? pendentes + (pendentes === 1 ? ' arquivo ainda aguarda' : ' arquivos ainda aguardam')
+        + ' a assinatura em segundo plano. Indexar esses títulos funciona quando ela terminar.' : '';
   } catch (erro) { $('mensagemIndices').textContent = mensagemErro(erro); }
   finally { e.submitter.disabled = false; }
 };

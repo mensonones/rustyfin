@@ -530,3 +530,160 @@ async fn ajuste_srt_espera_o_hash_do_video_em_vez_de_salvar_algo_que_seria_desca
     let (status, _) = call(&s.app, Method::GET, &rota, None, None).await;
     assert_eq!(status, StatusCode::OK);
 }
+
+
+/// Cria um item com vídeo e legenda SRT externa reais, já com hash e `content_mtime`, como depois da varredura e do cálculo
+/// do hash em segundo plano.
+async fn item_com_legenda(pool: &db::DbPool, dir: &std::path::Path, id: &str, legenda: &str) -> (PathBuf, PathBuf) {
+    let video = dir.join(format!("{id}.mp4"));
+    std::fs::write(&video, b"video").unwrap();
+    let srt = dir.join(format!("{id}.srt"));
+    std::fs::write(&srt, legenda).unwrap();
+    let mtime = std::fs::metadata(&video)
+        .unwrap()
+        .modified()
+        .unwrap()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos()
+        .to_string();
+    sqlx::query(
+        "INSERT INTO items (id, name, path, media_type, subtitle_path, content_sha256, content_mtime, library_id) \
+         VALUES (?, 'Filme', ?, 'Movie', ?, x'0102030405060708', ?, 'lib1')",
+    )
+    .bind(id)
+    .bind(video.to_str().unwrap())
+    .bind(srt.to_str().unwrap())
+    .bind(mtime)
+    .execute(pool)
+    .await
+    .unwrap();
+    (video, srt)
+}
+
+const LEGENDA_CENAS: &str = concat!(
+    "1\n00:00:10,000 --> 00:00:12,000\nO dragão acordou\n\n",
+    "2\n00:30:00,000 --> 00:30:03,000\nEmpunhe a espada\n\n",
+    "3\n01:00:00,000 --> 01:00:04,000\nO castelo caiu\n",
+);
+
+#[tokio::test]
+async fn indexar_cenas_le_o_srt_e_a_busca_acompanha_o_progresso() {
+    let s = server("cenas-indexacao").await;
+    let config = Arc::new(test_config(&s.dir));
+    let pool = db::init_db(&config.database_url).await.unwrap();
+    let id = "0123456789abcdef0123456789abcdef";
+    item_com_legenda(&pool, &s.dir, id, LEGENDA_CENAS).await;
+
+    let (status, indice) = call(&s.app, Method::POST, &format!("/admin/api/cenas/{id}"), None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(indice["trechos"], 3);
+
+    let token = login(&s.app, "Admin").await;
+    let busca = |q: &'static str, spoilers: bool| {
+        let uri = format!("/api/cenas?q={q}&spoilers={spoilers}");
+        let (app, token) = (s.app.clone(), token.clone());
+        async move { call(&app, Method::GET, &uri, Some(&token), None).await }
+    };
+    // Sem assistir nada, só quem libera os spoilers vê as falas.
+    let (_, escondida) = busca("espada", false).await;
+    assert_eq!(escondida.as_array().unwrap().len(), 0, "sem progresso nada é liberado");
+    let (_, com_spoiler) = busca("espada", true).await;
+    assert_eq!(com_spoiler.as_array().unwrap().len(), 1);
+    assert_eq!(com_spoiler[0]["previa"], "Empunhe a espada");
+    assert_eq!(com_spoiler[0]["inicioTicks"], 30 * 60 * 10_000_000_i64);
+    // A busca ignora maiúsculas.
+    let (_, maiuscula) = busca("ESPADA", true).await;
+    assert_eq!(maiuscula.as_array().unwrap().len(), 1);
+
+    // Assistido até os 40 min: a fala dos 30 min aparece, a dos 60 min não.
+    let (status, _) = call(
+        &s.app, Method::POST, "/Sessions/Playing/Progress", Some(&token),
+        Some(json!({ "ItemId": id, "PositionTicks": 40 * 60 * 10_000_000_i64 })),
+    ).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(busca("espada", false).await.1.as_array().unwrap().len(), 1);
+    assert_eq!(busca("dragão", false).await.1.as_array().unwrap().len(), 1);
+    assert_eq!(busca("castelo", false).await.1.as_array().unwrap().len(), 0);
+
+    // Título marcado como assistido: todas as falas ficam disponíveis.
+    let (status, _) = call(&s.app, Method::POST, &format!("/UserPlayedItems/{id}"), Some(&token), None).await;
+    assert!(status.is_success());
+    assert_eq!(busca("castelo", false).await.1.as_array().unwrap().len(), 1);
+
+    // Termos muito curtos são recusados.
+    let (status, _) = call(&s.app, Method::GET, "/api/cenas?q=a", Some(&token), None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // E a busca exige login.
+    let (status, _) = call(&s.app, Method::GET, "/api/cenas?q=espada", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn reindexar_cenas_substitui_o_indice_e_legenda_alterada_nao_devolve_o_antigo() {
+    let s = server("cenas-reindexacao").await;
+    let config = Arc::new(test_config(&s.dir));
+    let pool = db::init_db(&config.database_url).await.unwrap();
+    let id = "fedcba9876543210fedcba9876543210";
+    let (_, srt) = item_com_legenda(&pool, &s.dir, id, LEGENDA_CENAS).await;
+    let (status, _) = call(&s.app, Method::POST, &format!("/admin/api/cenas/{id}"), None, None).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let token = login(&s.app, "Admin").await;
+    let (_, visivel) = call(&s.app, Method::GET, "/api/cenas?q=espada&spoilers=true", Some(&token), None).await;
+    assert_eq!(visivel.as_array().unwrap().len(), 1);
+
+    // Trocar a legenda invalida o índice: a busca não devolve o texto antigo até reindexar.
+    std::fs::write(&srt, "1\n00:00:05,000 --> 00:00:06,000\nOutra fala\n").unwrap();
+    let depois = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
+    std::fs::OpenOptions::new().write(true).open(&srt).unwrap().set_modified(depois).unwrap();
+    let (_, velho) = call(&s.app, Method::GET, "/api/cenas?q=espada&spoilers=true", Some(&token), None).await;
+    assert_eq!(velho.as_array().unwrap().len(), 0, "legenda alterada não pode devolver o índice antigo");
+    let (status, reindexado) = call(&s.app, Method::POST, &format!("/admin/api/cenas/{id}"), None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(reindexado["trechos"], 1);
+    let (_, nova) = call(&s.app, Method::GET, "/api/cenas?q=outra&spoilers=true", Some(&token), None).await;
+    assert_eq!(nova.as_array().unwrap().len(), 1);
+    let (_, antiga) = call(&s.app, Method::GET, "/api/cenas?q=espada&spoilers=true", Some(&token), None).await;
+    assert_eq!(antiga.as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn indexar_cenas_e_audio_exigem_titulo_existente_e_com_assinatura() {
+    let s = server("indices-erros").await;
+    let config = Arc::new(test_config(&s.dir));
+    let pool = db::init_db(&config.database_url).await.unwrap();
+    // Título que não existe.
+    let (status, _) = call(&s.app, Method::POST, "/admin/api/cenas/00000000000000000000000000000000", None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = call(&s.app, Method::POST, "/admin/api/acervo/audio/00000000000000000000000000000000", None, None).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    // Título recém-varrido, sem o hash calculado: as duas ações esperam.
+    let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let video = s.dir.join("novo.mp4");
+    std::fs::write(&video, b"x").unwrap();
+    let srt = s.dir.join("novo.srt");
+    std::fs::write(&srt, LEGENDA_CENAS).unwrap();
+    sqlx::query("INSERT INTO items (id, name, path, media_type, subtitle_path, library_id) VALUES (?, 'Novo', ?, 'Movie', ?, 'lib1')")
+        .bind(id)
+        .bind(video.to_str().unwrap())
+        .bind(srt.to_str().unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (status, _) = call(&s.app, Method::POST, &format!("/admin/api/cenas/{id}"), None, None).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (status, _) = call(&s.app, Method::POST, &format!("/admin/api/acervo/audio/{id}"), None, None).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn versoes_preparadas_comecam_vazias_e_nao_aceitam_chaves_desconhecidas() {
+    let s = server("preparos").await;
+    let (status, lista) = call(&s.app, Method::GET, "/admin/api/preparos", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(lista["sugestoes"].as_array().unwrap().len(), 0);
+    assert!(lista["limiteBytes"].as_u64().unwrap() > 0);
+    let (status, _) = call(&s.app, Method::POST, "/admin/api/preparos/chave-que-nao-existe", None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

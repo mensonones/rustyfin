@@ -168,6 +168,67 @@ pub(crate) fn alinhar(antiga: &[u8], nova: &[u8], posicao: i64) -> Option<i64> {
 mod tests {
     use super::*;
 
+    async fn banco() -> DbPool {
+        crate::db::init_db("sqlite::memory:").await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn indexar_recusa_titulo_inexistente_ou_sem_hash() {
+        let pool = banco().await;
+        assert!(!indexar(&pool, "nao-existe").await.unwrap());
+        sqlx::query("INSERT INTO items (id, name, path, media_type) VALUES ('a', 'A', '/x/a.mp4', 'Movie')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(!indexar(&pool, "a").await.unwrap(), "sem hash e sem content_mtime não há o que indexar");
+    }
+
+    #[tokio::test]
+    async fn indexar_reaproveita_a_assinatura_que_ja_existe_sem_rodar_o_ffmpeg() {
+        let pool = banco().await;
+        sqlx::query(
+            "INSERT INTO items (id, name, path, media_type, content_sha256, content_mtime)
+             VALUES ('a', 'A', '/arquivo/que/nao/existe.mp4', 'Movie', x'0102', '1')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO audio_assinaturas VALUES (x'0102', x'0000')").execute(&pool).await.unwrap();
+        assert!(indexar(&pool, "a").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn indexar_recusa_arquivo_que_mudou_desde_o_hash() {
+        let pool = banco().await;
+        let arquivo = std::env::temp_dir().join(format!("rustyfin-audio-{}.mp4", uuid::Uuid::new_v4()));
+        std::fs::write(&arquivo, b"video").unwrap();
+        sqlx::query(
+            "INSERT INTO items (id, name, path, media_type, content_sha256, content_mtime)
+             VALUES ('a', 'A', ?, 'Movie', x'0304', 'data-que-nao-bate')",
+        )
+        .bind(arquivo.to_str().unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+        let resultado = indexar(&pool, "a").await.unwrap();
+        std::fs::remove_file(&arquivo).unwrap();
+        assert!(!resultado, "a data do arquivo não confere com a do hash: a assinatura seria de outra edição");
+        let guardadas: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audio_assinaturas").fetch_one(&pool).await.unwrap();
+        assert_eq!(guardadas, 0);
+    }
+
+    #[test]
+    fn alinhar_nao_chuta_quando_nao_ha_o_que_comparar() {
+        let silencio = vec![0_u8; 400];
+        // trecho sem variação (silêncio) não identifica nada
+        assert_eq!(alinhar(&silencio, &silencio, 100 * PASSO_TICKS), None);
+        // posição antes de caber a janela de comparação
+        let audio: Vec<u8> = (0..400_u32).map(|i| (i.wrapping_mul(2_654_435_761) >> 24) as u8).collect();
+        assert_eq!(alinhar(&audio, &audio, 0), None);
+        // edição nova menor que a janela
+        assert_eq!(alinhar(&audio, &audio[..10], 100 * PASSO_TICKS), None);
+    }
+
     #[test]
     fn acha_deslocamento_unico_e_rejeita_duas_copias() {
         let mut seed = 123_u32;

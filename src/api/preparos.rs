@@ -432,3 +432,91 @@ pub(super) async fn servir(
     )
     .await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn pool_com_item(hash: Option<&[u8]>) -> DbPool {
+        let pool = crate::db::init_db("sqlite::memory:").await.unwrap();
+        sqlx::query("INSERT INTO items (id, name, path, media_type, content_sha256) VALUES ('filme', 'Filme', '/m/f.mp4', 'Movie', ?)")
+            .bind(hash)
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool
+    }
+
+    fn relato(sessao: &str, pausado: bool) -> PlaybackProgressReport {
+        PlaybackProgressReport {
+            item_id: Some("filme".into()),
+            position_ticks: Some(0),
+            is_paused: Some(pausado),
+            play_session_id: Some(sessao.into()),
+        }
+    }
+
+    #[tokio::test]
+    async fn so_observa_titulos_com_hash_e_a_chave_e_estavel() {
+        let sem_hash = pool_com_item(None).await;
+        let preparos = Preparos::default();
+        assert!(preparos.observar(&sem_hash, "s1", "ana", "filme", "Filme", 2_000_000).await.is_none());
+
+        let pool = pool_com_item(Some(&[1, 2, 3])).await;
+        let a = preparos.observar(&pool, "s1", "ana", "filme", "Filme", 2_000_000).await.unwrap();
+        let b = preparos.observar(&pool, "s2", "bia", "filme", "Filme", 2_000_000).await.unwrap();
+        let outro_bitrate = preparos.observar(&pool, "s3", "ana", "filme", "Filme", 4_000_000).await.unwrap();
+        assert_eq!(a, b, "mesma mídia e mesma configuração: mesma versão preparada");
+        assert_ne!(a, outro_bitrate);
+    }
+
+    #[tokio::test]
+    async fn conta_uma_sessao_so_para_quem_pediu_e_so_se_reportar_reproducao() {
+        let pool = pool_com_item(Some(&[9])).await;
+        let preparos = Preparos::default();
+        let chave = preparos.observar(&pool, "s1", "ana", "filme", "Filme", 2_000_000).await.unwrap();
+        // Outro usuário reportando a mesma sessão não conta.
+        preparos.relatar("bia", &relato("s1", false), false).await;
+        assert!(preparos.0.lock().await.sugestoes.is_empty());
+        // A sessão da dona conta uma vez, e o relato seguinte da mesma sessão não conta de novo.
+        preparos.relatar("ana", &relato("s1", false), false).await;
+        preparos.relatar("ana", &relato("s1", false), false).await;
+        assert_eq!(preparos.0.lock().await.sugestoes[&chave].sessoes, 1);
+        // Uma segunda sessão com a mesma configuração chega às duas necessárias para recomendar.
+        preparos.observar(&pool, "s2", "ana", "filme", "Filme", 2_000_000).await.unwrap();
+        preparos.relatar("ana", &relato("s2", false), false).await;
+        assert_eq!(preparos.0.lock().await.sugestoes[&chave].sessoes, 2);
+    }
+
+    #[tokio::test]
+    async fn sessao_pausada_ou_parada_nao_deixa_o_servidor_ocupado() {
+        let preparos = Preparos::default();
+        assert!(!preparos.ocupado().await);
+        preparos.relatar("ana", &relato("s1", false), false).await;
+        assert!(preparos.ocupado().await, "uma reprodução em andamento adia o preparo");
+        preparos.relatar("ana", &relato("s1", true), false).await;
+        assert!(!preparos.ocupado().await, "pausar libera o servidor");
+        preparos.relatar("ana", &relato("s1", false), false).await;
+        preparos.relatar("ana", &relato("s1", false), true).await;
+        assert!(!preparos.ocupado().await, "parar libera o servidor");
+    }
+
+    #[tokio::test]
+    async fn sessao_sem_relato_recente_expira() {
+        let preparos = Preparos::default();
+        {
+            let mut estado = preparos.0.lock().await;
+            let antiga = Instant::now().checked_sub(SESSAO + Duration::from_secs(5)).unwrap();
+            estado.ativos.insert("ana/s1".into(), antiga);
+        }
+        assert!(!preparos.ocupado().await, "um relato mais velho que a janela não segura o preparo");
+    }
+
+    #[test]
+    fn o_cache_respeita_o_limite_configurado() {
+        // sem a variável, o padrão é de 2 GiB
+        if std::env::var("RUSTYFIN_PREPARO_MAX_BYTES").is_err() {
+            assert_eq!(limite(), 2 * 1024 * 1024 * 1024);
+        }
+    }
+}
