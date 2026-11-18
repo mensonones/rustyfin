@@ -76,7 +76,7 @@ Abra **http://localhost:8096/admin** no navegador do PC.
 ![Painel de administração, aba Bibliotecas](assets/diretorio-bibliotecas.jpg)
 
 1. Em **Bibliotecas**, clique em **Nova biblioteca**.
-2. Escolha o tipo (**Filmes** ou **Séries**), dê um nome e escolha a pasta. O seletor mostra o sistema de arquivos *do
+2. Escolha o tipo (**Filmes**, **Séries** ou **Anime**, veja [anime](anime.md)), dê um nome e escolha a pasta. O seletor mostra o sistema de arquivos *do
    container*; navegue até `/mnt/videos` (ou o caminho que você montou).
 3. Salve. A varredura começa na hora e os títulos vão aparecendo. Uma biblioteca grande leva segundos, não minutos.
 4. Abra a aba **Acervo** para conferir o resultado: ela lista cada filme e episódio e mostra o que falta (metadados, capa,

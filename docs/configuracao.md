@@ -60,6 +60,8 @@ Para as configurações que existem nos dois lugares, **o valor salvo no painel 
 | `RUSTYFIN_TMDB_LANGUAGE` | `pt-BR` | Idioma dos metadados. A classificação indicativa usa o país do idioma (`pt-BR` → Brasil) e cai para os EUA |
 | `RUSTYFIN_TMDB_BASE_URL` | `https://api.themoviedb.org/3` | Endereço da API (útil em testes) |
 | `RUSTYFIN_TMDB_IMAGE_BASE` | `https://image.tmdb.org/t/p` | Endereço das imagens |
+| `RUSTYFIN_ANILIST` | ligado | `0` desliga a busca de metadados de anime no AniList (só as bibliotecas do tipo Anime a usam; veja [anime](anime.md)) |
+| `RUSTYFIN_ANILIST_URL` | `https://graphql.anilist.co` | Endereço da API do AniList (útil em testes) |
 
 O servidor consulta o TMDB com o `curl`, que precisa estar no `PATH` (a imagem Docker já o inclui).
 

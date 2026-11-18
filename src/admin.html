@@ -669,6 +669,7 @@
     <select id="libType">
       <option value="movies">Filmes</option>
       <option value="tvshows">Séries</option>
+      <option value="anime">Anime</option>
     </select>
     <label for="libPath">Pasta inicial</label>
     <div class="row" style="flex-wrap:nowrap">
@@ -939,7 +940,7 @@ window.addEventListener('popstate', abrirAba);
 window.addEventListener('hashchange', abrirAba);
 
 // ---- bibliotecas
-const typeLabel = { movies: 'Filmes', tvshows: 'Séries' };
+const typeLabel = { movies: 'Filmes', tvshows: 'Séries', anime: 'Anime' };
 let bibliotecasExibidas;
 // ---- revisão de alterações do acervo
 const motivosRevisao = {
@@ -1285,10 +1286,10 @@ async function loadLibs() {
     ]);
     const quantidade = lib.Locations.length;
     const linha = el('article', { className: 'library' },
-      el('div', { className: 'ico' }, icone(lib.CollectionType === 'tvshows' ? 'tv' : 'film')),
+      el('div', { className: 'ico' }, icone((lib.RustyfinType || lib.CollectionType) === 'movies' ? 'film' : 'tv')),
       el('div', { className: 'library-identity' }, el('h3', { textContent: lib.Name }),
         el('div', { className: 'meta' },
-          el('span', { className: 'tag', textContent: typeLabel[lib.CollectionType] || lib.CollectionType }),
+          el('span', { className: 'tag', textContent: typeLabel[lib.RustyfinType || lib.CollectionType] || lib.CollectionType }),
           el('span', { className: 'hint', style: 'margin:0', textContent: quantidade + (quantidade === 1 ? ' pasta' : ' pastas') })),
         list),
       el('div', { className: 'library-tools' }, adicionar, acoes));

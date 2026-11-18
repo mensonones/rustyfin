@@ -257,7 +257,9 @@ fn folder_json(l: &Library) -> Value {
     json!({
         "Name": l.name,
         "Locations": l.paths,
-        "CollectionType": l.collection_type,
+        // Os apps do Jellyfin só conhecem "tvshows"; o tipo de verdade (como "anime") vai em `RustyfinType`.
+        "CollectionType": l.jellyfin_type(),
+        "RustyfinType": l.collection_type,
         "LibraryOptions": {
             "PathInfos": l.paths.iter().map(|p| json!({ "Path": p })).collect::<Vec<_>>()
         },

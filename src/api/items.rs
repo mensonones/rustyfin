@@ -297,7 +297,8 @@ pub async fn resolve_scope(
         if !user.can_access_library(Some(&lib.id)) {
             return Ok(Scope::Unknown);
         }
-        return Ok(Scope::Library { id: lib.id, tv: lib.collection_type == "tvshows" });
+        let tv = lib.is_series();
+        return Ok(Scope::Library { id: lib.id, tv });
     }
     let series: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM items WHERE series_id = ? LIMIT 1")
         .bind(&pid)
@@ -694,6 +695,8 @@ fn map_db_item_to_dto(config: &AppConfig, row: DbItemRow) -> BaseItemDto {
         transcoding_url: None,
         transcoding_sub_protocol: None,
         transcoding_container: None,
+        default_audio_stream_index: None,
+        default_subtitle_stream_index: None,
     };
 
     // Clientes só pedem imagens listadas em ImageTags. Primary existe se há poster local

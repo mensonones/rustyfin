@@ -52,7 +52,7 @@ O `userId` que algumas rotas trazem no caminho é ignorado: vale sempre o usuár
 | `GET /Genres`, `GET /Studios`, `GET /Persons` | Listas reais, com `SearchTerm`, `StartIndex`, `Limit` e `PersonTypes` (guardadas por até 60 s por escopo de bibliotecas e refeitas ao fim de cada varredura) |
 | `GET /Shows/{id}/Seasons`, `GET /Shows/{id}/Episodes`, `GET /Shows/NextUp` | Séries |
 | `POST /Items/{id}/Refresh`, `POST /Library/Refresh` | Dispara uma varredura |
-| `GET/POST/DELETE /Library/VirtualFolders...` | Bibliotecas e pastas (rede local; veja [segurança](usuarios-e-seguranca.md#painel-de-administração)) |
+| `GET/POST/DELETE /Library/VirtualFolders...` | Bibliotecas e pastas (rede local; veja [segurança](usuarios-e-seguranca.md#painel-de-administração)). `collectionType` aceita `movies`, `tvshows` e `anime`; o anime aparece como `tvshows` em `CollectionType` (o tipo de verdade vai em `RustyfinType`) |
 
 Listas que o Rustyfin não modela respondem **vazias**: `Items/{id}/Ancestors`, `LocalTrailers`, `SpecialFeatures`,
 `Intros`, `Similar`, `ThemeMedia` e `MediaSegments/{id}`.

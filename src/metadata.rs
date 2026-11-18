@@ -46,7 +46,7 @@ pub struct Person {
     pub image: Option<String>,
 }
 
-const EXTRA_VERSION: u8 = 2;
+pub const EXTRA_VERSION: u8 = 2;
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Trailer {
@@ -238,10 +238,15 @@ async fn curl(url: &str, bearer: Option<&str>, output: Option<&PathBuf>) -> Resu
         cfg.push_str(&format!("output = \"{}\"\n", out.to_string_lossy().replace('\\', "/")));
     }
 
-    let mut out = executar_curl(&cfg, false).await?;
+    curl_cfg(&cfg).await
+}
+
+/// Executa o `curl` com a configuração pronta e interpreta o status HTTP.
+async fn curl_cfg(cfg: &str) -> Result<(u16, Vec<u8>), FetchError> {
+    let mut out = executar_curl(cfg, false).await?;
     // Uma falha na negociação TLS pode ocorrer só na rota IPv6. Tenta IPv4 uma vez.
     if out.status.code() == Some(35) {
-        out = executar_curl(&cfg, true).await?;
+        out = executar_curl(cfg, true).await?;
     }
 
     if !out.status.success() {
@@ -263,6 +268,74 @@ async fn curl(url: &str, bearer: Option<&str>, output: Option<&PathBuf>) -> Resu
         200..=299 => Ok((status, body)),
         401 | 403 => Err(FetchError::Unauthorized),
         s => Err(FetchError::Http(s)),
+    }
+}
+
+/// Por que uma chamada HTTP a outro provedor (`AniList`) falhou.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ErroHttp {
+    /// Sem rede ou sem `curl`.
+    SemRede(String),
+    /// 429: o provedor pediu para esperar.
+    Limite,
+    /// Qualquer outro status (inclui 401 e 403).
+    Status(u16),
+}
+
+impl From<FetchError> for ErroHttp {
+    fn from(e: FetchError) -> Self {
+        match e {
+            FetchError::Transport(m) => ErroHttp::SemRede(m),
+            FetchError::Unauthorized => ErroHttp::Status(401),
+            FetchError::Http(429) => ErroHttp::Limite,
+            FetchError::Http(s) => ErroHttp::Status(s),
+        }
+    }
+}
+
+/// Texto entre aspas do arquivo de configuração do `curl`, com barra, aspas e quebras escapadas.
+fn aspas_curl(texto: &str) -> String {
+    let mut out = String::with_capacity(texto.len() + 2);
+    out.push('"');
+    for c in texto.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            outro => out.push(outro),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// POST de um corpo JSON (as consultas GraphQL do `AniList`) e a resposta em JSON.
+pub async fn post_json(url: &str, corpo: &Value) -> Result<Value, ErroHttp> {
+    let cfg = format!(
+        "url = {}\nrequest = \"POST\"\nheader = \"Content-Type: application/json\"\nheader = \"Accept: application/json\"\ndata = {}\n",
+        aspas_curl(url),
+        aspas_curl(&corpo.to_string())
+    );
+    let (_, body) = curl_cfg(&cfg).await?;
+    serde_json::from_slice(&body).map_err(|e| ErroHttp::SemRede(format!("JSON inválido: {e}")))
+}
+
+/// Baixa `url` para `destino` (por um arquivo temporário, para nunca deixar um arquivo pela metade).
+pub async fn baixar_arquivo(url: &str, destino: &std::path::Path) -> bool {
+    let tmp = destino.with_extension("part");
+    let cfg = format!(
+        "url = {}\noutput = {}\n",
+        aspas_curl(url),
+        aspas_curl(&tmp.to_string_lossy().replace('\\', "/"))
+    );
+    match curl_cfg(&cfg).await {
+        Ok(_) if tokio::fs::metadata(&tmp).await.is_ok() => tokio::fs::rename(&tmp, destino).await.is_ok(),
+        _ => {
+            let _ = tokio::fs::remove_file(&tmp).await;
+            false
+        }
     }
 }
 

@@ -18,9 +18,30 @@ pub const SERIES_LIBRARY_ID: &str = "7b2a4f1e9c3d4a58b6e1d0f3a9c52e47";
 pub struct Library {
     pub id: String,
     pub name: String,
-    /// "movies" ou "tvshows"
+    /// "movies", "tvshows" ou "anime" (o anime é uma série para os apps: veja [`Library::jellyfin_type`]).
     pub collection_type: String,
     pub paths: Vec<String>,
+}
+
+impl Library {
+    /// O tipo que os apps do Jellyfin conhecem: o anime aparece como biblioteca de séries.
+    pub fn jellyfin_type(&self) -> &str {
+        jellyfin_type(&self.collection_type)
+    }
+
+    /// A biblioteca guarda séries (séries comuns e animes).
+    pub fn is_series(&self) -> bool {
+        is_series_type(&self.collection_type)
+    }
+}
+
+/// "anime" é só do Rustyfin; para os apps do Jellyfin é "tvshows".
+pub fn jellyfin_type(collection_type: &str) -> &str {
+    if collection_type == "anime" { "tvshows" } else { collection_type }
+}
+
+pub fn is_series_type(collection_type: &str) -> bool {
+    matches!(collection_type, "tvshows" | "anime")
 }
 
 #[derive(Debug)]
@@ -44,7 +65,7 @@ impl std::fmt::Display for LibError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LibError::EmptyName => write!(f, "O nome da biblioteca não pode ser vazio."),
-            LibError::InvalidType => write!(f, "Tipo inválido: use movies ou tvshows."),
+            LibError::InvalidType => write!(f, "Tipo inválido: use movies, tvshows ou anime."),
             LibError::NameExists => write!(f, "Já existe uma biblioteca com esse nome."),
             LibError::NotFound => write!(f, "Biblioteca ou pasta não encontrada."),
             LibError::PathExists => write!(f, "Essa pasta já está na biblioteca."),
@@ -54,11 +75,12 @@ impl std::fmt::Display for LibError {
     }
 }
 
-/// Aceita os nomes de tipo do Jellyfin; só estes dois são suportados.
+/// Aceita os nomes de tipo do Jellyfin e o "anime" do Rustyfin; só estes são suportados.
 pub fn normalize_type(raw: &str) -> Option<&'static str> {
     match raw.trim().to_lowercase().as_str() {
         "movies" | "movie" => Some("movies"),
         "tvshows" | "tvshow" | "series" => Some("tvshows"),
+        "anime" | "animes" => Some("anime"),
         _ => None,
     }
 }
@@ -293,9 +315,8 @@ pub fn scan_roots(libs: &[Library]) -> Vec<(PathBuf, Vec<LibRef>)> {
 
 /// Entre as bibliotecas da pasta, a de tipo compatível com o conteúdo (episódio → séries).
 pub fn pick_library(libs: &[LibRef], is_episode: bool) -> Option<String> {
-    let want = if is_episode { "tvshows" } else { "movies" };
     libs.iter()
-        .find(|l| l.collection_type == want)
+        .find(|l| if is_episode { is_series_type(&l.collection_type) } else { l.collection_type == "movies" })
         .or(libs.first())
         .map(|l| l.id.clone())
 }
@@ -318,7 +339,12 @@ mod tests {
         assert_eq!(normalize_type("Movies"), Some("movies"));
         assert_eq!(normalize_type("tvshows"), Some("tvshows"));
         assert_eq!(normalize_type("series"), Some("tvshows"));
+        assert_eq!(normalize_type("Anime"), Some("anime"));
         assert_eq!(normalize_type("music"), None);
+        // Os apps do Jellyfin só conhecem "tvshows": o anime aparece como série.
+        assert_eq!(jellyfin_type("anime"), "tvshows");
+        assert_eq!(jellyfin_type("movies"), "movies");
+        assert!(is_series_type("anime") && is_series_type("tvshows") && !is_series_type("movies"));
     }
 
     #[test]
@@ -361,6 +387,13 @@ mod tests {
         // Só há biblioteca de filmes: episódios caem nela mesmo assim
         assert_eq!(pick_library(&refs[..1], true).as_deref(), Some("f"));
         assert_eq!(pick_library(&[], true), None);
+        // O anime recebe os episódios como as séries; os filmes seguem para a biblioteca de filmes.
+        let com_anime = [
+            LibRef { id: "f".into(), collection_type: "movies".into() },
+            LibRef { id: "a".into(), collection_type: "anime".into() },
+        ];
+        assert_eq!(pick_library(&com_anime, true).as_deref(), Some("a"));
+        assert_eq!(pick_library(&com_anime, false).as_deref(), Some("f"));
     }
 
     #[tokio::test]

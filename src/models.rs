@@ -274,6 +274,12 @@ pub struct MediaSourceInfo {
     pub transcoding_sub_protocol: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transcoding_container: Option<String>,
+    /// Faixa de áudio que o app deve escolher quando o usuário não escolheu outra.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_audio_stream_index: Option<i32>,
+    /// Faixa de legenda que o app deve ligar quando o usuário não escolheu outra.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_subtitle_stream_index: Option<i32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

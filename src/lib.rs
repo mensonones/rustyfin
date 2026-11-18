@@ -7,6 +7,7 @@
 mod audio_edicoes;
 mod linha_do_tempo;
 mod revisao_acervo;
+pub mod anilist;
 pub mod api;
 pub mod config;
 pub mod db;

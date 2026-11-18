@@ -903,3 +903,28 @@ async fn legendas_desatualizadas_nao_gastam_o_limite_da_busca_de_cenas() {
     assert_eq!(depois.len(), 1, "as falas do título desatualizado saem, e as do outro título continuam");
     assert_eq!(depois[0]["previa"], "A espada do outro titulo");
 }
+
+#[tokio::test]
+async fn biblioteca_de_anime_aparece_como_serie_para_os_apps() {
+    let s = server("anime").await;
+    let pasta = s.dir.join("animes");
+    std::fs::create_dir_all(&pasta).unwrap();
+    let uri = format!(
+        "/Library/VirtualFolders?name=Animes&collectionType=anime&paths={}",
+        pasta.to_string_lossy().replace('\\', "/").replace(' ', "%20")
+    );
+    let (status, _) = call(&s.app, Method::POST, &uri, None, None).await;
+    assert!(status.is_success(), "criar a biblioteca de anime: {status}");
+
+    // O painel enxerga o tipo de verdade; os apps do Jellyfin só conhecem "tvshows".
+    let (_, pastas) = call(&s.app, Method::GET, "/Library/VirtualFolders", None, None).await;
+    let anime = pastas.as_array().unwrap().iter().find(|p| p["Name"] == "Animes").unwrap();
+    assert_eq!(anime["RustyfinType"], "anime");
+    assert_eq!(anime["CollectionType"], "tvshows");
+
+    let token = login(&s.app, "Admin").await;
+    let (_, vistas) = call(&s.app, Method::GET, "/UserViews", Some(&token), None).await;
+    let vista = vistas["Items"].as_array().unwrap().iter().find(|v| v["Name"] == "Animes").unwrap();
+    assert_eq!(vista["CollectionType"], "tvshows");
+}
+

@@ -31,6 +31,31 @@ pub(super) struct FonteReproducao {
     height: Option<i32>,
     streams_json: Option<String>,
     subtitle_path: Option<String>,
+    /// O título está numa biblioteca de anime.
+    anime: bool,
+}
+
+/// Idiomas ISO 639 (e as variantes que aparecem em releases) de japonês e de português.
+fn idioma_e(faixa: &MediaStream, codigos: &[&str]) -> bool {
+    faixa.language.as_deref().is_some_and(|l| {
+        let l = l.trim().to_lowercase();
+        codigos.contains(&l.as_str())
+    })
+}
+
+/// Padrões de anime: o áudio em japonês e, com ele, a legenda em português (quando o áudio não é português). Sem áudio
+/// japonês no arquivo não muda nada: o app segue a sua própria preferência.
+fn padroes_de_anime(faixas: &[MediaStream]) -> (Option<i32>, Option<i32>) {
+    let audio = faixas.iter().find(|f| f.r#type == "Audio" && idioma_e(f, &["jpn", "ja", "jp", "jap"]));
+    let Some(audio) = audio else {
+        return (None, None);
+    };
+    let legenda = faixas
+        .iter()
+        .filter(|f| f.r#type == "Subtitle" && idioma_e(f, &["por", "pt", "pob", "ptbr", "pt-br", "pt_br"]))
+        // Prefere a legenda completa à de "forçadas" (só as falas em outro idioma).
+        .min_by_key(|f| f.is_forced);
+    (Some(audio.index), legenda.map(|l| l.index))
 }
 
 pub(super) struct Avaliacao {
@@ -44,7 +69,7 @@ impl FonteReproducao {
     pub(super) async fn buscar(pool: &DbPool, item_id: &str) -> Result<Self, StatusCode> {
         sqlx::query_as(
             "SELECT id, name, container, duration_ticks, size_bytes, video_codec, audio_codec, \
-             width, height, streams_json, subtitle_path FROM items WHERE id = ?",
+             width, height, streams_json, subtitle_path,              COALESCE((SELECT l.collection_type = 'anime' FROM libraries l WHERE l.id = items.library_id), 0) AS anime              FROM items WHERE id = ?",
         )
         .bind(normalize_id(item_id))
         .fetch_optional(pool)
@@ -152,6 +177,8 @@ pub(super) async fn get_playback_info(
     }
     let play_session_id = Uuid::new_v4().simple().to_string();
     let bitrate = fonte.bitrate();
+    let (audio_padrao, legenda_padrao) =
+        if fonte.anime { padroes_de_anime(&streams) } else { (None, None) };
     let mut source = MediaSourceInfo {
         id: fonte.id.clone(),
         path: None,
@@ -171,6 +198,8 @@ pub(super) async fn get_playback_info(
         transcoding_url: None,
         transcoding_sub_protocol: None,
         transcoding_container: None,
+        default_audio_stream_index: audio_padrao,
+        default_subtitle_stream_index: legenda_padrao,
     };
     let favorita = if let transcode::Plan::Transcode(t) = &plano {
         if !t.hls && t.container == transcode::Container::Mp4 && !t.video_copy && !t.audio_copy
@@ -312,7 +341,35 @@ async fn save_position(
 
 #[cfg(test)]
 mod tests {
-    use super::is_completed;
+    use super::{is_completed, padroes_de_anime};
+    use crate::models::MediaStream;
+
+    fn faixa(tipo: &str, index: i32, idioma: &str, forcada: bool) -> MediaStream {
+        MediaStream {
+            language: Some(idioma.to_string()),
+            is_forced: forcada,
+            ..MediaStream::basic("x", tipo, index)
+        }
+    }
+
+    #[test]
+    fn anime_prefere_audio_japones_e_legenda_em_portugues() {
+        let faixas = [
+            faixa("Video", 0, "und", false),
+            faixa("Audio", 1, "por", false),
+            faixa("Audio", 2, "jpn", false),
+            faixa("Subtitle", 3, "eng", false),
+            faixa("Subtitle", 4, "por", true),
+            faixa("Subtitle", 5, "por", false),
+        ];
+        // Áudio japonês, e a legenda completa em português (e não a forçada nem a em inglês).
+        assert_eq!(padroes_de_anime(&faixas), (Some(2), Some(5)));
+        // Sem legenda em português: só o áudio.
+        assert_eq!(padroes_de_anime(&faixas[..4]), (Some(2), None));
+        // Sem áudio japonês: nada muda, o app segue a sua preferência.
+        assert_eq!(padroes_de_anime(&[faixa("Audio", 1, "por", false), faixa("Subtitle", 2, "por", false)]), (None, None));
+        assert_eq!(padroes_de_anime(&[]), (None, None));
+    }
 
     #[test]
     fn completion_threshold() {

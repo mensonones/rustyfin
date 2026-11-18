@@ -21,7 +21,7 @@ fn collection_folder(config: &AppConfig, lib: &Library) -> BaseItemDto {
         server_id: config.server_id.clone(),
         r#type: "CollectionFolder".to_string(),
         is_folder: true,
-        collection_type: Some(lib.collection_type.clone()),
+        collection_type: Some(lib.jellyfin_type().to_string()),
         ..Default::default()
     }
 }
