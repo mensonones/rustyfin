@@ -106,6 +106,7 @@
 - [x] Processos isolados via `tokio::process`: limite simultâneo (`RUSTYFIN_MAX_TRANSCODES`), `kill_on_drop`, sessões HLS ociosas encerradas e apagadas, limpeza na inicialização.
 - [x] Encoder configurável (`libx264` ou hardware via `RUSTYFIN_VIDEO_ENCODER`).
 - [x] Aceleração por hardware Intel/AMD com detecção automática (`auto`), teste na subida e fallback para `libx264`: VAAPI no Linux, Quick Sync no Windows (v0.18.0 e v0.19.0). Decodificação, conversão de formato e codificação na GPU (H.264 e HEVC 8/10 bits), com a CPU só para legendas queimadas, HDR e ABR. Quick Sync validado numa Intel UHD real (Windows): ~11,5× o tempo real com ~21% da CPU.
+- [x] GPU no Docker facilitada (`tools/gpu-setup.sh` e `docker-compose.gpu.yml`), dica de permissão no log e limite de transcodificações automático pelo hardware (v0.20.0).
 - [ ] Validar o VAAPI numa máquina Linux com GPU Intel ou AMD real; tone mapping na GPU (`tonemap_vaapi`); e medir o ganho no benchmark em Docker/Linux.
 - [x] Validado no Docker com `ffmpeg`/`ffprobe` reais: HLS H.264+AAC, remux HEVC preservado, `StartTimeTicks`, miniaturas, Direct Play com Range e sem processos órfãos.
 - [x] Validado no Moonfin 3.0.0 em um aparelho Android físico: seleção e exibição de SRT embutido e externo em Direct Play, e SRT externo durante transcode HLS ao limitar a taxa a 2 Mbps.

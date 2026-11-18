@@ -1,0 +1,13 @@
+# Repassa a GPU do host (Intel ou AMD, Linux) ao Rustyfin para transcodificar por hardware.
+#
+# O jeito mais fácil: rode `sh tools/gpu-setup.sh`, que detecta a GPU e o grupo `render` e grava no `.env`
+# (RENDER_GID e COMPOSE_FILE), e depois use `docker compose up -d` normalmente.
+#
+# À mão: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# com RENDER_GID definido (veja `stat -c %g /dev/dri/renderD128`).
+services:
+  rustyfin:
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "${RENDER_GID:-105}"

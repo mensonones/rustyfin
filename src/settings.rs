@@ -29,6 +29,20 @@ impl Default for Runtime {
 
 static CURRENT: OnceLock<RwLock<Runtime>> = OnceLock::new();
 
+/// O limite de transcodificações não foi definido (nem no painel nem no ambiente): vale o automático do hardware.
+static AUTO_SLOTS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+pub fn max_transcodes_is_auto() -> bool {
+    AUTO_SLOTS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Guarda o limite calculado pelo hardware, para o painel mostrar o valor em uso.
+pub fn set_auto_max_transcodes(n: usize) {
+    if let Ok(mut w) = cell().write() {
+        w.max_transcodes = n;
+    }
+}
+
 fn cell() -> &'static RwLock<Runtime> {
     CURRENT.get_or_init(|| RwLock::new(Runtime::default()))
 }
@@ -91,11 +105,15 @@ pub async fn load(pool: &DbPool, config: &AppConfig) {
         .await
         .and_then(|v| v.parse().ok())
         .unwrap_or(config.scan_interval_secs);
-    let max_transcodes = read(pool, "max_transcodes")
+    // Prioridade: valor salvo no painel, depois o ambiente; sem nenhum dos dois, o limite automático do hardware
+    // (calculado em `transcode::init`) continua valendo.
+    let explicit = read(pool, "max_transcodes")
         .await
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(config.max_transcodes)
-        .clamp(1, MAX_TRANSCODES_LIMIT);
+        .and_then(|v| v.parse::<usize>().ok())
+        .or(config.max_transcodes)
+        .map(|m| m.clamp(1, MAX_TRANSCODES_LIMIT));
+    AUTO_SLOTS.store(explicit.is_none(), std::sync::atomic::Ordering::Relaxed);
+    let max_transcodes = explicit.unwrap_or_else(|| snapshot().max_transcodes);
     if let Ok(mut w) = cell().write() {
         *w = Runtime {
             tmdb_api_key: key.filter(|k| !k.is_empty()),

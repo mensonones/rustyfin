@@ -165,6 +165,32 @@ pub async fn hw_source(path: &std::path::Path, streams_json: Option<&str>) -> Hw
     HwSource { decode: settings.hw_decode && codec_ok && pix_ok, gop: fps.map(|f| (f * f64::from(HLS_SEGMENT_SECS)).ceil() as u32) }
 }
 
+/// Limite automático de transcodificações simultâneas, quando ninguém o define: com GPU a codificação sai do
+/// processador, então cabem mais sessões; em software cada sessão consome CPU, e metade dos núcleos (de 2 a 8) mantém
+/// cada uma acima do tempo real com folga (medido: 4 CPUs sustentam 2 sessões a ~4,6× e 4 a ~1,3×).
+pub fn auto_max_transcodes(hardware: bool, cpus: usize) -> usize {
+    if hardware { 4 } else { (cpus / 2).clamp(2, 8) }
+}
+
+/// A GPU existe mas o processo não pode abri-la (típico no Docker sem `group_add`): devolve a dica de correção.
+#[cfg(unix)]
+fn device_permission_hint(device: &str) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    let gid = std::fs::metadata(device).ok()?.gid();
+    match std::fs::OpenOptions::new().read(true).write(true).open(device) {
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Some(format!(
+            "sem permissão para abrir {device} (pertence ao grupo {gid}): no docker-compose, adicione `group_add: [\"{gid}\"]` \
+             (ou rode tools/gpu-setup.sh)"
+        )),
+        _ => None,
+    }
+}
+
+#[cfg(not(unix))]
+fn device_permission_hint(_device: &str) -> Option<String> {
+    None
+}
+
 /// Escolhe o encoder: `auto` usa a GPU quando há uma e um quadro de teste codifica (VAAPI no Linux, Quick Sync no
 /// Windows); um encoder de hardware pedido explicitamente que não funciona cai para `libx264` em vez de quebrar todas
 /// as transcodificações. Depois confirma, com um vídeo de teste, se a GPU também decodifica.
@@ -183,6 +209,10 @@ async fn resolve_encoder(ffmpeg: &str, requested: &str, device: &str) -> Escolha
         if explicit {
             warn!("Encoder {encoder} pedido, mas {device} não existe (GPU não repassada ao container?). Usando libx264.");
         }
+        return Escolha::software("libx264");
+    }
+    if let Some(dica) = device_permission_hint(device) {
+        warn!("GPU encontrada, mas {dica}. Usando libx264.");
         return Escolha::software("libx264");
     }
     let probe = Command::new(ffmpeg)
@@ -329,7 +359,16 @@ pub async fn init(config: &AppConfig) {
     let work_dir = config.cache_dir.join("transcodes");
     let _ = tokio::fs::remove_dir_all(&work_dir).await;
 
-    let initial = config.max_transcodes.max(1);
+    let hardware = Hw::from_encoder(&encoder).is_some();
+    let auto_slots = crate::settings::max_transcodes_is_auto();
+    let initial = if auto_slots {
+        let n = auto_max_transcodes(hardware, std::thread::available_parallelism().map_or(2, usize::from));
+        crate::settings::set_auto_max_transcodes(n);
+        n
+    } else {
+        crate::settings::snapshot().max_transcodes
+    }
+    .max(1);
     MAX_SLOTS.store(initial, std::sync::atomic::Ordering::Relaxed);
     let _ = SLOTS.set(Arc::new(Semaphore::new(initial)));
     let _ = SETTINGS.set(Settings {
@@ -348,9 +387,8 @@ pub async fn init(config: &AppConfig) {
             warn!("FFmpeg sem os filtros zscale e tonemap; conversão HDR para SDR indisponível.");
         }
         info!(
-            "ffmpeg encontrado: transcodificação sob demanda ativa (máx. {} simultâneas, encoder {}).",
-            config.max_transcodes.max(1),
-            encoder
+            "ffmpeg encontrado: transcodificação sob demanda ativa (máx. {initial} simultâneas{}, encoder {encoder}).",
+            if auto_slots { ", automático" } else { "" }
         );
         tokio::spawn(hls::reaper());
     } else {

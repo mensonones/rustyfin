@@ -32,7 +32,7 @@ fn test_config(dir: &std::path::Path) -> AppConfig {
         admin_password: None,
         public_url: None,
         ffmpeg_path: "ffmpeg".into(),
-        max_transcodes: 1,
+        max_transcodes: Some(1),
         video_encoder: "libx264".into(),
         tmdb_api_key: None,
         tmdb_language: "pt-BR".into(),

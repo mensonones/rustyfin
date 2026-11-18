@@ -475,3 +475,19 @@ fn qsv_alinha_os_segmentos_com_o_intervalo_de_quadros_chave() {
         .join(" ");
     assert!(v.contains("-force_key_frames") && !v.contains("-keyint_min"), "{v}");
 }
+
+#[test]
+fn o_limite_automatico_acompanha_o_hardware() {
+    // em software: metade dos núcleos, de 2 a 8
+    assert_eq!(auto_max_transcodes(false, 1), 2);
+    assert_eq!(auto_max_transcodes(false, 4), 2);
+    assert_eq!(auto_max_transcodes(false, 8), 4);
+    assert_eq!(auto_max_transcodes(false, 64), 8);
+    // com GPU, cabem mais sessões, qualquer que seja a CPU
+    assert_eq!(auto_max_transcodes(true, 2), 4);
+}
+
+#[test]
+fn sem_a_gpu_nao_ha_dica_de_permissao() {
+    assert_eq!(device_permission_hint("/dev/dri/renderD999-inexistente"), None);
+}

@@ -79,22 +79,24 @@ codifica na GPU)`), e o painel mostra o encoder em uso.
 | **Windows (direto, sem Docker)** | `h264_qsv` (Quick Sync, via D3D11) | um `ffmpeg` com QSV em `RUSTYFIN_FFMPEG` e o `ffprobe` ao lado |
 | **Docker Desktop no Windows ou WSL2** | `libx264` | nada: o Docker Desktop não repassa a GPU Intel (o Jellyfin também não consegue) |
 
-**Como ativar no Docker (Linux):**
+**Como ativar no Docker (Linux):** rode, na pasta do projeto, uma vez:
 
-1. Descubra o grupo que pode usar a GPU: `getent group render | cut -d: -f3` (costuma ser 104, 105 ou 109).
-2. No `docker-compose.yml`, descomente (ou ponha em um `docker-compose.override.yml`):
+```bash
+sh tools/gpu-setup.sh
+docker compose up -d
+```
 
-   ```yaml
-   devices:
-     - /dev/dri:/dev/dri
-   group_add:
-     - "105"   # o GID do grupo `render` do seu host
-   ```
-
-3. Recrie o container (`docker compose up -d`) e procure no log a linha de aceleração ativa.
-
-Para conferir se a GPU funciona dentro do container: `docker exec rustyfin vainfo --display drm --device /dev/dri/renderD128`.
+O script detecta a GPU (`/dev/dri/renderD*`), descobre o grupo dono dela e grava no `.env` o `RENDER_GID` e o `COMPOSE_FILE`
+com o [`docker-compose.gpu.yml`](../docker-compose.gpu.yml), que repassa `/dev/dri` ao container e acrescenta esse grupo
+(`group_add`). Pode ser repetido sem problema. Depois procure no log a linha `Aceleração por hardware ativa`.
+Para conferir a GPU dentro do container: `docker compose exec rustyfin vainfo --display drm --device /dev/dri/renderD128`.
 A imagem traz os drivers Intel (`iHD` para Gen9 em diante e Arc, `i965` para as mais antigas).
+
+Se a GPU existe mas o container não tem permissão (faltou o `group_add`), o log avisa e diz qual grupo adicionar, e o
+servidor segue em software.
+
+**Limite de sessões:** sem `RUSTYFIN_MAX_TRANSCODES` definido, o servidor escolhe quantas transcodificações simultâneas
+aceitar pelo hardware: 4 com GPU, senão metade das CPUs (de 2 a 8). O valor em uso aparece no log e no painel.
 
 **Como funciona:** com um vídeo H.264 ou HEVC (8 ou 10 bits, 4:2:0) a GPU decodifica, converte o formato e codifica sem que
 os quadros passem pela CPU. Legendas queimadas, HDR para SDR e ABR precisam dos quadros na CPU: nesses casos o ffmpeg

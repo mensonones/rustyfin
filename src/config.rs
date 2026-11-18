@@ -23,8 +23,8 @@ pub struct AppConfig {
     pub public_url: Option<String>,
     /// Executável do ffmpeg (miniaturas, remux e transcode).
     pub ffmpeg_path: String,
-    /// Máximo de processos de transcodificação simultâneos.
-    pub max_transcodes: usize,
+    /// Máximo de transcodificações simultâneas; `None` = automático (calculado pelo hardware na subida).
+    pub max_transcodes: Option<usize>,
     /// Encoder de vídeo: `auto` (padrão: VAAPI se houver GPU Intel/AMD, senão `libx264`), `libx264` ou de hardware
     /// (`h264_vaapi`, `h264_qsv`, `h264_nvenc`, `h264_videotoolbox`).
     pub video_encoder: String,
@@ -65,10 +65,7 @@ impl AppConfig {
         let watch_enabled = std::env::var("RUSTYFIN_WATCH")
             .map_or(true, |v| !matches!(v.trim().to_lowercase().as_str(), "0" | "false" | "no" | "off"));
         let ffmpeg_path = std::env::var("RUSTYFIN_FFMPEG").unwrap_or_else(|_| "ffmpeg".to_string());
-        let max_transcodes = std::env::var("RUSTYFIN_MAX_TRANSCODES")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(2);
+        let max_transcodes = std::env::var("RUSTYFIN_MAX_TRANSCODES").ok().and_then(|v| v.trim().parse::<usize>().ok());
         let video_encoder =
             std::env::var("RUSTYFIN_VIDEO_ENCODER").unwrap_or_else(|_| "auto".to_string());
         let discovery_enabled = std::env::var("RUSTYFIN_DISCOVERY")
