@@ -5,6 +5,13 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.22.1] - 2026-11-18
+
+### Alterado
+- Aba **Acervo**: a barra de paginação aparece sempre, com o intervalo mostrado ("Mostrando 1 a 50 de 120"), botões
+  Primeira, Anterior, Próxima e Última e a escolha de 25, 50, 100 ou 200 títulos por página. O tamanho da página é
+  pedido à API (`porPagina`, de 10 a 200); busca, filtros e páginas continuam sendo resolvidos no servidor.
+
 ## [0.22.0] - 2026-11-18
 
 ### Adicionado

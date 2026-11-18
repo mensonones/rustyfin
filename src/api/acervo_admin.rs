@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 const POR_PAGINA: i64 = 50;
+const MAX_POR_PAGINA: i64 = 200;
 const MAX_BUSCA: usize = 128;
 
 const SQL_CAPA: &str =
@@ -28,6 +29,7 @@ pub(super) struct Filtro {
     biblioteca: Option<String>,
     problema: Option<String>,
     pagina: Option<i64>,
+    por_pagina: Option<i64>,
 }
 
 #[derive(FromRow)]
@@ -168,6 +170,7 @@ pub(super) async fn listar(
     let total = total.fetch_one(&st.pool).await.map_err(erro)?;
 
     let pagina = filtro.pagina.unwrap_or(1).clamp(1, 100_000);
+    let por_pagina = filtro.por_pagina.unwrap_or(POR_PAGINA).clamp(10, MAX_POR_PAGINA);
     let consulta = format!(
         "SELECT id, name AS nome, media_type AS tipo, production_year AS ano, series_name AS serie, \
          season_number AS temporada, episode_number AS episodio, path AS caminho, library_id AS biblioteca_id, container, \
@@ -177,8 +180,8 @@ pub(super) async fn listar(
          (content_sha256 IS NOT NULL) AS assinatura, {SQL_CENAS} AS cenas, probed AS analisado \
          FROM items WHERE {onde} \
          ORDER BY lower(COALESCE(series_name, name)), season_number, episode_number, lower(name), id \
-         LIMIT {POR_PAGINA} OFFSET {}",
-        (pagina - 1) * POR_PAGINA
+         LIMIT {por_pagina} OFFSET {}",
+        (pagina - 1) * por_pagina
     );
     let mut linhas = sqlx::query_as::<_, Linha>(&consulta);
     for texto in &textos {
@@ -234,5 +237,5 @@ pub(super) async fn listar(
         })
         .collect();
 
-    Ok(Json(Listagem { total, pagina, por_pagina: POR_PAGINA, itens, resumo }))
+    Ok(Json(Listagem { total, pagina, por_pagina, itens, resumo }))
 }

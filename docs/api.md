@@ -87,7 +87,7 @@ Usada por `/admin`. O painel abre em Bibliotecas, onde mostra a última varredur
 |---|---|
 | `GET /admin` | Página do painel; `/admin/favicon[-dark].png` e `/admin/logo[-dark].png` são os ícones (claro e escuro) |
 | `GET /admin/api/status` | Contagens, `ffmpeg`, TMDB, descoberta, último scan e `scan.signaturesPending` (arquivos cujo hash ainda é calculado em segundo plano) |
-| `GET /admin/api/acervo?busca=&biblioteca=&problema=&pagina=` | Filmes e episódios, 50 por página, com `selos` por título (metadados, capa, legenda, assinatura, cenas, analisado) e um `resumo` com as contagens do acervo inteiro. `busca` procura no título, na série e no caminho; `biblioteca` é o ID; `problema` é `metadados`, `capa`, `legenda`, `assinatura`, `cenas` ou `analise`. Valores inválidos respondem 400 e biblioteca inexistente, 404 |
+| `GET /admin/api/acervo?busca=&biblioteca=&problema=&pagina=&porPagina=` | Filmes e episódios, 50 por página por padrão (`porPagina` de 10 a 200), com `selos` por título (metadados, capa, legenda, assinatura, cenas, analisado) e um `resumo` com as contagens do acervo inteiro. `busca` procura no título, na série e no caminho; `biblioteca` é o ID; `problema` é `metadados`, `capa`, `legenda`, `assinatura`, `cenas` ou `analise`. A busca, o filtro e a paginação rodam no servidor, nunca sobre dados já baixados. Valores inválidos respondem 400 e biblioteca inexistente, 404 |
 | `POST /admin/api/acervo/audio/{id}` | Indexa a primeira faixa de áudio para futuras revisões |
 | `POST /admin/api/cenas/{id}` | Indexa trechos das faixas SRT de um título |
 | `GET /admin/api/preparos` | Lista conversões MP4 sugeridas e estado do preparo |

@@ -744,6 +744,17 @@ async fn aba_acervo_lista_com_selos_filtros_busca_e_paginacao() {
     let (_, segunda) = call(&s.app, Method::GET, "/admin/api/acervo?pagina=2", None, None).await;
     assert_eq!(segunda["itens"].as_array().unwrap().len(), 12);
 
+    // O tamanho da página vem do cliente (limitado), e a página fora do alcance volta vazia.
+    let (_, curta) = call(&s.app, Method::GET, "/admin/api/acervo?porPagina=25&pagina=3", None, None).await;
+    assert_eq!((curta["porPagina"].clone(), curta["itens"].as_array().unwrap().len()), (json!(25), 12));
+    let (_, minimo) = call(&s.app, Method::GET, "/admin/api/acervo?porPagina=1", None, None).await;
+    assert_eq!(minimo["porPagina"], 10);
+    let (_, maximo) = call(&s.app, Method::GET, "/admin/api/acervo?porPagina=9999", None, None).await;
+    assert_eq!(maximo["porPagina"], 200);
+    assert_eq!(maximo["itens"].as_array().unwrap().len(), 62);
+    let (_, alem) = call(&s.app, Method::GET, "/admin/api/acervo?pagina=99", None, None).await;
+    assert_eq!(alem["itens"].as_array().unwrap().len(), 0);
+
     // Busca por nome, por série e por caminho, sem diferenciar maiúsculas.
     let (_, por_serie) = call(&s.app, Method::GET, "/admin/api/acervo?busca=S%C3%89RIE%20x", None, None).await;
     assert_eq!(por_serie["total"], 1);

@@ -284,7 +284,10 @@
   .midia-acervo { color: var(--ink-2); font-variant-numeric: tabular-nums; }
   .midia-acervo small { display: block; color: var(--muted); font-size: var(--text-xs); }
   .selos { display: flex; flex-wrap: wrap; gap: 4px; }
-  .paginacao { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; color: var(--muted); font-size: var(--text-sm); }
+  .paginacao { display: flex; align-items: center; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; margin-top: 16px; color: var(--muted); font-size: var(--text-sm); }
+  .paginacao .row { gap: 8px; }
+  .paginacao label { margin: 0; }
+  .paginacao select { width: auto; min-height: 36px; }
   @media (max-width: 60rem) { .col-acervo-midia, .col-acervo-biblioteca { display: none; } }
   @media (max-width: 40rem) { .busca-acervo { grid-template-columns: minmax(0, 1fr); } }
 
@@ -470,9 +473,18 @@
       </form>
       <div id="acervoLista" aria-live="polite"></div>
       <nav class="paginacao" id="acervoPaginas" aria-label="Páginas do acervo" hidden>
-        <button class="btn small" type="button" id="acervoAnterior">Anterior</button>
         <span id="acervoPosicao"></span>
-        <button class="btn small" type="button" id="acervoProxima">Próxima</button>
+        <div class="row">
+          <label for="acervoTamanho">Por página</label>
+          <select id="acervoTamanho">
+            <option value="25">25</option><option value="50" selected>50</option>
+            <option value="100">100</option><option value="200">200</option>
+          </select>
+          <button class="btn small" type="button" id="acervoPrimeira">Primeira</button>
+          <button class="btn small" type="button" id="acervoAnterior">Anterior</button>
+          <button class="btn small" type="button" id="acervoProxima">Próxima</button>
+          <button class="btn small" type="button" id="acervoUltima">Última</button>
+        </div>
       </nav>
     </div>
   </section>
@@ -1917,7 +1929,7 @@ $('tema').onclick = () => {
 
 // ---- paleta de comandos (Ctrl K)
 // ---- acervo
-const acervo = { busca: '', biblioteca: '', problema: '', pagina: 1, tmdb: false, preparado: false, tokenBusca: 0 };
+const acervo = { busca: '', biblioteca: '', problema: '', pagina: 1, porPagina: 50, paginas: 1, tmdb: false, preparado: false, tokenBusca: 0 };
 const filtrosAcervo = [
   ['', 'Todos', 'total'], ['metadados', 'Sem metadados', 'semMetadados'], ['capa', 'Sem capa', 'semCapa'],
   ['legenda', 'Sem legenda', 'semLegenda'], ['assinatura', 'Assinatura pendente', 'semAssinatura'],
@@ -2005,7 +2017,7 @@ function desenharFiltros(resumo) {
 }
 async function carregarAcervo() {
   const marca = ++acervo.tokenBusca;
-  const consulta = new URLSearchParams({ pagina: acervo.pagina });
+  const consulta = new URLSearchParams({ pagina: acervo.pagina, porPagina: acervo.porPagina });
   if (acervo.busca) consulta.set('busca', acervo.busca);
   if (acervo.biblioteca) consulta.set('biblioteca', acervo.biblioteca);
   if (acervo.problema) consulta.set('problema', acervo.problema);
@@ -2033,10 +2045,14 @@ async function carregarAcervo() {
   const tabela = el('table', {}, el('thead', {}, cabecalho), el('tbody', {}, ...dados.itens.map(linhaAcervo)));
   lista.replaceChildren(el('div', { className: 'tabela-acervo' }, tabela));
   const paginas = Math.max(1, Math.ceil(dados.total / dados.porPagina));
-  $('acervoPaginas').hidden = paginas < 2;
-  $('acervoPosicao').textContent = 'Página ' + dados.pagina + ' de ' + paginas + ', ' + numeroBr(dados.total) + ' títulos';
-  $('acervoAnterior').disabled = dados.pagina <= 1;
-  $('acervoProxima').disabled = dados.pagina >= paginas;
+  if (dados.pagina > paginas) { acervo.pagina = paginas; return carregarAcervo(); }
+  acervo.paginas = paginas;
+  $('acervoPaginas').hidden = false;
+  const primeiro = (dados.pagina - 1) * dados.porPagina + 1;
+  $('acervoPosicao').textContent = 'Mostrando ' + numeroBr(primeiro) + ' a ' + numeroBr(primeiro + dados.itens.length - 1)
+    + ' de ' + numeroBr(dados.total) + ' títulos. Página ' + dados.pagina + ' de ' + paginas + '.';
+  $('acervoPrimeira').disabled = $('acervoAnterior').disabled = dados.pagina <= 1;
+  $('acervoProxima').disabled = $('acervoUltima').disabled = dados.pagina >= paginas;
 }
 async function loadAcervo() {
   const [libs, estado] = await Promise.all([api('GET', '/admin/api/folders'), api('GET', '/admin/api/status')]);
@@ -2061,6 +2077,13 @@ async function loadAcervo() {
     caixa.onchange = () => { acervo.biblioteca = caixa.value; acervo.pagina = 1; carregarAcervo().catch(falha); };
     $('acervoAnterior').onclick = () => { acervo.pagina -= 1; carregarAcervo().catch(falha); };
     $('acervoProxima').onclick = () => { acervo.pagina += 1; carregarAcervo().catch(falha); };
+    $('acervoPrimeira').onclick = () => { acervo.pagina = 1; carregarAcervo().catch(falha); };
+    $('acervoUltima').onclick = () => { acervo.pagina = acervo.paginas; carregarAcervo().catch(falha); };
+    $('acervoTamanho').onchange = () => {
+      acervo.porPagina = Number($('acervoTamanho').value);
+      acervo.pagina = 1;
+      carregarAcervo().catch(falha);
+    };
   }
   await carregarAcervo();
 }
