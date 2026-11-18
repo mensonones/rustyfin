@@ -26,6 +26,10 @@ static FFMPEG_SLOTS: Semaphore = Semaphore::const_new(2);
 static RESIZE_SLOTS: Semaphore = Semaphore::const_new(4);
 const FFMPEG_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// O cliente guarda a imagem por um dia sem perguntar ao servidor (rolar uma grade ou voltar a uma tela não refaz os
+/// pedidos); depois disso ele revalida com o `ETag` e recebe `304`. Uma capa trocada aparece em até um dia.
+const CACHE_IMAGEM: &str = "private, max-age=86400";
+
 /// Tag de cache enviada em `ImageTags`; muda quando o vídeo ou a imagem local mudam.
 pub fn image_tag(poster_path: Option<&str>, modified_at: i64) -> String {
     let mut h = DefaultHasher::new();
@@ -238,7 +242,7 @@ async fn respond_file(
         return Response::builder()
             .status(StatusCode::NOT_MODIFIED)
             .header(header::ETAG, &etag)
-            .header(header::CACHE_CONTROL, "private, no-cache")
+            .header(header::CACHE_CONTROL, CACHE_IMAGEM)
             .body(Body::empty())
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR);
     }
@@ -249,7 +253,7 @@ async fn respond_file(
         .header(header::CONTENT_TYPE, mime.as_ref())
         .header(header::CONTENT_LENGTH, len.to_string())
         .header(header::ETAG, &etag)
-        .header(header::CACHE_CONTROL, "private, no-cache")
+        .header(header::CACHE_CONTROL, CACHE_IMAGEM)
         .body(Body::from_stream(ReaderStream::new(file)))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }

@@ -173,6 +173,9 @@ copiado, o HDR é mantido.
 
 - Capas e fundos locais ou do TMDB; sem elas, um quadro do vídeo, gerado em segundo plano depois de cada varredura.
 - `maxWidth`, `maxHeight` e `quality` redimensionam sob demanda, com cache em disco, `ETag` e resposta `304`.
+- **Cache no cliente:** as imagens saem com `Cache-Control: private, max-age=86400`. O app guarda cada capa por um dia sem
+  perguntar ao servidor, o que evita refazer os pedidos ao rolar uma grade ou voltar a uma tela, e depois revalida com o
+  `ETag`. Uma capa trocada na pasta aparece em até um dia (ou ao limpar o cache do app).
 
 ## Estado de reprodução
 

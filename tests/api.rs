@@ -824,6 +824,24 @@ async fn capas_abrem_para_a_rede_local_sem_token_mas_nao_para_fora_nem_com_a_opc
     let uri = format!("/Items/{id}/Images/Primary?maxWidth=0");
 
     assert_eq!(get_anonimo(&s.app, &uri, "192.168.1.50").await, StatusCode::OK, "rede local");
+
+    // Cache: o cliente guarda a imagem por um dia e revalida com o ETag, que responde 304.
+    let pedir = |etag: Option<String>| {
+        let mut req = Request::builder().method(Method::GET).uri(&uri);
+        if let Some(e) = etag {
+            req = req.header(header::IF_NONE_MATCH, e);
+        }
+        let mut req = req.body(Body::empty()).unwrap();
+        req.extensions_mut().insert(ConnectInfo("192.168.1.50:40000".parse::<SocketAddr>().unwrap()));
+        let app = s.app.clone();
+        async move { app.oneshot(req).await.unwrap() }
+    };
+    let primeira = pedir(None).await;
+    assert_eq!(primeira.headers()[header::CACHE_CONTROL], "private, max-age=86400");
+    let etag = primeira.headers()[header::ETAG].to_str().unwrap().to_owned();
+    let revalidada = pedir(Some(etag)).await;
+    assert_eq!(revalidada.status(), StatusCode::NOT_MODIFIED);
+    assert_eq!(revalidada.headers()[header::CACHE_CONTROL], "private, max-age=86400");
     assert_eq!(get_anonimo(&s.app, "/Items/inexistente/Images/Backdrop/0", "192.168.1.50").await, StatusCode::NOT_FOUND);
     assert_eq!(get_anonimo(&s.app, &uri, "203.0.113.9").await, StatusCode::UNAUTHORIZED, "fora da rede local");
     // Só imagens: o resto continua exigindo token, mesmo da rede local.

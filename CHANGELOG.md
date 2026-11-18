@@ -5,6 +5,13 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.23.2] - 2026-11-18
+
+### Alterado
+- Imagens com cache no cliente: capas e fundos saem com `Cache-Control: private, max-age=86400` (antes `no-cache`, que
+  obrigava o app a perguntar ao servidor a cada exibição). Rolar uma grade ou voltar a uma tela não refaz os pedidos; depois
+  de um dia o app revalida com o `ETag` e recebe `304`. As versões redimensionadas já eram guardadas em disco.
+
 ## [0.23.1] - 2026-11-18
 
 ### Corrigido
