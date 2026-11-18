@@ -238,26 +238,11 @@ async fn curl(url: &str, bearer: Option<&str>, output: Option<&PathBuf>) -> Resu
         cfg.push_str(&format!("output = \"{}\"\n", out.to_string_lossy().replace('\\', "/")));
     }
 
-    let mut child = Command::new("curl")
-        .args(["-sS", "-L", "--max-time", &REQUEST_TIMEOUT_SECS.to_string()])
-        .args(["-w", "\n%{http_code}", "-K", "-"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| FetchError::Transport(format!("curl indisponível: {e}")))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(cfg.as_bytes())
-            .await
-            .map_err(|e| FetchError::Transport(e.to_string()))?;
+    let mut out = executar_curl(&cfg, false).await?;
+    // Uma falha na negociação TLS pode ocorrer só na rota IPv6. Tenta IPv4 uma vez.
+    if out.status.code() == Some(35) {
+        out = executar_curl(&cfg, true).await?;
     }
-    let out = child
-        .wait_with_output()
-        .await
-        .map_err(|e| FetchError::Transport(e.to_string()))?;
 
     if !out.status.success() {
         return Err(FetchError::Transport(
@@ -279,6 +264,33 @@ async fn curl(url: &str, bearer: Option<&str>, output: Option<&PathBuf>) -> Resu
         401 | 403 => Err(FetchError::Unauthorized),
         s => Err(FetchError::Http(s)),
     }
+}
+
+async fn executar_curl(cfg: &str, ipv4: bool) -> Result<std::process::Output, FetchError> {
+    let mut comando = Command::new("curl");
+    if ipv4 {
+        comando.arg("--ipv4");
+    }
+    let mut child = comando
+        .args(["-sS", "-L", "--max-time", &REQUEST_TIMEOUT_SECS.to_string()])
+        .args(["-w", "\n%{http_code}", "-K", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| FetchError::Transport(format!("curl indisponível: {e}")))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(cfg.as_bytes())
+            .await
+            .map_err(|e| FetchError::Transport(e.to_string()))?;
+    }
+    child
+        .wait_with_output()
+        .await
+        .map_err(|e| FetchError::Transport(e.to_string()))
 }
 
 async fn get_json(

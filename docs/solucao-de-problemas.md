@@ -55,6 +55,12 @@ leia com `docker compose logs -f`.
 | "Chave recusada" nos logs | Use a chave **v3** (32 caracteres) ou o token **v4** do TMDB |
 | Sem conexão | O servidor usa o `curl`; confirme que ele está no `PATH` e que há acesso à internet. A busca é refeita no próximo ciclo |
 
+Se as capas geradas continuarem depois de configurar a chave, procure por `itens enriquecidos` e
+`TMDB: sem conexão` no log. Para verificar o acesso à API sem expor a chave, execute
+`curl.exe -4 -I https://api.themoviedb.org/3/configuration` no Windows. Uma resposta HTTP `401`
+nesse teste é esperada porque a requisição foi feita sem credenciais. Após restabelecer a conexão,
+inicie uma varredura no painel para buscar os metadados pendentes.
+
 ## Painel
 
 | Sintoma | Solução |
