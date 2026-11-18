@@ -5,6 +5,21 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.20.2] - 2026-11-18
+
+### Corrigido
+- H.264 de **10 bits** (Hi10P) falhava com a GPU Intel: ela não decodifica esse perfil e o ffmpeg não cai para a CPU sozinho.
+  Agora só o HEVC usa 10 bits na decodificação por hardware; o H.264 de 10 bits é decodificado na CPU e codificado na GPU.
+
+### Adicionado
+- **Volta automática para software.** Quando o ffmpeg com GPU encerra com erro numa sessão HLS, o servidor refaz a sessão com
+  `libx264` no mesmo ponto e registra um aviso, em vez de devolver 404 ou repetir o mesmo erro.
+
+### Testado
+- Numa GPU Intel real (Quick Sync, Windows nativo): H.264 8 e 10 bits, HEVC 8 e 10 bits, HDR10 com tone mapping, VP9, segmentos
+  de 6 s exatos, avanço, ABR, fMP4, stream progressivo e três sessões simultâneas (4,8× cada com ~34% da CPU, contra 2,5× e ~97%
+  do `libx264`).
+
 ## [0.20.1] - 2026-11-18
 
 ### Adicionado
