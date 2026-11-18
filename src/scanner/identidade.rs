@@ -70,7 +70,7 @@ fn assinar(
     })
 }
 
-fn verificar(caminhos: &[String], catalogo: Vec<Catalogado>) -> Verificacao {
+fn verificar(caminhos: &[String], catalogo: Vec<Catalogado>, com_historico: &HashSet<String>) -> Verificacao {
     let catalogo: HashMap<_, _> = catalogo
         .into_iter()
         .map(|item| (item.path.clone(), item))
@@ -119,7 +119,10 @@ fn verificar(caminhos: &[String], catalogo: Vec<Catalogado>) -> Verificacao {
                         return Ok(Some(hash.clone()));
                     }
                 }
-                item.content_sha256.is_some()
+                // Sem hash anterior e com o tamanho diferente do catalogado, o arquivo foi trocado antes de a assinatura em
+                // segundo plano chegar: se alguém já assistiu ou favoritou, o conteúdo novo é lido agora para a troca virar
+                // uma revisão em vez de herdar o histórico em silêncio.
+                item.content_sha256.is_some() || (com_historico.contains(&item.id) && item.size_bytes != tamanho)
             } else {
                 tamanhos_ausentes.contains(&tamanho) || chaves_ausentes.contains(&chave(caminho).0)
             };
@@ -173,6 +176,7 @@ fn verificar(caminhos: &[String], catalogo: Vec<Catalogado>) -> Verificacao {
         &ausentes,
         &por_assinatura,
         &movimentos,
+        com_historico,
     );
     Verificacao {
         recalculadas,
@@ -207,16 +211,18 @@ fn sugerir_revisoes(
     ausentes: &HashMap<&[u8], Vec<&Catalogado>>,
     por_assinatura: &HashMap<Vec<u8>, Vec<&str>>,
     movimentos: &[(String, String, String)],
+    com_historico: &HashSet<String>,
 ) -> Vec<Sugestao> {
     let mut novos = HashMap::<Chave, Vec<(&str, Option<i32>, &[u8])>>::new();
     let mut revisoes = Vec::new();
     for (caminho, assinatura) in recalculadas {
         if let Some(item) = catalogo.get(caminho) {
-            if item
-                .content_sha256
-                .as_ref()
-                .is_some_and(|hash| *hash != assinatura.sha256)
-            {
+            let trocado = match &item.content_sha256 {
+                Some(hash) => *hash != assinatura.sha256,
+                // Ainda sem hash: só o tamanho diferente do catalogado prova a troca, e só importa se há histórico.
+                None => com_historico.contains(&item.id) && item.size_bytes != assinatura.tamanho,
+            };
+            if trocado {
                 revisoes.push(Sugestao {
                     id: item.id.clone(),
                     caminho: caminho.clone(),
@@ -321,7 +327,15 @@ pub(super) async fn preparar(
         sqlx::query_as("SELECT id, path, size_bytes, content_sha256, content_mtime FROM items")
             .fetch_all(pool)
             .await?;
-    Ok(tokio::task::spawn_blocking(move || verificar(&caminhos, catalogo)).await?)
+    // Itens que alguém já assistiu, favoritou ou parou no meio: são os que têm histórico a proteger numa troca.
+    let com_historico: HashSet<String> = sqlx::query_scalar(
+        "SELECT DISTINCT item_id FROM playback_state WHERE is_played = 1 OR is_favorite = 1 OR position_ticks > 0",
+    )
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .collect();
+    Ok(tokio::task::spawn_blocking(move || verificar(&caminhos, catalogo, &com_historico)).await?)
 }
 
 impl Verificacao {
@@ -433,7 +447,7 @@ mod tests {
         std::fs::create_dir(&dir).unwrap();
         let novo = dir.join("novo.mp4");
         std::fs::write(&novo, b"conteudo novo").unwrap();
-        let resultado = verificar(&[novo.to_str().unwrap().into()], Vec::new());
+        let resultado = verificar(&[novo.to_str().unwrap().into()], Vec::new(), &HashSet::new());
         std::fs::remove_dir_all(dir).unwrap();
         assert!(resultado.completa);
         assert!(resultado.recalculadas.is_empty(), "sem ausentes não há o que casar: nada é lido");
@@ -458,11 +472,39 @@ mod tests {
         std::fs::write(&mesmo_nome, b"re-encodado, tamanho diferente").unwrap();
         std::fs::write(&alheio, b"coisa sem relacao").unwrap();
         let caminhos: Vec<String> = [&mesmo_tamanho, &mesmo_nome, &alheio].iter().map(|p| p.to_str().unwrap().into()).collect();
-        let resultado = verificar(&caminhos, vec![ausente]);
+        let resultado = verificar(&caminhos, vec![ausente], &HashSet::new());
         std::fs::remove_dir_all(dir).unwrap();
         assert_eq!(resultado.recalculadas.len(), 2, "só o de mesmo tamanho e o de mesmo nome são lidos");
         assert!(!resultado.recalculadas.contains_key(alheio.to_str().unwrap()));
         assert_eq!(resultado.movimentos.len(), 1);
+    }
+
+    #[test]
+    fn video_trocado_antes_do_primeiro_hash_vira_revisao_so_se_ha_historico() {
+        let dir = std::env::temp_dir().join(format!("rustyfin-identidade-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let caminho = dir.join("Filme (2020).mkv");
+        std::fs::write(&caminho, b"edicao nova, bem maior que a antiga").unwrap();
+        let item = || Catalogado {
+            id: "item1".into(),
+            path: caminho.to_str().unwrap().into(),
+            size_bytes: 10, // o tamanho que a varredura anterior viu
+            content_sha256: None,
+            content_mtime: None,
+        };
+        let caminhos = [caminho.to_str().unwrap().to_owned()];
+
+        // Alguém já assistiu: o conteúdo novo é lido e a troca vira revisão, em vez de herdar o histórico.
+        let com = HashSet::from(["item1".to_owned()]);
+        let resultado = verificar(&caminhos, vec![item()], &com);
+        assert_eq!(resultado.revisoes.len(), 1);
+        assert_eq!(resultado.revisoes[0].motivo, "substituido");
+
+        // Sem histórico, nada a proteger: o arquivo nem é lido e segue o fluxo normal.
+        let resultado = verificar(&caminhos, vec![item()], &HashSet::new());
+        std::fs::remove_dir_all(dir).unwrap();
+        assert!(resultado.revisoes.is_empty());
+        assert!(resultado.recalculadas.is_empty());
     }
 
     #[tokio::test]
@@ -505,7 +547,7 @@ mod tests {
             content_mtime: None,
         };
         let caminhos = [a.to_str().unwrap().into(), b.to_str().unwrap().into()];
-        let resultado = verificar(&caminhos, vec![origem]);
+        let resultado = verificar(&caminhos, vec![origem], &HashSet::new());
         std::fs::remove_dir_all(dir).unwrap();
         assert!(resultado.completa);
         assert_eq!(resultado.recalculadas.len(), 2);

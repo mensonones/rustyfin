@@ -9,7 +9,7 @@ use crate::{
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex, OnceLock},
     time::UNIX_EPOCH,
 };
 use tokio::process::Command;
@@ -214,9 +214,19 @@ pub fn season_id_for(series_name: &str, year: Option<i32>, season: i32) -> Strin
     Uuid::new_v5(&Uuid::NAMESPACE_URL, key.as_bytes()).simple().to_string()
 }
 
-/// Antes de o ano entrar na identidade, o ID dependia só do nome. Ao passar para o ID novo, os dados
-/// da série (TMDB) e o poster da temporada são copiados do ID antigo, para não perder o enriquecimento
-/// nem refazer as buscas. Só copia se o ano gravado for compatível; o progresso dos usuários fica nos
+/// Séries e temporadas cujo ID antigo já foi conferido neste processo: a migração roda uma vez por série e temporada, e
+/// não a cada episódio de cada varredura.
+type SerieMigrada = (String, i32, Option<i32>);
+
+fn migradas() -> &'static Mutex<HashSet<SerieMigrada>> {
+    static MIGRADAS: OnceLock<Mutex<HashSet<SerieMigrada>>> = OnceLock::new();
+    MIGRADAS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+/// Antes de o ano entrar na identidade, o ID dependia só do nome. Ao passar para o ID novo, os dados da série (TMDB), o
+/// poster da temporada e os **favoritos** são copiados do ID antigo, para não perder o enriquecimento, nem refazer as
+/// buscas, nem sumir com a marcação. Só copia se o ano gravado for compatível; os favoritos só se o nome não tiver outra
+/// série de ano diferente (senão não dá para saber para qual delas a marcação era). O progresso dos usuários fica nos
 /// episódios (`playback_state`) e não é afetado.
 async fn migrate_legacy_series(
     pool: &DbPool,
@@ -224,30 +234,95 @@ async fn migrate_legacy_series(
     year: i32,
     season: Option<i32>,
 ) -> Result<(), sqlx::Error> {
+    let chave = (name.to_lowercase(), year, season);
+    if !migradas().lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(chave.clone()) {
+        return Ok(());
+    }
+    let resultado = migrar_ids_antigos(pool, name, year, season).await;
+    if resultado.is_err() {
+        // Falhou: a próxima varredura tenta de novo.
+        migradas().lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&chave);
+    }
+    resultado
+}
+
+async fn migrar_ids_antigos(pool: &DbPool, name: &str, year: i32, season: Option<i32>) -> Result<(), sqlx::Error> {
     let old_series = series_id_for(name, None);
     let new_series = series_id_for(name, Some(year));
-    sqlx::query(
-        "INSERT OR IGNORE INTO series (id, tmdb_id, tmdb_title, overview, rating, genres, year, poster, backdrop) \
-         SELECT ?, tmdb_id, tmdb_title, overview, rating, genres, year, poster, backdrop FROM series \
-         WHERE id = ? AND (year IS NULL OR year = ?)",
+    // Primeiro uma leitura: só escreve quando há de fato algo antigo a copiar.
+    let copiar_serie: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM series WHERE id = ?1 AND (year IS NULL OR year = ?3))          AND NOT EXISTS (SELECT 1 FROM series WHERE id = ?2)",
     )
-    .bind(&new_series)
     .bind(&old_series)
+    .bind(&new_series)
     .bind(year)
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
-    if let Some(n) = season {
+    if copiar_serie {
         sqlx::query(
-            "INSERT OR IGNORE INTO season_art (season_id, poster) \
-             SELECT ?, poster FROM season_art WHERE season_id = ? \
-               AND EXISTS (SELECT 1 FROM series WHERE id = ?)",
+            "INSERT OR IGNORE INTO series (id, tmdb_id, tmdb_title, overview, rating, genres, year, poster, backdrop) \
+             SELECT ?, tmdb_id, tmdb_title, overview, rating, genres, year, poster, backdrop FROM series \
+             WHERE id = ? AND (year IS NULL OR year = ?)",
         )
-        .bind(season_id_for(name, Some(year), n))
-        .bind(season_id_for(name, None, n))
         .bind(&new_series)
+        .bind(&old_series)
+        .bind(year)
         .execute(pool)
         .await?;
     }
+    let (old_season, new_season) = match season {
+        Some(n) => (Some(season_id_for(name, None, n)), Some(season_id_for(name, Some(year), n))),
+        None => (None, None),
+    };
+    if let (Some(old), Some(new)) = (&old_season, &new_season) {
+        let copiar_temporada: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM season_art WHERE season_id = ?1) \
+             AND NOT EXISTS (SELECT 1 FROM season_art WHERE season_id = ?2) \
+             AND EXISTS (SELECT 1 FROM series WHERE id = ?3)",
+        )
+        .bind(old)
+        .bind(new)
+        .bind(&new_series)
+        .fetch_one(pool)
+        .await?;
+        if copiar_temporada {
+            sqlx::query("INSERT OR IGNORE INTO season_art (season_id, poster) SELECT ?, poster FROM season_art WHERE season_id = ?")
+                .bind(new)
+                .bind(old)
+                .execute(pool)
+                .await?;
+        }
+    }
+
+    // Favoritos da série e da temporada: só quando o nome não tem outra série de ano diferente.
+    let homonimas: i64 = sqlx::query_scalar(
+        "SELECT COUNT(DISTINCT production_year) FROM items \
+         WHERE lower(series_name) = lower(?) AND production_year IS NOT NULL AND production_year != ?",
+    )
+    .bind(name)
+    .bind(year)
+    .fetch_one(pool)
+    .await?;
+    if homonimas == 0 {
+        copiar_favoritos(pool, &old_series, &new_series).await?;
+        if let (Some(old), Some(new)) = (&old_season, &new_season) {
+            copiar_favoritos(pool, old, new).await?;
+        }
+    }
+    Ok(())
+}
+
+/// Copia, por usuário, a marcação de favorito do ID antigo para o novo (sem apagar a antiga e sem mexer em quem já tem).
+async fn copiar_favoritos(pool: &DbPool, antigo: &str, novo: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO playback_state (user_id, item_id, is_favorite) \
+         SELECT user_id, ?1, 1 FROM playback_state WHERE item_id = ?2 AND is_favorite = 1 \
+         ON CONFLICT(user_id, item_id) DO UPDATE SET is_favorite = 1",
+    )
+    .bind(novo)
+    .bind(antigo)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -861,6 +936,63 @@ mod tests {
         assert_eq!(r.backdrop, None);
         assert_eq!(find_local_assets(&dir.join("Outro.mkv"), &DirListings::new()), LocalAssets::default());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn a_migracao_de_ids_antigos_leva_o_favorito_da_serie_e_da_temporada() {
+        let pool = crate::db::init_db("sqlite::memory:").await.unwrap();
+        let nome = "Serie Migrada A";
+        let (antiga, nova) = (series_id_for(nome, None), series_id_for(nome, Some(2019)));
+        let (t_antiga, t_nova) = (season_id_for(nome, None, 1), season_id_for(nome, Some(2019), 1));
+        for id in [&antiga, &t_antiga] {
+            sqlx::query("INSERT INTO playback_state (user_id, item_id, is_favorite) VALUES ('u1', ?, 1)")
+                .bind(id)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        migrate_legacy_series(&pool, nome, 2019, Some(1)).await.unwrap();
+        let favorito = |id: String| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_scalar::<_, bool>("SELECT is_favorite FROM playback_state WHERE user_id = 'u1' AND item_id = ?")
+                    .bind(id)
+                    .fetch_optional(&pool)
+                    .await
+                    .unwrap()
+            }
+        };
+        assert_eq!(favorito(nova.clone()).await, Some(true), "a série com ano herda o favorito");
+        assert_eq!(favorito(t_nova).await, Some(true), "a temporada também");
+        assert_eq!(favorito(antiga).await, Some(true), "a marcação antiga não é apagada");
+        // Repetir (outro episódio, outra varredura) não faz nada nem falha.
+        migrate_legacy_series(&pool, nome, 2019, Some(1)).await.unwrap();
+        assert_eq!(favorito(nova).await, Some(true));
+    }
+
+    #[tokio::test]
+    async fn favorito_de_nome_com_series_de_outro_ano_nao_e_copiado() {
+        let pool = crate::db::init_db("sqlite::memory:").await.unwrap();
+        let nome = "Serie Migrada B";
+        let antiga = series_id_for(nome, None);
+        sqlx::query("INSERT INTO playback_state (user_id, item_id, is_favorite) VALUES ('u1', ?, 1)")
+            .bind(&antiga)
+            .execute(&pool)
+            .await
+            .unwrap();
+        // Já existe outra série com o mesmo nome e ano diferente: não dá para saber para qual era o favorito.
+        sqlx::query("INSERT INTO items (id, name, path, media_type, series_name, production_year) VALUES ('e1', 'E1', '/x/e1.mkv', 'Episode', ?, 2021)")
+            .bind(nome)
+            .execute(&pool)
+            .await
+            .unwrap();
+        migrate_legacy_series(&pool, nome, 2019, None).await.unwrap();
+        let copias: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM playback_state WHERE item_id = ?")
+            .bind(series_id_for(nome, Some(2019)))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(copias, 0, "em caso ambíguo a marcação fica só no ID antigo");
     }
 
     #[tokio::test]
