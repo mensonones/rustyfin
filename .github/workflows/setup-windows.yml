@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   setup:
-    name: setup (ffmpeg: ${{ matrix.ffmpeg }})
+    name: "setup (ffmpeg: ${{ matrix.ffmpeg }})"
     runs-on: windows-latest
     strategy:
       fail-fast: false
