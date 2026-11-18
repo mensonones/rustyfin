@@ -173,6 +173,7 @@ e o minuto, e esconde o que você ainda não assistiu. Como indexar as legendas:
 | [Primeiros passos](docs/primeiros-passos.md) | Do zero ao primeiro filme: Docker, pastas, painel, app, atualização e backup |
 | [Migrando do Jellyfin](docs/migrando-do-jellyfin.md) | O que você ganha, o que perde e como testar lado a lado |
 | [Configuração](docs/configuracao.md) | Variáveis de ambiente, configurações do painel, pastas, TMDB e nomes de arquivo |
+| [Proxy reverso](docs/proxy-reverso.md) | Acesso de fora de casa com nginx, Caddy ou Traefik, HTTPS e o que fica só na rede local |
 | [Anime](docs/anime.md) | Biblioteca do tipo Anime: como organizar as pastas, o AniList e o áudio japonês |
 | [Usuários e segurança](docs/usuarios-e-seguranca.md) | Contas, senhas, tokens, sessões, acesso por biblioteca e o que é público |
 | [Assinatura e antivírus](docs/assinatura-de-codigo.md) | Por que o Windows pode bloquear o `.exe`, como conferir o arquivo e o plano de assinatura |

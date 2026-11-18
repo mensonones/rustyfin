@@ -5,6 +5,22 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.28.0] - 2026-11-18
+
+### Adicionado
+- **Suporte a proxy reverso** (nginx, Caddy, Traefik): `RUSTYFIN_TRUSTED_PROXIES` lista os proxies em que o servidor
+  confia para saber o IP real do cliente (`X-Forwarded-For`/`X-Real-IP`). O painel, o login sem senha e as imagens
+  anônimas, que valem só para a rede local, passam a usar o IP real. Guia com exemplos em
+  [docs/proxy-reverso.md](docs/proxy-reverso.md).
+- `tools/testar_proxy.py`: diagnostica o acesso por um proxy (DNS, TLS, `/System/Info/Public`, login, `Range` e WebSocket) e
+  aponta a causa de cada falha; é o que mostra por trás do "Could not connect to server" do app do iOS.
+- O log avisa quando um login sem senha é recusado por vir de fora da rede local.
+
+### Segurança
+- Requisições com cabeçalhos de proxy vindas de quem **não** está em `RUSTYFIN_TRUSTED_PROXIES`, ou de um proxy confiável
+  que não informa o cliente, são tratadas como da internet. Antes, um proxy no mesmo PC fazia todo visitante parecer da
+  rede local, e o painel e o login sem senha ficavam abertos para a internet.
+
 ## [0.27.1] - 2026-11-18
 
 ### Corrigido

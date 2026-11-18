@@ -17,6 +17,7 @@ pub mod library;
 pub mod metadata;
 pub mod models;
 pub mod parser;
+pub mod proxy;
 pub mod scanner;
 pub mod settings;
 pub mod shutdown;

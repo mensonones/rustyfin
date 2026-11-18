@@ -34,7 +34,9 @@ O painel (`/admin`) e as rotas de biblioteca do Jellyfin (`/Library/VirtualFolde
    de administrador, ou o token de um administrador logado no app.
 3. Sem nenhuma senha de administrador, vale só a regra de rede local.
 
-Atrás de um *proxy reverso*, o servidor enxerga o endereço do proxy; configure o acesso externo com cuidado.
+Atrás de um *proxy reverso*, o servidor descobre o IP real do cliente só pelos proxies que você lista em
+`RUSTYFIN_TRUSTED_PROXIES`; uma requisição com cabeçalhos de proxy vinda de quem não está na lista é tratada como da
+internet (sem painel, sem login sem senha e sem imagens anônimas). Veja [proxy reverso](proxy-reverso.md).
 
 ## O que não exige token
 

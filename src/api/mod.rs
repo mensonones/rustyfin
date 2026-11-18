@@ -164,4 +164,7 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
         .layer(TraceLayer::new_for_http().make_span_with(|req: &axum::http::Request<axum::body::Body>| {
             tracing::debug_span!("request", method = %req.method(), path = %req.uri().path())
         }))
+        // A camada mais externa: antes de qualquer regra de "rede local", troca o endereço da conexão pelo do cliente real
+        // (atrás de um proxy reverso a conexão sempre vem do proxy).
+        .layer(from_fn_with_state(Arc::<[crate::proxy::Rede]>::from(config.trusted_proxies.clone()), crate::proxy::resolver_cliente))
 }

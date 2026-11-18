@@ -466,9 +466,17 @@ pub async fn authenticate_from(
     let row = get_row_by_name(pool, name).await.map_err(|_| AuthError::Internal)?;
     let result = if let Some((r,)) = row {
         let (id, _, hash, _, is_disabled, ..) = &r;
-        let ok = match hash {
-            Some(h) => verify_blocking(h.clone(), password.to_string()).await,
-            None => from_lan, // sem senha: entra direto, mas só da rede local
+        let ok = if let Some(h) = hash {
+            verify_blocking(h.clone(), password.to_string()).await
+        } else {
+            // Sem senha: entra direto, mas só da rede local.
+            if !from_lan {
+                tracing::warn!(
+                    "Login de '{name}' recusado: o usuário não tem senha e o cliente não é da rede local (atrás de um \
+                     proxy reverso, confira RUSTYFIN_TRUSTED_PROXIES). Defina uma senha para acessar de fora."
+                );
+            }
+            from_lan
         };
         if !ok {
             Err(AuthError::BadCredentials)

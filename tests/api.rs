@@ -32,6 +32,7 @@ fn test_config(dir: &std::path::Path) -> AppConfig {
         anonymous_images: true,
         admin_password: None,
         public_url: None,
+        trusted_proxies: Vec::new(),
         ffmpeg_path: "ffmpeg".into(),
         max_transcodes: Some(1),
         video_encoder: "libx264".into(),
@@ -43,10 +44,16 @@ fn test_config(dir: &std::path::Path) -> AppConfig {
 }
 
 async fn server(name: &str) -> Server {
+    server_com(name, |_| {}).await
+}
+
+async fn server_com(name: &str, ajustar: impl FnOnce(&mut AppConfig)) -> Server {
     let dir = std::env::temp_dir().join(format!("rustyfin-it-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let config = Arc::new(test_config(&dir));
+    let mut config = test_config(&dir);
+    ajustar(&mut config);
+    let config = Arc::new(config);
     let pool = db::init_db(&config.database_url).await.unwrap();
     users::ensure_seed_admin(&pool).await.unwrap();
     let app = api::build_router(config, pool, Arc::new(tokio::sync::Notify::new()));
@@ -928,3 +935,77 @@ async fn biblioteca_de_anime_aparece_como_serie_para_os_apps() {
     assert_eq!(vista["CollectionType"], "tvshows");
 }
 
+/// GET como se a conexão viesse de `peer`, com cabeçalhos extras (os de um proxy reverso).
+async fn get_de(app: &axum::Router, uri: &str, peer: &str, cabecalhos: &[(&str, &str)]) -> StatusCode {
+    let mut req = Request::builder().method(Method::GET).uri(uri);
+    for (k, v) in cabecalhos {
+        req = req.header(*k, *v);
+    }
+    let mut req = req.body(Body::empty()).unwrap();
+    req.extensions_mut().insert(ConnectInfo(peer.parse::<SocketAddr>().unwrap()));
+    app.clone().oneshot(req).await.unwrap().status()
+}
+
+#[tokio::test]
+async fn proxy_nao_configurado_nao_abre_o_painel_para_a_internet() {
+    let s = server("proxy-aberto").await;
+    // Acesso direto de localhost e da rede local: o painel abre.
+    assert_eq!(get_de(&s.app, "/admin/api/status", "127.0.0.1:5000", &[]).await, StatusCode::OK);
+    assert_eq!(get_de(&s.app, "/admin/api/status", "192.168.1.9:5000", &[]).await, StatusCode::OK);
+    // O nginx no mesmo PC encaminha um visitante da internet, e ninguém configurou RUSTYFIN_TRUSTED_PROXIES.
+    let de_fora = [("x-forwarded-for", "203.0.113.7")];
+    assert_eq!(get_de(&s.app, "/admin/api/status", "127.0.0.1:5000", &de_fora).await, StatusCode::FORBIDDEN);
+    // Forjar o cabeçalho a partir da rede local só piora a situação de quem forja.
+    assert_eq!(get_de(&s.app, "/admin/api/status", "192.168.1.9:5000", &[("x-real-ip", "192.168.1.1")]).await, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn proxy_confiavel_repassa_o_ip_real_do_cliente() {
+    let s = server_com("proxy-confiavel", |c| {
+        c.trusted_proxies = rustyfin::proxy::ler_lista("192.168.1.10, 172.16.0.0/12").0;
+    })
+    .await;
+    let proxy = "192.168.1.10:5000";
+    // Visitante da internet: sem painel.
+    assert_eq!(get_de(&s.app, "/admin/api/status", proxy, &[("x-forwarded-for", "203.0.113.7")]).await, StatusCode::FORBIDDEN);
+    // Mesmo com um IP "da rede local" forjado à esquerda, vale o que o proxy viu.
+    let forjado = [("x-forwarded-for", "192.168.1.1, 203.0.113.7")];
+    assert_eq!(get_de(&s.app, "/admin/api/status", proxy, &forjado).await, StatusCode::FORBIDDEN);
+    // Cliente da rede local que passa pelo proxy: o painel abre.
+    assert_eq!(get_de(&s.app, "/admin/api/status", proxy, &[("x-forwarded-for", "192.168.1.77")]).await, StatusCode::OK);
+    // O proxy confiável que não informa o cliente: falha fechada.
+    assert_eq!(get_de(&s.app, "/admin/api/status", proxy, &[("x-forwarded-proto", "https")]).await, StatusCode::FORBIDDEN);
+    // Quem não está na lista continua sem poder informar nada.
+    assert_eq!(
+        get_de(&s.app, "/admin/api/status", "192.168.1.99:5000", &[("x-forwarded-for", "192.168.1.77")]).await,
+        StatusCode::FORBIDDEN
+    );
+    // Acesso direto (sem proxy) segue funcionando.
+    assert_eq!(get_de(&s.app, "/admin/api/status", "127.0.0.1:5000", &[]).await, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn login_sem_senha_so_vale_para_a_rede_local_mesmo_atras_do_proxy() {
+    let s = server_com("proxy-login", |c| {
+        c.trusted_proxies = rustyfin::proxy::ler_lista("192.168.1.10").0;
+    })
+    .await;
+    let entrar = |cliente: &'static str| {
+        let app = s.app.clone();
+        async move {
+            let corpo = json!({ "Username": "Admin", "Pw": "" }).to_string();
+            let mut req = Request::builder()
+                .method(Method::POST)
+                .uri("/Users/AuthenticateByName")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::AUTHORIZATION, r#"MediaBrowser Client="t", Device="d", DeviceId="i", Version="1""#)
+                .header("x-forwarded-for", cliente)
+                .body(Body::from(corpo))
+                .unwrap();
+            req.extensions_mut().insert(ConnectInfo("192.168.1.10:5000".parse::<SocketAddr>().unwrap()));
+            app.oneshot(req).await.unwrap().status()
+        }
+    };
+    assert_eq!(entrar("192.168.1.30").await, StatusCode::OK, "da rede local, sem senha");
+    assert_ne!(entrar("203.0.113.7").await, StatusCode::OK, "da internet, o usuário sem senha não entra");
+}

@@ -25,6 +25,8 @@ pub struct AppConfig {
     pub admin_password: Option<String>,
     /// Endereço HTTP anunciado na descoberta (obrigatório na prática em Docker).
     pub public_url: Option<String>,
+    /// Proxies reversos (IPs ou redes) cujo `X-Forwarded-For` vale como o IP do cliente. Vazio = nenhum. Veja `proxy.rs`.
+    pub trusted_proxies: Vec<crate::proxy::Rede>,
     /// Executável do ffmpeg (miniaturas, remux e transcode).
     pub ffmpeg_path: String,
     /// Máximo de transcodificações simultâneas; `None` = automático (calculado pelo hardware na subida).
@@ -108,6 +110,12 @@ impl AppConfig {
             .ok()
             .map(|u| u.trim().to_string())
             .filter(|u| !u.is_empty());
+        let (trusted_proxies, invalidos) =
+            crate::proxy::ler_lista(&std::env::var("RUSTYFIN_TRUSTED_PROXIES").unwrap_or_default());
+        for erro in invalidos {
+            // Ignorar é o lado seguro: o servidor passa a confiar em menos proxies, nunca em mais.
+            eprintln!("RUSTYFIN_TRUSTED_PROXIES: entrada ignorada ({erro}).");
+        }
         let tmdb_api_key = std::env::var("TMDB_API_KEY")
             .ok()
             .map(|k| k.trim().to_string())
@@ -168,6 +176,7 @@ impl AppConfig {
             anonymous_images,
             admin_password,
             public_url,
+            trusted_proxies,
             ffmpeg_path,
             max_transcodes,
             video_encoder,
