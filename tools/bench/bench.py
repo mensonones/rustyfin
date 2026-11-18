@@ -541,6 +541,14 @@ def warm_cache(root, whole="Mandalor"):
     return out.strip(), round(time.time() - t0)
 
 
+def salvar(results, path):
+    """Grava o JSON de resultados de forma atômica: uma falha ou interrupção nunca deixa o arquivo pela metade."""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(results, fh, indent=1, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
 def run_system(kind, args, profile, results):
     port = 18096 if kind == "rustyfin" else 18097
     media = {args.media: "/media"}
@@ -549,24 +557,36 @@ def run_system(kind, args, profile, results):
         media[os.path.join(scale_root, str(n))] = f"/scale{n}"
     srv = Server(kind, port, profile, media)
     res = results.setdefault(profile, {}).setdefault(kind, {})
+    res.pop("erro_geral", None)
+
+    def put(key, value):
+        """Guarda um resultado e já grava o arquivo: o que foi medido sobrevive a uma falha posterior."""
+        res[key] = value
+        salvar(results, args.out)
+
+    def feito(key):
+        """Com --resume, um cenário já medido (sem erro) não é repetido."""
+        v = res.get(key)
+        return args.resume and v is not None and not (isinstance(v, dict) and "erro" in v)
+
     log(f"=== {kind} ({profile}) ===")
     img = {"rustyfin": RUSTYFIN_IMAGE, "jellyfin": "jellyfin/jellyfin:latest"}[kind]
-    res["A_imagem_mb"] = round(int(docker("image", "inspect", img, "--format", "{{.Size}}")) / 1e6)
+    put("A_imagem_mb", round(int(docker("image", "inspect", img, "--format", "{{.Size}}")) / 1e6))
 
     if not args.skip_warm:
         log("aquecendo o cache (dentro da VM do Docker)...")
         log(f"  cache aquecido: {warm_cache(args.media)}")
     # ---- A: pegada de recursos
     smp0 = Sampler(srv.name)
-    res["A_subida"] = srv.start(fresh=True)
+    put("A_subida", srv.start(fresh=True))
     smp0.start()
     srv.setup()
     wait_quiet(srv.name)
     smp0 = Sampler(srv.name)
     smp0.start()
     time.sleep(args.idle)
-    res["A_ocioso_vazio"] = smp0.finish()
-    res["A_restart_quente_s"] = srv.restart_time()
+    put("A_ocioso_vazio", smp0.finish())
+    put("A_restart_quente_s", srv.restart_time())
     srv.setup()
 
     # ---- B: biblioteca real
@@ -577,19 +597,18 @@ def run_system(kind, args, profile, results):
     visible = srv.wait_count(expected, t0, 600)
     idle = srv.wait_idle(t0, 600)
     st = smp.finish()
-    res["B_scan_inicial"] = {"arquivos": expected, "visivel_s": visible, "concluido_s": idle, "mem_mib_max": st["mem_mib_max"], "cpu_pct_max": st["cpu_pct_max"]}
+    put("B_scan_inicial", {"arquivos": expected, "visivel_s": visible, "concluido_s": idle, "mem_mib_max": st["mem_mib_max"], "cpu_pct_max": st["cpu_pct_max"]})
     log(f"scan inicial: visível={visible} concluído={idle}")
-    res["B_quieto_apos_scan_s"] = None
     tq = time.perf_counter()
     wait_quiet(srv.name)
-    res["B_quieto_apos_scan_s"] = time.perf_counter() - tq
+    put("B_quieto_apos_scan_s", time.perf_counter() - tq)
     smp = Sampler(srv.name)
     smp.start()
     time.sleep(args.idle)
-    res["A_ocioso_indexado"] = smp.finish()
+    put("A_ocioso_indexado", smp.finish())
     t0 = time.perf_counter()
     srv.refresh()
-    res["B_rescan_s"] = srv.wait_idle(t0, 300)
+    put("B_rescan_s", srv.wait_idle(t0, 300))
     item = srv.find_item("Mandalor") or srv.biggest_item()
     big = srv.biggest_item()
     c, v, _ = srv.http.req(srv.http.u(f"/Items/{item}?Fields=MediaSources"))
@@ -604,26 +623,33 @@ def run_system(kind, args, profile, results):
                     ("E_transcode_abr", lambda: scenario_transcode(srv, item, args.transcode_sessions[:1]) if kind == "rustyfin" else {})):
         if key[0] not in args.scenarios:
             continue
+        if feito(key):
+            log(f"cenário {key}: já medido, pulando (--resume)")
+            continue
         log(f"cenário {key}")
         smp = Sampler(srv.name)
         smp.start()
         try:
-            res[key] = fn()
+            valor = fn()
         except Exception as e:
-            res[key] = {"erro": str(e)[:200]}
+            valor = {"erro": str(e)[:200]}
             log(f"  falhou: {e}")
-        res[key + "_recursos"] = smp.finish()
+        res[key] = valor
+        put(key + "_recursos", smp.finish())
 
     # ---- F: estabilidade
-    if "F" in args.scenarios and args.soak_min > 0:
+    if "F" in args.scenarios and args.soak_min > 0 and not feito("F_soak"):
         log("cenário F (estabilidade)")
         try:
-            res["F_soak"] = scenario_soak(srv, item, args.soak_min)
+            put("F_soak", scenario_soak(srv, item, args.soak_min))
         except Exception as e:
-            res["F_soak"] = {"erro": str(e)[:200]}
+            put("F_soak", {"erro": str(e)[:200]})
     # ---- B (escala): um servidor novo (volume novo) por tamanho, para não herdar estado de outros cenários
     if "B" in args.scenarios:
         for n in args.scale:
+            if feito("B_escala") and str(n) in res["B_escala"] and "erro" not in res["B_escala"][str(n)]:
+                log(f"escala {n}: já medida, pulando (--resume)")
+                continue
             log(f"escala {n}")
             try:
                 srv.start(fresh=True)
@@ -651,6 +677,7 @@ def run_system(kind, args, profile, results):
                 res.setdefault("B_escala", {})[str(n)] = entry
             except Exception as e:
                 res.setdefault("B_escala", {})[str(n)] = {"erro": str(e)[:200]}
+            salvar(results, args.out)
     srv.stop()
 
 
@@ -670,6 +697,8 @@ def main():
     ap.add_argument("--skip-warm", action="store_true", help="não aquece o cache de arquivos antes de cada sistema")
     ap.add_argument("--rustyfin-image", default="rustyfin-rustyfin:latest", help="imagem do Rustyfin a medir (use uma tag fixa)")
     ap.add_argument("--out", default="resultados.json")
+    ap.add_argument("--resume", action="store_true",
+                    help="retoma: lê --out e não repete os cenários C a F e a escala que já foram medidos sem erro")
     args = ap.parse_args()
     global RUSTYFIN_IMAGE
     RUSTYFIN_IMAGE = args.rustyfin_image
@@ -679,7 +708,7 @@ def main():
     base = ensure_base_clip(os.path.join(args.workdir, "scale"))
     for n in args.scale:
         make_scale_dir(os.path.join(args.workdir, "scale", str(n)), n, base)
-    results = json.load(open(args.out)) if os.path.exists(args.out) else {}
+    results = json.load(open(args.out, encoding="utf-8")) if os.path.exists(args.out) else {}
     results["_meta"] = {"data": time.strftime("%Y-%m-%d %H:%M"), "docker_cpus": docker("info", "--format", "{{.NCPU}}"), "profile": PROFILES}
     for kind in args.systems.split(","):
         try:
@@ -688,7 +717,7 @@ def main():
             results.setdefault(args.profile, {}).setdefault(kind, {})["erro_geral"] = str(e)[:300]
             log(f"{kind} falhou: {e}")
             docker("rm", "-f", f"bench-{kind}", check=False)
-        json.dump(results, open(args.out, "w"), indent=1, ensure_ascii=False)
+        salvar(results, args.out)
     log(f"resultados em {args.out}")
 
 

@@ -34,8 +34,8 @@ sobe em segundos e usa **poucas dezenas de megabytes de memória**.
 | Direct Play, 1 stream | 185 MB/s | 78 MB/s |
 | Varredura de 1.000 arquivos numa pasta | 22 s | 413 s |
 
-> Medido em 17/11/2026 (Rustyfin v0.16.0, 4 CPUs, mesma biblioteca, sem metadados online). **O Jellyfin ainda ganha**
-> na transcodificação com várias sessões simultâneas. Números, metodologia, ressalvas e os pontos fracos em
+> Medido em 17/11/2026 (Rustyfin v0.16.0; transcodificação refeita na v0.17.4; 4 CPUs, mesma biblioteca, sem metadados
+> online). **O Jellyfin ainda ganha** na velocidade de transcodificação por sessão (20,5× contra 13,4× com 1 sessão). Números, metodologia, ressalvas e os pontos fracos em
 > [docs/desempenho.md](docs/desempenho.md).
 
 ## Recursos

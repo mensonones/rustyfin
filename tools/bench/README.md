@@ -17,6 +17,9 @@ python tools/bench/bench.py --profile restrito --rustyfin-image rustyfin-bench:v
     --media /caminho/da/biblioteca --scenarios CDE --scale "" --transcode-sessions 1 --reps 3 --soak-min 0 \
     --out tools/bench/results/restrito.json
 
+# Cada etapa é gravada em --out assim que termina. Se a execução cair ou for interrompida, retome com --resume
+# (repete só o que falta: cenários C a F e a escala que ainda não foram medidos sem erro).
+
 python tools/bench/report.py tools/bench/results/folgado.json tools/bench/results/restrito.json
 ```
 
