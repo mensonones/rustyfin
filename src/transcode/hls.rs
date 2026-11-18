@@ -71,6 +71,18 @@ async fn acquire_or_evict(map: &mut HashMap<String, HlsSession>) -> Result<Owned
     acquire_slot()
 }
 
+/// Encerramento do servidor: mata todos os ffmpeg das sessões HLS e apaga os diretórios de trabalho.
+pub async fn shutdown() {
+    let todas: Vec<HlsSession> = {
+        let mut map = sessions().lock().await;
+        map.drain().map(|(_, s)| s).collect()
+    };
+    for mut s in todas {
+        let _ = s.child.start_kill();
+        let _ = tokio::fs::remove_dir_all(&s.dir).await;
+    }
+}
+
 /// O app avisou que parou de assistir (`Sessions/Playing/Stopped`): encerra o ffmpeg e libera a vaga na hora.
 /// A receita fica guardada, então retomar a reprodução recria a sessão.
 pub async fn stop_play_session(play_session: &str) {

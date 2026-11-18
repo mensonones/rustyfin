@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     // Build API Router
-    let app = api::build_router(config.clone(), pool, scan_trigger);
+    let app = api::build_router(config.clone(), pool.clone(), scan_trigger);
 
     // Bind server to port 8096
     let bind_addr = format!("{}:{}", config.host, config.port);
@@ -58,7 +58,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("===========================================================");
     println!();
 
-    serve(listener, app).await
+    // `docker stop` e o systemd mandam SIGTERM: sem tratá-lo, o processo (PID 1 no container) o ignora e o
+    // Docker só o encerra com SIGKILL depois do prazo, o que atrasa todo reinício.
+    tokio::select! {
+        resultado = serve(listener, app) => resultado,
+        () = shutdown_signal() => {
+            info!("Sinal de encerramento recebido: parando as transcodificações e fechando o banco.");
+            transcode::shutdown().await;
+            // Encerra o SQLite (checkpoint do WAL) sem esperar para sempre por uma conexão presa.
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(2), pool.close()).await;
+            Ok(())
+        }
+    }
+}
+
+/// Espera SIGTERM ou SIGINT (Ctrl+C); fora do Unix, só o Ctrl+C.
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        match (signal(SignalKind::terminate()), signal(SignalKind::interrupt())) {
+            (Ok(mut term), Ok(mut int)) => {
+                tokio::select! {
+                    _ = term.recv() => {}
+                    _ = int.recv() => {}
+                }
+            }
+            _ => std::future::pending::<()>().await,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }
 
 /// Servidor HTTP com nomes de cabeçalho em `Title-Case` (como o Kestrel do Jellyfin): o hyper os envia
