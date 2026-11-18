@@ -67,6 +67,36 @@ O comparativo foi feito para achar pontos fracos, e estes foram corrigidos:
 > porque o *harness* contava 6 s por segmento e o Jellyfin usa segmentos de 3 s: ele baixava 18 s de vídeo e era
 > creditado com 36 s. O cálculo agora soma a duração real (`#EXTINF`) e os dois baixam a mesma quantidade de vídeo.
 
+## Perfil de release otimizado (v0.22.5)
+
+O `Cargo.toml` passou a compilar o binário final com `lto = "fat"`, `codegen-units = 1` e `strip = "symbols"`. Ficou de
+fora `panic = "abort"` de propósito: o Tokio isola o pânico de uma tarefa e o servidor segue de pé, e abortar derrubaria o
+processo inteiro. Medido em 18/11/2026, perfil folgado (4 CPUs, 4 GB), só o Rustyfin, a mesma biblioteca de 18 vídeos,
+**duas rodadas de cada imagem, alternadas** (base, otimizada, base, otimizada). Resultados em
+[`tools/bench/results/`](../tools/bench/results/) (`release-*.json`).
+
+| | Antes | Depois | Variação |
+|---|---|---|---|
+| Binário | 18,0 MB | **10,8 MB** | -40% |
+| Imagem Docker | 860 MB | **852 MB** | -8 MB |
+| API, 10 conexões, `UserViews` (req/s) | 2.309 | **2.685** | +16% |
+| API, 50 conexões, `Items?Recursive` (req/s) | 1.011 | **1.125** | +11% |
+| API, 50 conexões, `Latest` (req/s) | 687 | **773** | +13% |
+| API, 50 conexões, `UserViews` (req/s) | 2.295 | **2.526** | +10% |
+| API, 1 conexão (p50) | 1,4 a 2,1 ms | 1,4 a 2,0 ms | -1% a -3% |
+| Direct Play, 1 stream | 177 MB/s | 182 MB/s | +3% |
+| Transcodificação, 1 sessão (× tempo real) | 13,9× | 13,8× | sem mudança |
+| Memória em repouso (indexado) | 10,7 MiB | 10,7 MiB | sem mudança |
+| Subida e reinício a quente | 0,5 s e 0,6 s | 0,6 s e 0,6 s | sem mudança |
+
+O ganho é **modesto e concentrado na API sob concorrência**: a média das rotas com 10 e 50 conexões é de cerca de +7%, mas
+várias rotas ficam dentro do ruído entre as duas rodadas (`Items/{id}` e `Shows/Seasons` com 50 conexões variam menos de
+1%, com ruído de até 10%). A transcodificação não muda, porque quem trabalha é o `ffmpeg`, e a memória e a latência de uma
+conexão também não. O pico de memória medido pelo contêiner na varredura inicial (cgroup) oscilou entre as rodadas da
+imagem otimizada (204 e 319 MiB, contra 53 e 57 MiB), mas a memória residente do processo foi igual nas duas imagens
+(cerca de 12 MiB depois da varredura); o número do contêiner inclui o cache de arquivos e os processos `ffprobe`.
+O custo é uma compilação mais demorada.
+
 ## Por que o Rustyfin vai melhor
 
 - **Memória e imagem:** binário único em Rust, sem coleta de lixo e sem a pilha .NET.

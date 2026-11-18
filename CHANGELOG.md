@@ -5,6 +5,13 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.22.5] - 2026-11-18
+
+### Alterado
+- Perfil de release com LTO completa, uma unidade de geração de código e símbolos removidos: o binário caiu de 18,0 MB
+  para 10,8 MB e a API sob concorrência ganhou cerca de 7% em vazão (até 16% em algumas rotas). Transcodificação,
+  memória em repouso e subida não mudaram. Medição em [docs/desempenho.md](docs/desempenho.md#perfil-de-release-otimizado-v0225).
+
 ## [0.22.4] - 2026-11-18
 
 ### Corrigido
