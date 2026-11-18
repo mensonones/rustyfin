@@ -5,6 +5,8 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.25.3] - 2026-11-18
+
 ### Corrigido
 - O TMDB tenta novamente por IPv4 quando o curl encontra uma falha na negociação TLS, permitindo
   baixar metadados e capas em redes nas quais a rota IPv6 falha.
