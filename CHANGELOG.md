@@ -5,6 +5,17 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.26.0] - 2026-11-18
+
+### Adicionado
+- Setup do Windows: modo de **atualização e reparo**. Sobre uma instalação existente, o assistente mostra a versão instalada
+  e a nova, mantém a configuração, o banco e a porta sem perguntar de novo, e confere o ffmpeg configurado; só mostra a tela
+  do ffmpeg se ele não estiver configurado ou tiver sumido (sem o `ffprobe` também conta), e corrige apenas essa linha do
+  `rustyfin.env`. Reinstalar a mesma versão vira reparo; instalar uma mais antiga avisa. O teste do setup cobre o caso do
+  ffmpeg quebrado.
+- A versão aparece sempre no painel (ao lado da marca; o nome do servidor e a porta ficam no passa-mouse) e na bandeja
+  (no menu e no texto do passa-mouse). Antes, no painel, ela sumia em telas com menos de 1600 px.
+
 ## [0.25.5] - 2026-11-18
 
 ### Corrigido
