@@ -31,6 +31,7 @@ fn test_config(dir: &std::path::Path) -> AppConfig {
         discovery_enabled: false,
         anonymous_images: true,
         quick_connect: true,
+        trickplay: true,
         admin_password: None,
         public_url: None,
         trusted_proxies: Vec::new(),
@@ -995,5 +996,52 @@ async fn quick_connect_desligado_recusa_tudo_e_o_pedido_por_endereco_tem_limite(
     }
     let (status, _) = call(&s.app, Method::POST, "/QuickConnect/Initiate", None, None).await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn trickplay_aparece_no_item_e_as_folhas_so_com_login() {
+    let s = server("trickplay").await;
+    let pool = db::init_db(&test_config(&s.dir).database_url).await.unwrap();
+    let info = json!({ "320": { "Width": 320, "Height": 180, "TileWidth": 10, "TileHeight": 10,
+                                 "ThumbnailCount": 721, "Interval": 10000, "Bandwidth": 2000 } });
+    sqlx::query(
+        "INSERT INTO items (id, name, path, media_type, duration_ticks, trickplay_json) VALUES
+         ('ab12cd', 'Com miniaturas', '/m/a.mkv', 'Movie', 7200000000, ?),
+         ('ef34ab', 'Ainda sem', '/m/b.mkv', 'Movie', 7200000000, NULL),
+         ('cd56ef', 'Falhou', '/m/c.mkv', 'Movie', 7200000000, '{}')",
+    )
+    .bind(info.to_string())
+    .execute(&pool)
+    .await
+    .unwrap();
+    let pasta = s.dir.join("cache").join("trickplay").join("ab12cd").join("320");
+    std::fs::create_dir_all(&pasta).unwrap();
+    std::fs::write(pasta.join("0.jpg"), b"folha0").unwrap();
+    let token = login(&s.app, "Admin").await;
+
+    // O item anuncia as folhas por fonte de mídia (o ID do próprio item) e largura.
+    let (_, item) = call(&s.app, Method::GET, "/Items/ab12cd", Some(&token), None).await;
+    assert_eq!(item["Trickplay"]["ab12cd"]["320"]["ThumbnailCount"], 721);
+    assert_eq!(item["Trickplay"]["ab12cd"]["320"]["Interval"], 10000);
+    assert_eq!(item["MediaSources"][0]["Id"], "ab12cd", "a chave do Trickplay é o ID da fonte de mídia");
+    for id in ["ef34ab", "cd56ef"] {
+        let (_, v) = call(&s.app, Method::GET, &format!("/Items/{id}"), Some(&token), None).await;
+        assert!(v.get("Trickplay").is_none(), "{id}: sem folhas, nada a anunciar");
+    }
+
+    // A folha vem com login (cabeçalho ou api_key); folha ou nome inexistente é 404.
+    let (status, bytes) = corpo(&s.app, Method::GET, "/Videos/ab12cd/Trickplay/320/0.jpg", Some(&token), None).await;
+    assert_eq!((status, bytes.as_ref()), (StatusCode::OK, b"folha0".as_ref()));
+    let (status, _) = corpo(&s.app, Method::GET, &format!("/Videos/ab12cd/Trickplay/320/0.jpg?api_key={token}"), None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = corpo(&s.app, Method::GET, "/Videos/ab12cd/Trickplay/320/0.jpg", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    for rota in [
+        "/Videos/ab12cd/Trickplay/320/1.jpg", "/Videos/ab12cd/Trickplay/640/0.jpg", "/Videos/ab12cd/Trickplay/320/x.jpg",
+        "/Videos/ab12cd/Trickplay/320/0.png", "/Videos/ef34ab/Trickplay/320/0.jpg", "/Videos/naoexiste/Trickplay/320/0.jpg",
+    ] {
+        let (status, _) = corpo(&s.app, Method::GET, rota, Some(&token), None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{rota}");
+    }
 }
 

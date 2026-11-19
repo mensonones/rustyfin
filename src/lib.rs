@@ -22,4 +22,5 @@ pub mod scanner;
 pub mod settings;
 pub mod shutdown;
 pub mod transcode;
+pub mod trickplay;
 pub mod users;

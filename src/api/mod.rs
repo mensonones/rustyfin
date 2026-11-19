@@ -6,6 +6,7 @@ mod acervo_admin;
 mod preparos;
 mod quick_connect;
 mod segmentos;
+mod trickplay_rota;
 pub mod facets;
 pub mod images;
 pub mod items;
@@ -154,6 +155,7 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
         .route("/Videos/:id/stream", get(stream::stream_video).with_state(pool.clone()))
         .route("/Videos/:id/stream.:ext", get(stream::stream_video_with_ext).with_state(pool.clone()))
         .route("/Audio/:id/stream", get(stream::stream_audio).with_state(pool.clone()))
+        .route("/Videos/:id/Trickplay/:largura/:arquivo", get(trickplay_rota::folha).with_state(app_state_tuple.clone()))
         .route("/Videos/:id/:source/Subtitles/:index/Stream.:ext", get(subtitles::get_subtitle).with_state(app_state_tuple.clone()))
         .route("/Videos/:id/:source/Subtitles/:index/:start/Stream.:ext", get(subtitles::get_subtitle_from).with_state(app_state_tuple.clone()))
         // Administração (painel /admin e /Library/VirtualFolders*): só rede local

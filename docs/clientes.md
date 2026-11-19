@@ -13,7 +13,7 @@ que foi **efetivamente testado** e as particularidades de cada um.
 | **Findroid** | Android | Ainda sem validação em aparelho |
 | Simulador de cliente | `tools/client_probe.py` | 63 rotas do fluxo de um app (descoberta, login, tela inicial, biblioteca, detalhes, reprodução com `Range`, marcar assistido e favorito) |
 
-Rotas e recursos que o servidor não implementa (plugins, SyncPlay, DLNA, jogos, trickplay...) respondem com listas vazias
+Rotas e recursos que o servidor não implementa (plugins, SyncPlay, DLNA, jogos...) respondem com listas vazias
 ou `404`, que os apps tratam sem erro. `Moonfin/*` e `Plugins/*` retornam `404` de propósito, pois o plugin de servidor
 não está instalado.
 

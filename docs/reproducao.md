@@ -204,6 +204,24 @@ Elas se editam no painel (`/admin` → **Usuários** → **Permissões**) ou no 
 Os idiomas valem por equivalência: `pt`, `pt-BR`, `por` e `pob` são o mesmo, assim como `ja` e `jpn`, `en` e `eng`. Quem não
 escolheu nada nas bibliotecas de [anime](anime.md) recebe áudio japonês e legenda em português (Inteligente).
 
+## Miniaturas ao avançar (trickplay)
+
+Ao arrastar a barra de progresso, os apps do Jellyfin mostram a cena de cada posição. O Rustyfin gera essas miniaturas
+sozinho: **uma a cada 10 segundos**, de 320 pixels de largura, em folhas de 10 x 10 miniaturas (JPEG), guardadas em
+`<cache>/trickplay/<id>/320/`. Os detalhes do item as anunciam em `Trickplay`, e as folhas saem em
+`GET /Videos/{id}/Trickplay/320/{n}.jpg`.
+
+- **Em segundo plano e sem atrapalhar quem assiste:** depois de cada varredura, o servidor gera os títulos pendentes, **um por
+  vez**, com uma thread do ffmpeg (só quadros-chave, o que é rápido), e **espera enquanto houver sessão de transcodificação**.
+  O mais novo primeiro. Um filme de duas horas leva de segundos a poucos minutos, conforme o formato.
+- **Só aparecem quando prontas:** um título sem folhas não anuncia `Trickplay`, e o app não mostra a prévia. Vídeos com menos de
+  dois minutos não ganham miniaturas.
+- **Sempre em sincronia com o arquivo:** se o arquivo é trocado (tamanho ou duração diferentes), as folhas são apagadas e
+  refeitas; se só mudou de pasta, são mantidas. Pastas de títulos que deixaram de existir são limpas.
+- **Espaço:** cerca de 3 a 8 MB por hora de vídeo, conforme o conteúdo. `RUSTYFIN_TRICKPLAY=0` desliga a geração.
+- Um título em que o ffmpeg falhou (ou sem vídeo) fica sem miniaturas até o arquivo mudar; o motivo aparece no log como
+  "Miniaturas de avanço ... não geradas".
+
 ## Capítulos e pular abertura e créditos
 
 O Rustyfin lê os capítulos do arquivo (MKV e MP4 com capítulos) na varredura e os entrega nos detalhes do item. Quando o

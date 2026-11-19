@@ -24,6 +24,7 @@ O `userId` que algumas rotas trazem no caminho é ignorado: vale sempre o usuár
 | `GET /Branding/Configuration`, `GET /Branding/Css` | Públicas |
 | `GET /QuickConnect/Enabled` | `true`, ou `false` com `RUSTYFIN_QUICK_CONNECT=0` |
 | `POST /QuickConnect/Initiate`, `GET /QuickConnect/Connect?secret=` | Sem login: o app pede um código (`Code`, `Secret`) e consulta até `Authenticated` ficar verdadeiro. Os pedidos valem 10 minutos; no máximo 5 por endereço (`429`) e 100 no total (`503`) |
+| `GET /Videos/{id}/Trickplay/{largura}/{n}.jpg` | Folha `n` (a partir de 0) das miniaturas ao avançar, JPEG, com login (cabeçalho ou `api_key`). `404` se o título ainda não tem folhas. Os detalhes do item as anunciam em `Trickplay` (`Width`, `Height`, `TileWidth`, `TileHeight`, `ThumbnailCount`, `Interval`, `Bandwidth`, por ID da fonte de mídia e largura) |
 | `POST /QuickConnect/Authorize?code=&userId=` | Com login: autoriza o código para o próprio usuário, ou para outro (`userId`) se for administrador. Código desconhecido ou vencido: `404` |
 | `POST /Users/AuthenticateWithQuickConnect` | Corpo `{ "Secret": "..." }`: troca o segredo autorizado por um token (uso único; sem autorização, `401`) |
 | `GET /socket` | WebSocket aceito; as mensagens são ignoradas |

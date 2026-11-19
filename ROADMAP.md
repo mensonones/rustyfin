@@ -182,8 +182,10 @@ quem só quer assistir. Cada item é uma versão própria, com testes, documenta
   controle remoto. O painel também autoriza. Ainda falta confirmar a tela de Quick Connect no Moonfin.
 
 ### 4. Miniaturas ao avançar (trickplay)
-- [ ] Gerar quadros em grade com o ffmpeg, em segundo plano e com o servidor ocioso (como as versões preparadas), e expor
-  `TrickplayInfo` e `/Videos/{id}/Trickplay/{largura}/{n}.jpg`.
+- [x] Quadros em grade (10 x 10 miniaturas de 320 px, uma a cada 10 s) gerados pelo ffmpeg em segundo plano, um título por vez
+  e só sem transcodificações; `Trickplay` nos detalhes do item e `/Videos/{id}/Trickplay/{largura}/{n}.jpg`. Refeitas
+  quando o arquivo muda. Ainda falta confirmar a prévia num app (Moonfin, Android TV oficial).
+- [ ] Outras larguras (por exemplo 160 px para a TV) e intervalo configurável.
 
 ### 5. Depois
 - [ ] Playlists e coleções (`/Playlists`, `BoxSet`).

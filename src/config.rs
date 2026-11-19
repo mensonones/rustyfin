@@ -23,6 +23,8 @@ pub struct AppConfig {
     pub anonymous_images: bool,
     /// Quick Connect: entrar num app com um código autorizado por um aparelho já logado (`RUSTYFIN_QUICK_CONNECT=0` desliga).
     pub quick_connect: bool,
+    /// Miniaturas ao avançar (trickplay), geradas em segundo plano (`RUSTYFIN_TRICKPLAY=0` desliga).
+    pub trickplay: bool,
     /// Se definida, o painel `/admin` exige essa senha (HTTP Basic, qualquer usuário).
     pub admin_password: Option<String>,
     /// Endereço HTTP anunciado na descoberta (obrigatório na prática em Docker).
@@ -107,6 +109,8 @@ impl AppConfig {
             .map_or(true, |v| !matches!(v.trim().to_lowercase().as_str(), "0" | "false" | "no" | "off"));
         let quick_connect = std::env::var("RUSTYFIN_QUICK_CONNECT")
             .map_or(true, |v| !matches!(v.trim().to_lowercase().as_str(), "0" | "false" | "no" | "off"));
+        let trickplay = std::env::var("RUSTYFIN_TRICKPLAY")
+            .map_or(true, |v| !matches!(v.trim().to_lowercase().as_str(), "0" | "false" | "no" | "off"));
         let admin_password = std::env::var("RUSTYFIN_ADMIN_PASSWORD")
             .ok()
             .filter(|p| !p.is_empty());
@@ -179,6 +183,7 @@ impl AppConfig {
             discovery_enabled,
             anonymous_images,
             quick_connect,
+            trickplay,
             admin_password,
             public_url,
             trusted_proxies,

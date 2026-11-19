@@ -669,7 +669,10 @@ async fn process_media_file(
             modified_at = excluded.modified_at,
             probed = excluded.probed,
             streams_json = excluded.streams_json,
-            chapters_json = excluded.chapters_json
+            chapters_json = excluded.chapters_json,
+            trickplay_json = CASE
+                WHEN items.size_bytes = excluded.size_bytes AND items.duration_ticks = excluded.duration_ticks
+                THEN items.trickplay_json ELSE NULL END
         ",
     )
     .bind(&item_id)

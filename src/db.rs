@@ -117,6 +117,8 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
             .fetch_optional(&pool)
             .await?;
     add_column_if_missing(&pool, "items", "chapters_json", "TEXT").await?;
+    // Miniaturas ao avançar: JSON por largura; NULL = ainda não geradas; `{}` = sem miniaturas (falhou ou não há vídeo).
+    add_column_if_missing(&pool, "items", "trickplay_json", "TEXT").await?;
     if tinha_capitulos.is_none() {
         sqlx::query("UPDATE items SET probed = 0 WHERE probed = 1").execute(&pool).await?;
     }

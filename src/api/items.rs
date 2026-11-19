@@ -102,6 +102,7 @@ struct DbItemRow {
     audio_codec: Option<String>,
     streams_json: Option<String>,
     chapters_json: Option<String>,
+    trickplay_json: Option<String>,
     subtitle_path: Option<String>,
     modified_at: i64,
     poster_path: Option<String>,
@@ -127,7 +128,7 @@ struct DbItemRow {
 const SELECT_ITEM: &str = r"
     SELECT
         i.id, i.name, i.path, i.media_type, i.container, i.duration_ticks, i.size_bytes,
-        i.width, i.height, i.video_codec, i.audio_codec, i.streams_json, i.chapters_json, i.subtitle_path,
+        i.width, i.height, i.video_codec, i.audio_codec, i.streams_json, i.chapters_json, i.trickplay_json, i.subtitle_path,
         i.modified_at,
         COALESCE(i.poster_path, i.tmdb_poster) AS poster_path,
         COALESCE(i.backdrop_path, i.tmdb_backdrop) AS backdrop_path,
@@ -739,7 +740,7 @@ fn map_db_item_to_dto(config: &AppConfig, row: DbItemRow) -> BaseItemDto {
     let played = row.is_played.unwrap_or(false);
     let extra_json = row.extra.clone();
     let mut dto = BaseItemDto {
-        id: row.id,
+        id: row.id.clone(),
         name: display_name,
         original_title: None,
         server_id: config.server_id.clone(),
@@ -762,6 +763,7 @@ fn map_db_item_to_dto(config: &AppConfig, row: DbItemRow) -> BaseItemDto {
         media_sources: Some(vec![media_source]),
         media_streams: Some(streams),
         chapters: capitulos_do_item(row.chapters_json.as_deref()),
+        trickplay: crate::trickplay::anuncio(&row.id, row.trickplay_json.as_deref()),
         image_tags,
         backdrop_image_tags,
         production_year: row.production_year,

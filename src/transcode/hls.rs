@@ -102,6 +102,11 @@ async fn acquire_or_evict(map: &mut HashMap<String, HlsSession>) -> Result<Owned
     acquire_slot()
 }
 
+/// Quantas sessões HLS existem agora (uma sessão ociosa dura alguns segundos depois do último pedido).
+pub async fn sessoes_hls_ativas() -> usize {
+    sessions().lock().await.len()
+}
+
 /// Encerramento do servidor: mata todos os ffmpeg das sessões HLS e apaga os diretórios de trabalho.
 pub async fn shutdown() {
     let todas: Vec<HlsSession> = {

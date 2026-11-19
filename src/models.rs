@@ -109,6 +109,9 @@ pub struct BaseItemDto {
     /// Capítulos do arquivo, quando ele os tem.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chapters: Option<Vec<ChapterInfo>>,
+    /// Miniaturas ao avançar: ID da fonte de mídia, largura e a descrição das folhas.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trickplay: Option<std::collections::HashMap<String, std::collections::HashMap<String, crate::trickplay::Info>>>,
     pub image_tags: HashMap<String, String>,
     pub backdrop_image_tags: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

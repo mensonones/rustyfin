@@ -146,6 +146,15 @@ pub fn spawn_autoscan(pool: DbPool, config: Arc<AppConfig>, trigger: ScanTrigger
                     HASHING.store(false, Ordering::Release);
                 });
             }
+            // Miniaturas ao avançar (trickplay): uma por vez, só com o servidor sem transcodificações.
+            static MINIATURAS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if config.trickplay && !MINIATURAS.swap(true, Ordering::AcqRel) {
+                let (pool_t, cache) = (pool.clone(), config.cache_dir.clone());
+                tokio::spawn(async move {
+                    crate::trickplay::gerar_pendentes(&pool_t, &cache).await;
+                    MINIATURAS.store(false, Ordering::Release);
+                });
+            }
             // Miniaturas/backdrops dos itens sem arte: prontos antes do 1º acesso (em segundo plano).
             tokio::spawn(crate::api::images::pregenerate(pool.clone(), config.clone()));
             LAST_FILES.store(files, Ordering::Relaxed);
