@@ -5,6 +5,18 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.31.0] - 2026-11-19
+
+### Adicionado
+- **Capítulos do arquivo.** A varredura lê os capítulos (nome e início) e os detalhes do item os trazem em `Chapters`. Os
+  títulos já indexados são inspecionados de novo, uma única vez, para lê-los.
+- **Pular abertura e créditos.** `GET /MediaSegments/{id}` devolve `Intro`, `Outro`, `Recap` e `Preview` quando o nome do
+  capítulo indica (`Intro`, `Opening`, `Abertura`, `OP`, `Credits`, `Créditos`, `Ending`, `ED`, `Recap`, `Previously`...),
+  com filtro por `includeSegmentTypes`. Os apps do Jellyfin com suporte a segmentos mostram o botão de pular. Antes, a rota
+  respondia sempre vazio. Arquivos sem capítulos nomeados não têm segmento; a detecção pelo áudio vem depois.
+- [ROADMAP](ROADMAP.md): prioridades da fase de reprodução (segmentos, preferências de áudio e legenda, Quick Connect,
+  miniaturas ao avançar e o que vem depois).
+
 ## [0.30.0] - 2026-11-19
 
 ### Removido
