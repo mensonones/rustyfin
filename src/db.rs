@@ -74,6 +74,14 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
         DROP TABLE IF EXISTS cenas_legenda;
         DROP TABLE IF EXISTS cenas_fontes;
 
+        CREATE TABLE IF NOT EXISTS user_playback_prefs (
+            user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            audio_language TEXT,
+            play_default_audio BOOLEAN NOT NULL DEFAULT 1,
+            subtitle_language TEXT,
+            subtitle_mode TEXT NOT NULL DEFAULT 'Default'
+        );
+
         CREATE TABLE IF NOT EXISTS versoes_preparadas (
             chave TEXT PRIMARY KEY,
             item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,

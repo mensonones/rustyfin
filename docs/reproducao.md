@@ -185,6 +185,25 @@ Progresso, "assistido", favoritos e contagem de reproduções são gravados **po
 `Sessions/Playing`, `.../Progress` e `.../Stopped`. Um item é dado como assistido ao passar de 90% da duração.
 
 
+## Idioma do áudio e da legenda
+
+Cada usuário pode ter **preferências de idioma**, que o servidor aplica ao iniciar a reprodução, indicando ao app as faixas
+`DefaultAudioStreamIndex` e `DefaultSubtitleStreamIndex` (o app pode ignorar a indicação se o usuário escolher outra faixa).
+Elas se editam no painel (`/admin` → **Usuários** → **Permissões**) ou no próprio app, em **Configurações → Reprodução**
+(quem grava `UserConfiguration`: o app Jellyfin e os clientes baseados nele).
+
+| Opção | Efeito |
+|---|---|
+| Idioma do áudio + desligar "tocar a faixa padrão" | A primeira faixa de áudio nesse idioma. Com "tocar a faixa padrão" ligada (o padrão do Jellyfin), o idioma não manda e vale a faixa padrão do arquivo |
+| Legendas: **Padrão do arquivo** | O servidor não indica nada; vale a faixa padrão ou forçada do arquivo |
+| Legendas: **Inteligente** | Legenda no idioma escolhido só quando o áudio que vai tocar é de outro idioma; com o áudio já nesse idioma, nenhuma |
+| Legendas: **Só as forçadas** | Só a legenda forçada (falas em outro idioma), de preferência no idioma escolhido |
+| Legendas: **Sempre** | Sempre uma legenda, de preferência a completa no idioma escolhido |
+| Legendas: **Nunca** | Nenhuma legenda |
+
+Os idiomas valem por equivalência: `pt`, `pt-BR`, `por` e `pob` são o mesmo, assim como `ja` e `jpn`, `en` e `eng`. Quem não
+escolheu nada nas bibliotecas de [anime](anime.md) recebe áudio japonês e legenda em português (Inteligente).
+
 ## Capítulos e pular abertura e créditos
 
 O Rustyfin lê os capítulos do arquivo (MKV e MP4 com capítulos) na varredura e os entrega nos detalhes do item. Quando o

@@ -72,6 +72,8 @@ pub struct User {
     pub avatar: Option<String>,
     /// IDs das bibliotecas permitidas (só relevante se `all_libraries` for falso).
     pub libraries: Vec<String>,
+    /// Idioma do áudio e da legenda preferidos.
+    pub prefs: crate::preferencias::Preferencias,
 }
 
 /// Usuário autenticado numa requisição.
@@ -190,15 +192,66 @@ pub fn limiter_ok(key: &str) {
 
 type UserRow = (String, String, Option<String>, bool, bool, bool, Option<String>);
 
+type PrefsRow = (String, Option<String>, bool, Option<String>, String);
+
+fn prefs_da_linha(r: &PrefsRow) -> crate::preferencias::Preferencias {
+    crate::preferencias::Preferencias {
+        idioma_audio: r.1.clone(),
+        tocar_faixa_padrao: r.2,
+        idioma_legenda: r.3.clone(),
+        modo_legenda: crate::preferencias::ModoLegenda::de_nome(&r.4).unwrap_or_default(),
+    }
+}
+
+/// As preferências de reprodução de um usuário (as padrão quando ele nunca escolheu nada).
+pub async fn preferencias(pool: &DbPool, id: &str) -> Result<crate::preferencias::Preferencias, sqlx::Error> {
+    let linha: Option<PrefsRow> = sqlx::query_as(
+        "SELECT user_id, audio_language, play_default_audio, subtitle_language, subtitle_mode
+         FROM user_playback_prefs WHERE user_id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(linha.as_ref().map(prefs_da_linha).unwrap_or_default())
+}
+
+pub async fn salvar_preferencias(
+    pool: &DbPool,
+    id: &str,
+    p: &crate::preferencias::Preferencias,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO user_playback_prefs (user_id, audio_language, play_default_audio, subtitle_language, subtitle_mode)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET audio_language = excluded.audio_language,
+            play_default_audio = excluded.play_default_audio, subtitle_language = excluded.subtitle_language,
+            subtitle_mode = excluded.subtitle_mode",
+    )
+    .bind(id)
+    .bind(&p.idioma_audio)
+    .bind(p.tocar_faixa_padrao)
+    .bind(&p.idioma_legenda)
+    .bind(p.modo_legenda.nome())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 const USER_COLS: &str = "id, name, password_hash, is_admin, is_disabled, all_libraries, avatar";
 
 async fn build_users(pool: &DbPool, rows: Vec<UserRow>) -> Result<Vec<User>, sqlx::Error> {
     let access: Vec<(String, String)> =
         sqlx::query_as("SELECT user_id, library_id FROM user_libraries").fetch_all(pool).await?;
+    let prefs: Vec<PrefsRow> = sqlx::query_as(
+        "SELECT user_id, audio_language, play_default_audio, subtitle_language, subtitle_mode FROM user_playback_prefs",
+    )
+    .fetch_all(pool)
+    .await?;
     Ok(rows
         .into_iter()
         .map(|(id, name, hash, is_admin, is_disabled, all_libraries, avatar)| User {
             libraries: access.iter().filter(|(u, _)| *u == id).map(|(_, l)| l.clone()).collect(),
+            prefs: prefs.iter().find(|p| p.0 == id).map(prefs_da_linha).unwrap_or_default(),
             id,
             name,
             has_password: hash.is_some(),

@@ -805,3 +805,82 @@ async fn segmentos_de_pular_vem_dos_capitulos_e_os_detalhes_trazem_os_capitulos(
     assert!(sem.get("Chapters").is_none());
 }
 
+#[tokio::test]
+async fn preferencias_de_audio_e_legenda_viram_as_faixas_padrao_do_playback_info() {
+    use rustyfin::models::MediaStream;
+    let s = server("preferencias").await;
+    let pool = db::init_db(&test_config(&s.dir).database_url).await.unwrap();
+    let faixa = |tipo: &str, index: i32, idioma: &str, padrao: bool| MediaStream {
+        language: Some(idioma.to_string()),
+        is_default: padrao,
+        ..MediaStream::basic(if tipo == "Subtitle" { "subrip" } else { "aac" }, tipo, index)
+    };
+    let streams = serde_json::to_string(&vec![
+        MediaStream::basic("h264", "Video", 0),
+        faixa("Audio", 1, "eng", true),
+        faixa("Audio", 2, "por", false),
+        faixa("Subtitle", 3, "eng", false),
+        faixa("Subtitle", 4, "por", false),
+    ])
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO items (id, name, path, media_type, container, video_codec, audio_codec, streams_json)
+         VALUES ('f', 'Filme', '/m/f.mp4', 'Movie', 'mp4', 'h264', 'aac', ?)",
+    )
+    .bind(streams)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let token = login(&s.app, "Admin").await;
+    let perfil = json!({ "DeviceProfile": { "DirectPlayProfiles": [
+        { "Type": "Video", "Container": "mp4", "VideoCodec": "h264", "AudioCodec": "aac" }
+    ] } });
+    let indices = |v: &Value| (v["MediaSources"][0]["DefaultAudioStreamIndex"].clone(), v["MediaSources"][0]["DefaultSubtitleStreamIndex"].clone());
+
+    // Sem preferências: o servidor não indica nada, e o app segue o arquivo.
+    let (_, v) = call(&s.app, Method::POST, "/Items/f/PlaybackInfo", Some(&token), Some(perfil.clone())).await;
+    assert_eq!(indices(&v), (Value::Null, Value::Null));
+
+    // Valores inválidos são recusados e nada muda.
+    for corpo in [json!({ "SubtitleMode": "Sempre" }), json!({ "AudioLanguagePreference": "portugues" })] {
+        let (status, _) = call(&s.app, Method::POST, "/Users/Configuration", Some(&token), Some(corpo)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    // O app grava as preferências (o objeto UserConfiguration do Jellyfin); a leitura devolve o que foi salvo.
+    let (status, _) = call(
+        &s.app, Method::POST, "/Users/Configuration", Some(&token),
+        Some(json!({ "AudioLanguagePreference": "pt-BR", "PlayDefaultAudioTrack": false,
+                     "SubtitleLanguagePreference": "eng", "SubtitleMode": "Always", "DisplayMissingEpisodes": true })),
+    ).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, eu) = call(&s.app, Method::GET, "/Users/Me", Some(&token), None).await;
+    assert_eq!(eu["Configuration"]["AudioLanguagePreference"], "pt-br");
+    assert_eq!(eu["Configuration"]["PlayDefaultAudioTrack"], false);
+    assert_eq!(eu["Configuration"]["SubtitleMode"], "Always");
+    let (_, v) = call(&s.app, Method::POST, "/Items/f/PlaybackInfo", Some(&token), Some(perfil.clone())).await;
+    assert_eq!(indices(&v), (json!(2), json!(3)), "áudio em português e legenda em inglês");
+
+    // Pelo painel: legenda inteligente em português com o áudio original (inglês, a faixa padrão).
+    let id = eu["Id"].as_str().unwrap();
+    let (status, _) = call(
+        &s.app, Method::POST, &format!("/admin/api/users/{id}/playback"), None,
+        Some(json!({ "audioLanguage": "", "playDefaultAudio": true, "subtitleLanguage": "por", "subtitleMode": "Smart" })),
+    ).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, v) = call(&s.app, Method::POST, "/Items/f/PlaybackInfo", Some(&token), Some(perfil.clone())).await;
+    assert_eq!(indices(&v), (Value::Null, json!(4)));
+    let (_, lista) = call(&s.app, Method::GET, "/admin/api/users", None, None).await;
+    let admin = lista.as_array().unwrap().iter().find(|u| u["id"] == id).unwrap();
+    assert_eq!((admin["subtitleMode"].clone(), admin["subtitleLanguage"].clone()), (json!("Smart"), json!("por")));
+
+    // Outro usuário não altera as preferências de quem não é ele (a não ser um administrador).
+    let (_, novo) = call(&s.app, Method::POST, "/Users/New", Some(&token), Some(json!({ "Name": "Visita" }))).await;
+    let visita = login(&s.app, "Visita").await;
+    let alvo = novo["Id"].as_str().unwrap();
+    let (status, _) = call(&s.app, Method::POST, &format!("/Users/{id}/Configuration"), Some(&visita), Some(json!({ "SubtitleMode": "None" }))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = call(&s.app, Method::POST, &format!("/Users/{alvo}/Configuration"), Some(&visita), Some(json!({ "SubtitleMode": "None" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+

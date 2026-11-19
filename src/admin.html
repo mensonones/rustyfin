@@ -678,6 +678,21 @@
     <label class="check"><input id="permDisabled" type="checkbox"> Conta desativada (não consegue entrar)</label>
     <label class="check"><input id="permAll" type="checkbox"> Acesso a todas as bibliotecas</label>
     <div id="permLibs"></div>
+    <h3 style="margin-top: 24px">Áudio e legenda</h3>
+    <p class="hint">O servidor indica essas faixas aos apps ao iniciar a reprodução. Sem nenhuma escolha, os animes usam áudio japonês e legenda em português.</p>
+    <label for="prefAudio">Idioma do áudio</label>
+    <select id="prefAudio"><option value="">Do arquivo</option><option value="por">Português</option><option value="eng">Inglês</option><option value="jpn">Japonês</option><option value="spa">Espanhol</option><option value="fre">Francês</option><option value="ger">Alemão</option><option value="ita">Italiano</option><option value="kor">Coreano</option><option value="zho">Chinês</option><option value="rus">Russo</option></select>
+    <label class="check"><input id="prefPadrao" type="checkbox"> Tocar a faixa de áudio padrão do arquivo, mesmo que o idioma escolhido exista</label>
+    <label for="prefLegenda">Idioma da legenda</label>
+    <select id="prefLegenda"><option value="">Nenhum</option><option value="por">Português</option><option value="eng">Inglês</option><option value="jpn">Japonês</option><option value="spa">Espanhol</option><option value="fre">Francês</option><option value="ger">Alemão</option><option value="ita">Italiano</option><option value="kor">Coreano</option><option value="zho">Chinês</option><option value="rus">Russo</option></select>
+    <label for="prefModo">Legendas</label>
+    <select id="prefModo">
+      <option value="Default">Padrão do arquivo (faixa padrão ou forçada)</option>
+      <option value="Smart">Inteligente (só quando o áudio é de outro idioma)</option>
+      <option value="OnlyForced">Só as forçadas</option>
+      <option value="Always">Sempre</option>
+      <option value="None">Nunca</option>
+    </select>
   </div>
   <div class="foot">
     <button class="btn" id="permCancel">Cancelar</button>
@@ -1148,10 +1163,18 @@ $('passSave').onclick = () => act(async () => {
 }, 'Senha atualizada.');
 
 let permUser = null;
+// Seleciona o valor; um código fora da lista (como pt-br) ganha uma opção própria.
+function escolherOpcao(select, valor) {
+  const v = valor || '';
+  if (![...select.options].some((o) => o.value === v)) select.append(opcao(v, v));
+  select.value = v;
+}
 function editPerms(u) {
   permUser = u;
   $('permTitle').textContent = 'Permissões de ' + u.name;
   $('permAdmin').checked = u.isAdmin; $('permDisabled').checked = u.isDisabled; $('permAll').checked = u.allLibraries;
+  escolherOpcao($('prefAudio'), u.audioLanguage); escolherOpcao($('prefLegenda'), u.subtitleLanguage);
+  $('prefPadrao').checked = u.playDefaultAudio; $('prefModo').value = u.subtitleMode || 'Default';
   const box = $('permLibs'); box.replaceChildren();
   allLibs.forEach((l) => {
     const cb = el('input', { type: 'checkbox', value: l.Id, checked: u.libraries.includes(l.Id) });
@@ -1166,6 +1189,10 @@ $('permSave').onclick = () => act(async () => {
   await api('POST', '/admin/api/users/' + permUser.id + '/policy', {
     isAdmin: $('permAdmin').checked, isDisabled: $('permDisabled').checked, allLibraries: $('permAll').checked,
     libraries: [...$('permLibs').querySelectorAll('input:checked')].map((i) => i.value),
+  });
+  await api('POST', '/admin/api/users/' + permUser.id + '/playback', {
+    audioLanguage: $('prefAudio').value, playDefaultAudio: $('prefPadrao').checked,
+    subtitleLanguage: $('prefLegenda').value, subtitleMode: $('prefModo').value,
   });
   $('permDialog').close();
   await loadUsers();

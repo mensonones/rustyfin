@@ -63,6 +63,8 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
         )
         .route("/Users/:user_id/Password", post(auth::change_password).with_state(app_state_tuple.clone()))
         .route("/Users/:user_id/Policy", post(auth::update_policy).with_state(app_state_tuple.clone()))
+        .route("/Users/Configuration", post(auth::update_configuration_me).with_state(app_state_tuple.clone()))
+        .route("/Users/:user_id/Configuration", post(auth::update_configuration).with_state(app_state_tuple.clone()))
         .route("/Users/Me", get(auth::get_current_user).with_state(app_state_tuple.clone()))
         // 3. Views & Libraries
         .route("/Users/:user_id/Views", get(views::get_user_views).with_state(app_state_tuple.clone()))

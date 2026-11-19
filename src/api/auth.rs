@@ -243,8 +243,10 @@ pub fn user_dto(config: &AppConfig, u: &User) -> UserDto {
         has_configured_easy_password: false,
         enable_auto_login: !u.has_password,
         configuration: UserConfiguration {
-            play_default_audio_track: true,
-            subtitle_language_preference: None,
+            audio_language_preference: u.prefs.idioma_audio.clone(),
+            play_default_audio_track: u.prefs.tocar_faixa_padrao,
+            subtitle_language_preference: u.prefs.idioma_legenda.clone(),
+            subtitle_mode: u.prefs.modo_legenda.nome().to_string(),
             display_missing_episodes: false,
         },
         policy: UserPolicy {
@@ -457,6 +459,51 @@ pub async fn update_policy(
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => user_error_response(e),
     }
+}
+
+/// Aplica o corpo de `POST /Users/Configuration` (o objeto `UserConfiguration` do Jellyfin) às preferências do usuário.
+async fn salvar_configuracao(pool: &DbPool, alvo: &str, corpo: &Value) -> Response {
+    let chaves = ["AudioLanguagePreference", "PlayDefaultAudioTrack", "SubtitleLanguagePreference", "SubtitleMode"];
+    let atual = match users::preferencias(pool, alvo).await {
+        Ok(p) => p,
+        Err(e) => return db_error(e),
+    };
+    let nova = match crate::preferencias::aplicar_json(&atual, corpo, chaves) {
+        Ok(p) => p,
+        Err(mensagem) => return (StatusCode::BAD_REQUEST, mensagem).into_response(),
+    };
+    match users::get(pool, alvo).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return db_error(e),
+    }
+    match users::salvar_preferencias(pool, alvo, &nova).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => db_error(e),
+    }
+}
+
+/// `POST /Users/Configuration`: as preferências do próprio usuário (idioma do áudio e da legenda, modo da legenda).
+pub async fn update_configuration_me(
+    State((_, pool)): State<AppState>,
+    CurrentUser(me): CurrentUser,
+    Json(body): Json<Value>,
+) -> Response {
+    salvar_configuracao(&pool, &me.id, &body).await
+}
+
+/// `POST /Users/{id}/Configuration`: o próprio usuário ou um administrador.
+pub async fn update_configuration(
+    State((_, pool)): State<AppState>,
+    CurrentUser(me): CurrentUser,
+    Path(id): Path<String>,
+    Json(body): Json<Value>,
+) -> Response {
+    let id = normalize(&id);
+    if id != me.id && !me.is_admin {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    salvar_configuracao(&pool, &id, &body).await
 }
 
 /// `POST /Users/{id}/Password` com `{ CurrentPw, NewPw, ResetPassword }`.

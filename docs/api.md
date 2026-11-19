@@ -37,6 +37,7 @@ O `userId` que algumas rotas trazem no caminho é ignorado: vale sempre o usuár
 | `POST /Users/New`, `DELETE /Users/{id}` | Só administradores |
 | `POST /Users/{id}/Password` | Troca de senha |
 | `POST /Users/{id}/Policy` | Política (`IsAdministrator`, `IsDisabled`, `IsHidden`, `EnableAllFolders`, `EnabledFolders`) |
+| `POST /Users/Configuration`, `POST /Users/{id}/Configuration` | Preferências de reprodução: `AudioLanguagePreference`, `PlayDefaultAudioTrack`, `SubtitleLanguagePreference` e `SubtitleMode` (`Default`, `Smart`, `OnlyForced`, `Always` ou `None`). A primeira é do próprio usuário; a segunda, dele ou de um administrador. Valor inválido responde `400`. Os valores voltam em `Configuration` de `/Users/Me` |
 | `GET/POST/DELETE /Users/{id}/Images/Primary` | Foto de perfil: o GET é público; POST e DELETE só o próprio usuário ou um administrador. Corpo: imagem ou base64 (JPEG, PNG, WebP, GIF, até 8 MB) |
 | `POST /Sessions/Logout`, `GET /Sessions`, `POST /Sessions/Capabilities[/Full]` | Sessão do dispositivo |
 
@@ -106,7 +107,8 @@ Usada por `/admin`. O painel abre em Bibliotecas, onde mostra a última varredur
 | `GET/PUT /admin/api/settings` | Nome do servidor, intervalo do scan, transcodificações, chave e idioma do TMDB |
 | `GET/POST /admin/api/folders`, `.../folders/paths`, `.../folders/name` | Bibliotecas e pastas |
 | `GET/POST /admin/api/users`, `DELETE /admin/api/users/{id}` | Usuários |
-| `POST /admin/api/users/{id}/password`, `/policy`, `/rename` | Senha, permissões (inclui `isHidden`) e nome |
+| `POST /admin/api/users/{id}/password`, `/policy`, `/rename` | Senha, permissões e nome |
+| `POST /admin/api/users/{id}/playback` | Preferências de áudio e legenda (`audioLanguage`, `playDefaultAudio`, `subtitleLanguage`, `subtitleMode`) |
 | `POST/DELETE /admin/api/users/{id}/avatar` | Foto de perfil (corpo: bytes da imagem) |
 | `GET /admin/api/sessions`, `DELETE /admin/api/sessions[/{id}]` | Dispositivos conectados; encerrar uma ou todas as sessões |
 

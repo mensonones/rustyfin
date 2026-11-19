@@ -47,8 +47,11 @@ pub struct UserDto {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "PascalCase")]
 pub struct UserConfiguration {
+    pub audio_language_preference: Option<String>,
     pub play_default_audio_track: bool,
     pub subtitle_language_preference: Option<String>,
+    /// `Default`, `Smart`, `OnlyForced`, `Always` ou `None`.
+    pub subtitle_mode: String,
     pub display_missing_episodes: bool,
 }
 

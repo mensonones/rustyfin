@@ -92,6 +92,7 @@ pub fn router(config: Arc<AppConfig>, pool: DbPool, scan: ScanTrigger) -> Router
         )
         .route("/admin/api/users/:id/password", post(users_password))
         .route("/admin/api/users/:id/policy", post(users_policy))
+        .route("/admin/api/users/:id/playback", post(users_playback))
         .route("/admin/api/users/:id/rename", post(users_rename))
         .layer(from_fn_with_state(state.clone(), guard))
         .with_state(state)
@@ -372,7 +373,9 @@ fn user_json(u: &users::User) -> Value {
     json!({
         "id": u.id, "name": u.name, "hasPassword": u.has_password, "isAdmin": u.is_admin,
         "isDisabled": u.is_disabled, "allLibraries": u.all_libraries,
-        "libraries": u.libraries, "avatarTag": u.avatar.as_deref().map(crate::api::avatars::image_tag)
+        "libraries": u.libraries, "avatarTag": u.avatar.as_deref().map(crate::api::avatars::image_tag),
+        "audioLanguage": u.prefs.idioma_audio, "playDefaultAudio": u.prefs.tocar_faixa_padrao,
+        "subtitleLanguage": u.prefs.idioma_legenda, "subtitleMode": u.prefs.modo_legenda.nome(),
     })
 }
 
@@ -491,6 +494,33 @@ async fn users_policy(
     match users::set_policy(&st.pool, &id, upd).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => crate::api::auth::user_error_response(e),
+    }
+}
+
+/// Preferências de reprodução de um usuário pelo painel (`audioLanguage`, `playDefaultAudio`, `subtitleLanguage`,
+/// `subtitleMode`).
+async fn users_playback(
+    State(st): State<AdminState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Json(body): Json<Value>,
+) -> Response {
+    let chaves = ["audioLanguage", "playDefaultAudio", "subtitleLanguage", "subtitleMode"];
+    let atual = match users::preferencias(&st.pool, &id).await {
+        Ok(p) => p,
+        Err(e) => return db_error(e),
+    };
+    let nova = match crate::preferencias::aplicar_json(&atual, &body, chaves) {
+        Ok(p) => p,
+        Err(mensagem) => return (StatusCode::BAD_REQUEST, Json(json!({ "Message": mensagem }))).into_response(),
+    };
+    match users::get(&st.pool, &id).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => return db_error(e),
+    }
+    match users::salvar_preferencias(&st.pool, &id, &nova).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => db_error(e),
     }
 }
 

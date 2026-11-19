@@ -169,10 +169,11 @@ quem só quer assistir. Cada item é uma versão própria, com testes, documenta
   em segundo plano e com o servidor ocioso.
 - [ ] **Detecção de créditos** (fim do episódio) e ajuste manual de um segmento no painel.
 
-### 2. Preferências de áudio e legenda por usuário
-- [ ] Idioma preferido do áudio e da legenda, legenda forçada e "legenda só quando o áudio não é o meu idioma", aplicados
-  em `DefaultAudioStreamIndex` e `DefaultSubtitleStreamIndex` (hoje só existe o padrão de anime: áudio japonês e legenda
-  em português).
+### 2. Preferências de áudio e legenda por usuário (em andamento)
+- [x] Idioma preferido do áudio e da legenda e modo da legenda (padrão do arquivo, inteligente, só forçadas, sempre, nunca),
+  aplicados em `DefaultAudioStreamIndex` e `DefaultSubtitleStreamIndex`. Editável no painel e pelos apps
+  (`POST /Users/Configuration`). O padrão de anime (áudio japonês e legenda em português) é o modo inteligente, para quem
+  não escolheu nada.
 - [ ] Lembrar a última escolha de faixa por série.
 
 ### 3. Quick Connect

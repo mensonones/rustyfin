@@ -44,6 +44,8 @@ os dados do TMDB, quando há: o AniList não tem dados por episódio.
 
 ## Áudio e legenda padrão
 
-Nos títulos de uma biblioteca Anime, se o arquivo tem **áudio em japonês**, o servidor indica ao app esse áudio como
-padrão e, junto dele, a **legenda em português** (a completa, não a de falas forçadas). O app pode ignorar a indicação se
-o usuário escolher outra faixa. Sem áudio japonês no arquivo, nada muda.
+Nos títulos de uma biblioteca Anime, para quem **não escolheu** idioma de áudio nem de legenda, o servidor indica ao app o
+**áudio em japonês** e, se o áudio que vai tocar não é português, a **legenda em português** (a completa, não a de falas
+forçadas). É o modo "Inteligente" com japonês e português. O app pode ignorar a indicação se o usuário escolher outra faixa,
+e qualquer escolha do usuário em [idioma do áudio e da legenda](reproducao.md#idioma-do-áudio-e-da-legenda) vale no lugar
+desse padrão.
