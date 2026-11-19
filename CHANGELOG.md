@@ -5,6 +5,14 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.34.1] - 2026-11-19
+
+### Corrigido
+- Painel, **Usuários → Entrar na TV com um código**: o formulário estourava a largura do cartão e ficava colado nos usuários.
+  Agora é um cartão compacto, com o campo do código grande e de dígitos espaçados (só aceita números e já descarta letras), o
+  botão **Autorizar** ao lado (liga só com seis dígitos e responde ao Enter), o seletor de usuário só quando há mais de um, e a
+  resposta ali mesmo ("Autorizado como Visita" ou "Código desconhecido ou vencido"). No celular, os campos empilham.
+
 ## [0.34.0] - 2026-11-19
 
 ### Adicionado
