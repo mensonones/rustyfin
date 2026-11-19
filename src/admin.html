@@ -288,6 +288,17 @@
 
   /* Telas largas: as listas viram grades de cartões e as abas aproveitam a largura */
   .library-workspace { grid-template-columns: minmax(0, 1fr) clamp(340px, 24vw, 440px); }
+  .qc { max-width: 720px; margin-top: 24px; }
+  .qc > summary .badge { margin-inline-start: auto; margin-inline-end: 4px; }
+  .qc-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
+  .qc-campo { min-width: 0; }
+  .qc-campo label { margin-top: 0; }
+  #qcCodigo { width: 11rem; min-height: 48px; text-align: center; font-size: 1.375rem; letter-spacing: 0.3em; font-variant-numeric: tabular-nums; padding-inline: 0.3em 0; }
+  #qcCodigo::placeholder { letter-spacing: 0.3em; }
+  #qcUsuario { min-width: 14rem; min-height: 48px; }
+  .qc-form .btn { min-height: 48px; padding-inline: 24px; }
+  #qcDica { margin: 12px 20px 0; min-height: 1.25em; }
+  @media (max-width: 40rem) { .qc-campo { flex: 1 1 100%; } #qcCodigo, #qcUsuario { width: 100%; } .qc-form .btn { width: 100%; } }
   .grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr)); gap: 16px; align-items: start; background: none; box-shadow: none; border-radius: 0; }
   .grade > .library, .grade > .person { background: var(--panel); border-radius: var(--radius); box-shadow: var(--edge); border-top: 0; }
   .library-directory .records.grade { border-radius: 0; }
@@ -472,17 +483,22 @@
     </div>
     <div id="usersWarn"></div>
     <div id="users" class="records grade"></div>
-    <details class="card" id="quickConnect">
-      <summary><strong>Entrar na TV com um código (Quick Connect)</strong></summary>
+    <details class="card qc" id="quickConnect">
+      <summary><strong>Entrar na TV com um código</strong><span class="badge">Quick Connect</span></summary>
       <p class="hint">No app da TV, escolha "Quick Connect" e digite aqui o código de seis dígitos que ele mostra. O código vale 10 minutos
         e serve a um único login.</p>
-      <label for="qcCodigo">Código</label>
-      <input id="qcCodigo" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="123456">
-      <label for="qcUsuario">Entrar como</label>
-      <select id="qcUsuario"></select>
-      <div class="row">
-        <button class="btn primary" id="qcAutorizar" type="button">Autorizar</button>
-      </div>
+      <form id="qcForm" class="qc-form" autocomplete="off">
+        <div class="qc-campo">
+          <label for="qcCodigo">Código</label>
+          <input id="qcCodigo" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="000000" aria-describedby="qcDica">
+        </div>
+        <div class="qc-campo" id="qcUsuarioCampo">
+          <label for="qcUsuario">Entrar como</label>
+          <select id="qcUsuario"></select>
+        </div>
+        <button class="btn primary" id="qcAutorizar" type="submit" disabled>Autorizar</button>
+      </form>
+      <p class="hint" id="qcDica" role="status"></p>
     </details>
   </section>
 
@@ -1107,7 +1123,9 @@ async function loadUsers() {
   allLibs = libs;
   const root = $('users');
   root.replaceChildren();
-  $('qcUsuario').replaceChildren(...users.filter((u) => !u.isDisabled).map((u) => opcao(u.id, u.name)));
+  const ativos = users.filter((u) => !u.isDisabled);
+  $('qcUsuario').replaceChildren(...ativos.map((u) => opcao(u.id, u.name)));
+  $('qcUsuarioCampo').hidden = ativos.length < 2; // com um só usuário, não há o que escolher
   const noPassAdmin = users.some((u) => u.isAdmin && !u.isDisabled && !u.hasPassword);
   $('usersWarn').replaceChildren(noPassAdmin ? el('div', { className: 'warnbox' }, icone('triangle-alert'),
     el('span', { textContent: 'Senha é opcional: sem ela, o painel e os apps ficam abertos a quem está na sua rede local. Se quiser, defina uma senha para um administrador (o painel passa a pedir login).' })) : '');
@@ -1175,12 +1193,30 @@ $('passSave').onclick = () => act(async () => {
   await loadUsers();
 }, 'Senha atualizada.');
 
-$('qcAutorizar').onclick = () => act(async () => {
-  const code = $('qcCodigo').value.trim();
-  if (!/^\d{6}$/.test(code)) throw new Error('O código tem seis dígitos.');
-  await api('POST', '/admin/api/quickconnect/authorize', { code, userId: $('qcUsuario').value });
-  $('qcCodigo').value = '';
-}, 'Aparelho autorizado: ele entra em instantes.');
+// Quick Connect: só habilita com seis dígitos, aceita Enter e mostra o resultado ali mesmo.
+$('qcCodigo').oninput = () => {
+  const v = $('qcCodigo').value.replace(/\D/g, '').slice(0, 6);
+  $('qcCodigo').value = v;
+  $('qcAutorizar').disabled = v.length !== 6;
+  $('qcDica').textContent = '';
+};
+$('quickConnect').ontoggle = () => { if ($('quickConnect').open) $('qcCodigo').focus(); };
+$('qcForm').onsubmit = (e) => {
+  e.preventDefault();
+  if ($('qcCodigo').value.length !== 6) return;
+  act(async () => {
+    try {
+      await api('POST', '/admin/api/quickconnect/authorize', { code: $('qcCodigo').value, userId: $('qcUsuario').value });
+    } catch (erro) {
+      $('qcDica').textContent = erro.status === 404 ? 'Código desconhecido ou vencido. Confira o que a TV está mostrando.' : mensagemErro(erro);
+      throw erro;
+    }
+    const nome = $('qcUsuario').selectedOptions[0]?.textContent || '';
+    $('qcCodigo').value = '';
+    $('qcAutorizar').disabled = true;
+    $('qcDica').textContent = 'Autorizado' + (nome ? ' como ' + nome : '') + '. A TV entra em instantes.';
+  }, 'Aparelho autorizado.');
+};
 
 let permUser = null;
 // Seleciona o valor; um código fora da lista (como pt-br) ganha uma opção própria.
