@@ -31,7 +31,7 @@ O `userId` que algumas rotas trazem no caminho é ignorado: vale sempre o usuár
 
 | Rota | Observação |
 |---|---|
-| `GET /Users/Public` | Perfis visíveis na tela de login (sem desativados nem ocultos) |
+| `GET /Users/Public` | Perfis da tela de login (sem os desativados) |
 | `POST /Users/AuthenticateByName` | Login; devolve o token do dispositivo |
 | `GET /Users`, `GET /Users/Me`, `GET /Users/{id}` | Dados do usuário |
 | `POST /Users/New`, `DELETE /Users/{id}` | Só administradores |
@@ -89,12 +89,8 @@ Usada por `/admin`. O painel abre em Bibliotecas, onde mostra a última varredur
 | `GET /admin/api/status` | Contagens, `ffmpeg`, TMDB, descoberta, último scan e `scan.signaturesPending` (arquivos cujo hash ainda é calculado em segundo plano) |
 | `GET /admin/api/acervo?busca=&biblioteca=&problema=&pagina=&porPagina=` | Filmes e episódios, 50 por página por padrão (`porPagina` de 10 a 200), com `selos` por título (metadados, capa, legenda, assinatura, analisado) e um `resumo` com as contagens do acervo inteiro. `busca` procura no título, na série e no caminho; `biblioteca` é o ID; `problema` é `metadados`, `capa`, `legenda`, `assinatura` ou `analise`. A busca, o filtro e a paginação rodam no servidor, nunca sobre dados já baixados. Valores inválidos respondem 400 e biblioteca inexistente, 404 |
 | `GET /admin/api/acervo/{id}/capa` | Capa do título para as miniaturas do painel, sem token: imagem local, do TMDB ou um quadro do vídeo. Aceita `maxWidth`, `maxHeight` e `quality` |
-| `POST /admin/api/acervo/audio/{id}` | Indexa a primeira faixa de áudio para futuras revisões |
 | `GET /admin/api/preparos` | Lista conversões MP4 sugeridas e estado do preparo |
 | `POST /admin/api/preparos/{chave}` | Solicita o preparo de uma versão recomendada |
-| `GET /admin/api/acervo/revisoes` | Até 30 revisões pendentes e seus destinos catalogados |
-| `POST /admin/api/acervo/revisoes/{id}/previa` | Recebe `itemId` e `mapa` opcional com `anteriorA`, `novoA`, `anteriorB` e `novoB` em ticks. Retorna as posições anterior, atual e sugerida por perfil |
-| `POST /admin/api/acervo/revisoes/{id}` | `{"acao":"manterSeparados"}` ou `{"acao":"transferir","itemId":"..."}`. A transferência aceita `retomadas` com `perfilId`, `posicaoTicks` e `posicaoEsperadaTicks`. Retorna 409 se o destino mudou no catálogo ou se a posição mudou desde a prévia |
 | `GET /admin/api/legendas/{id}` | Lista faixas SRT ajustáveis do título |
 | `GET/PUT/DELETE /admin/api/legendas/{id}/{índice}` | Consulta, salva ou remove o ajuste da faixa. `PUT` recebe a `versao` do GET e o objeto `ajuste` |
 | `POST /admin/api/legendas/{id}/{índice}/previa` | Recebe o mesmo corpo do PUT e devolve amostras sincronizadas e WebVTT |
@@ -131,4 +127,3 @@ Para desvio progressivo, use `modo: "doisPontos"` e os campos `originalAMs`, `co
 `originalBMs` e `corrigidoBMs`. Se a origem mudar desde a consulta, a escrita retorna HTTP 409.
 
 
-A prévia de retomada aceita `automatico: true` quando nenhum mapa manual é informado.

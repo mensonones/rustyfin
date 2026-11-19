@@ -1,7 +1,6 @@
 use crate::{
     db::DbPool,
     parser::{self, Kind},
-    revisao_acervo::{self, Sugestao},
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -28,10 +27,19 @@ struct Assinatura {
     tamanho: i64,
 }
 
+/// O que a varredura descobriu sobre a identidade dos arquivos. Tudo é resolvido sozinho, sem fila de revisão:
+/// - `movimentos`: o mesmo conteúdo apareceu num único caminho novo; o item (ID, progresso e favoritos) vai junto;
+/// - `edicoes`: o arquivo sumiu e surgiu um único candidato com o mesmo título e outro conteúdo (uma edição renomeada),
+///   para um item com histórico; o item vai junto, com os marcadores de assistido e favorito, e sem a posição, que
+///   não vale para outra edição;
+/// - `trocas`: o conteúdo mudou no mesmo caminho; o item fica, e a posição de retomada é zerada pelo mesmo motivo.
+///
+/// Cópias e correspondências ambíguas não transferem nada: cada item segue com o seu histórico.
 pub(super) struct Verificacao {
     recalculadas: HashMap<String, Assinatura>,
     movimentos: Vec<(String, String, String)>,
-    revisoes: Vec<Sugestao>,
+    edicoes: Vec<(String, String, String)>,
+    trocas: Vec<String>,
     pub(super) completa: bool,
 }
 
@@ -170,7 +178,7 @@ fn verificar(caminhos: &[String], catalogo: Vec<Catalogado>, com_historico: &Has
     for caminhos in por_assinatura.values_mut().filter(|c| c.len() > 1) {
         caminhos.sort_unstable();
     }
-    let revisoes = sugerir_revisoes(
+    let (edicoes, trocas) = classificar(
         &catalogo,
         &recalculadas,
         &ausentes,
@@ -181,7 +189,8 @@ fn verificar(caminhos: &[String], catalogo: Vec<Catalogado>, com_historico: &Has
     Verificacao {
         recalculadas,
         movimentos,
-        revisoes,
+        edicoes,
+        trocas,
         completa,
     }
 }
@@ -205,16 +214,19 @@ fn chave(caminho: &str) -> (Chave, Option<i32>) {
     (chave, parsed.year)
 }
 
-fn sugerir_revisoes(
+type Reassociacao = (String, String, String);
+
+/// Separa o que mudou de conteúdo no mesmo caminho (`trocas`) das edições renomeadas (`edicoes`).
+fn classificar(
     catalogo: &HashMap<String, Catalogado>,
     recalculadas: &HashMap<String, Assinatura>,
     ausentes: &HashMap<&[u8], Vec<&Catalogado>>,
     por_assinatura: &HashMap<Vec<u8>, Vec<&str>>,
-    movimentos: &[(String, String, String)],
+    movimentos: &[Reassociacao],
     com_historico: &HashSet<String>,
-) -> Vec<Sugestao> {
-    let mut novos = HashMap::<Chave, Vec<(&str, Option<i32>, &[u8])>>::new();
-    let mut revisoes = Vec::new();
+) -> (Vec<Reassociacao>, Vec<String>) {
+    let mut novos = HashMap::<Chave, Vec<(&str, Option<i32>)>>::new();
+    let mut trocas = Vec::new();
     for (caminho, assinatura) in recalculadas {
         if let Some(item) = catalogo.get(caminho) {
             let trocado = match &item.content_sha256 {
@@ -223,62 +235,51 @@ fn sugerir_revisoes(
                 None => com_historico.contains(&item.id) && item.size_bytes != assinatura.tamanho,
             };
             if trocado {
-                revisoes.push(Sugestao {
-                    id: item.id.clone(),
-                    caminho: caminho.clone(),
-                    motivo: "substituido",
-                    destinos: vec![(caminho.clone(), assinatura.sha256.clone())],
-                });
+                trocas.push(item.id.clone());
             }
         } else {
             let (chave, ano) = chave(caminho);
-            novos
-                .entry(chave)
-                .or_default()
-                .push((caminho, ano, &assinatura.sha256));
+            novos.entry(chave).or_default().push((caminho, ano));
         }
     }
 
     let movidos: HashSet<_> = movimentos.iter().map(|(id, _, _)| id.as_str()).collect();
+    let mut candidatos: Vec<(&Catalogado, &str)> = Vec::new();
     for (hash, origens) in ausentes {
+        // O mesmo conteúdo em outros caminhos (cópias) é ambíguo: nenhum histórico muda de dono sozinho.
+        if por_assinatura.contains_key(*hash) {
+            continue;
+        }
         for item in origens {
-            if movidos.contains(item.id.as_str()) {
+            if movidos.contains(item.id.as_str()) || !com_historico.contains(&item.id) {
                 continue;
             }
-            let (motivo, mut destinos) = if let Some(caminhos) = por_assinatura.get(*hash) {
-                let destinos = caminhos
-                    .iter()
-                    .take(12)
-                    .map(|c| (*c, *hash))
-                    .collect::<Vec<_>>();
-                ("mesmo_conteudo", destinos)
-            } else {
-                let (chave, ano) = chave(&item.path);
-                let destinos = novos
-                    .get(&chave)
-                    .into_iter()
-                    .flatten()
-                    .filter(|(_, outro, _)| ano.is_none() || outro.is_none() || ano == *outro)
-                    .map(|(caminho, _, hash)| (*caminho, *hash))
-                    .collect();
-                ("possivel_edicao", destinos)
-            };
-            destinos.sort_unstable_by_key(|(caminho, _)| *caminho);
-            destinos.truncate(12);
-            if !destinos.is_empty() {
-                revisoes.push(Sugestao {
-                    id: item.id.clone(),
-                    caminho: item.path.clone(),
-                    motivo,
-                    destinos: destinos
-                        .into_iter()
-                        .map(|(c, h)| (c.to_owned(), h.to_vec()))
-                        .collect(),
-                });
+            let (chave, ano) = chave(&item.path);
+            let destinos: Vec<&str> = novos
+                .get(&chave)
+                .into_iter()
+                .flatten()
+                .filter(|(_, outro)| ano.is_none() || outro.is_none() || ano == *outro)
+                .map(|(caminho, _)| *caminho)
+                .collect();
+            if let [destino] = destinos.as_slice() {
+                candidatos.push((item, destino));
             }
         }
     }
-    revisoes
+    // Um destino só recebe o histórico de um item.
+    let mut por_destino: HashMap<&str, usize> = HashMap::new();
+    for (_, destino) in &candidatos {
+        *por_destino.entry(destino).or_default() += 1;
+    }
+    let mut edicoes: Vec<Reassociacao> = candidatos
+        .into_iter()
+        .filter(|(_, destino)| por_destino[destino] == 1)
+        .map(|(item, destino)| (item.id.clone(), item.path.clone(), destino.to_owned()))
+        .collect();
+    edicoes.sort_unstable();
+    trocas.sort_unstable();
+    (edicoes, trocas)
 }
 
 /// Hashes que a varredura deixou para depois (arquivos novos sem relação com algum ausente), calculados um por vez,
@@ -339,15 +340,16 @@ pub(super) async fn preparar(
 }
 
 impl Verificacao {
+    /// Reassocia os itens (movidos e edições renomeadas) e zera a retomada do que teve o conteúdo trocado.
     pub(super) async fn mover(
         &self,
         pool: &DbPool,
         bibliotecas: &HashMap<String, Option<String>>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if self.movimentos.is_empty() {
+        if self.movimentos.is_empty() && self.edicoes.is_empty() && self.trocas.is_empty() {
             return Ok(());
         }
-        for (_, origem, destino) in &self.movimentos {
+        for (_, origem, destino) in self.movimentos.iter().chain(&self.edicoes) {
             let assinatura = self
                 .recalculadas
                 .get(destino)
@@ -362,7 +364,7 @@ impl Verificacao {
             }
         }
         let mut tx = pool.begin().await?;
-        for (id, origem, destino) in &self.movimentos {
+        for (id, origem, destino) in self.movimentos.iter().chain(&self.edicoes) {
             sqlx::query(
                 "UPDATE items SET path = ?, library_id = ?, poster_path = NULL, backdrop_path = NULL,                  subtitle_path = NULL, series_poster_path = NULL, series_backdrop_path = NULL,                  season_poster_path = NULL, probed = 0, content_mtime = NULL                  WHERE id = ? AND path = ?",
             )
@@ -372,52 +374,29 @@ impl Verificacao {
             .bind(origem)
             .execute(&mut *tx).await?;
         }
+        // Outra edição ou outro conteúdo: o tempo de retomada guardado não vale mais. Assistido e favorito ficam.
+        for (id, _, destino) in &self.edicoes {
+            sqlx::query("UPDATE items SET content_sha256 = NULL WHERE id = ? AND path = ?")
+                .bind(id)
+                .bind(destino)
+                .execute(&mut *tx).await?;
+        }
+        let zerar = self.edicoes.iter().map(|(id, _, _)| id).chain(&self.trocas);
+        for id in zerar {
+            sqlx::query("UPDATE playback_state SET position_ticks = 0 WHERE item_id = ? AND position_ticks > 0")
+                .bind(id)
+                .execute(&mut *tx).await?;
+        }
         tx.commit().await?;
         for (_, origem, destino) in &self.movimentos {
             info!("Arquivo movido: {origem} → {destino}");
         }
-        Ok(())
-    }
-
-    pub(super) fn substituicoes(&self) -> HashSet<String> {
-        self.revisoes
-            .iter()
-            .filter(|r| r.motivo == "substituido")
-            .map(|r| r.caminho.clone())
-            .collect()
-    }
-
-    pub(super) fn suspender_substituicoes(&mut self, suspensas: &HashSet<String>) {
-        self.recalculadas
-            .retain(|caminho, _| !suspensas.contains(caminho));
-    }
-
-    pub(super) async fn publicar_revisoes(
-        &self,
-        pool: &DbPool,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if self.revisoes.is_empty() {
-            return Ok(());
+        for (_, origem, destino) in &self.edicoes {
+            info!("Edição renomeada, histórico mantido (sem a posição): {origem} → {destino}");
         }
-        for sugestao in &self.revisoes {
-            if sugestao.motivo == "substituido" {
-                let assinatura = self
-                    .recalculadas
-                    .get(&sugestao.caminho)
-                    .ok_or_else(|| io::Error::other("Assinatura da substituição ausente"))?;
-                let (mtime, tamanho) = estado(&tokio::fs::metadata(&sugestao.caminho).await?)?;
-                if mtime != assinatura.mtime || tamanho != assinatura.tamanho {
-                    return Err(io::Error::other("A substituição mudou durante a varredura").into());
-                }
-            } else if tokio::fs::try_exists(&sugestao.caminho).await? {
-                return Err(io::Error::other("A origem reapareceu durante a varredura").into());
-            }
+        for id in &self.trocas {
+            info!("Conteúdo trocado no mesmo caminho: a posição de retomada de {id} foi zerada");
         }
-        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-        for sugestao in &self.revisoes {
-            revisao_acervo::arquivar(&mut tx, sugestao).await?;
-        }
-        tx.commit().await?;
         Ok(())
     }
 
@@ -480,7 +459,7 @@ mod tests {
     }
 
     #[test]
-    fn video_trocado_antes_do_primeiro_hash_vira_revisao_so_se_ha_historico() {
+    fn video_trocado_antes_do_primeiro_hash_e_uma_troca_so_se_ha_historico() {
         let dir = std::env::temp_dir().join(format!("rustyfin-identidade-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&dir).unwrap();
         let caminho = dir.join("Filme (2020).mkv");
@@ -494,16 +473,15 @@ mod tests {
         };
         let caminhos = [caminho.to_str().unwrap().to_owned()];
 
-        // Alguém já assistiu: o conteúdo novo é lido e a troca vira revisão, em vez de herdar o histórico.
+        // Alguém já assistiu: o conteúdo novo é lido e a troca é registrada (a retomada será zerada).
         let com = HashSet::from(["item1".to_owned()]);
         let resultado = verificar(&caminhos, vec![item()], &com);
-        assert_eq!(resultado.revisoes.len(), 1);
-        assert_eq!(resultado.revisoes[0].motivo, "substituido");
+        assert_eq!(resultado.trocas, ["item1"]);
 
         // Sem histórico, nada a proteger: o arquivo nem é lido e segue o fluxo normal.
         let resultado = verificar(&caminhos, vec![item()], &HashSet::new());
         std::fs::remove_dir_all(dir).unwrap();
-        assert!(resultado.revisoes.is_empty());
+        assert!(resultado.trocas.is_empty());
         assert!(resultado.recalculadas.is_empty());
     }
 
@@ -552,5 +530,120 @@ mod tests {
         assert!(resultado.completa);
         assert_eq!(resultado.recalculadas.len(), 2);
         assert!(resultado.movimentos.is_empty());
+    }
+
+    /// Um ausente com histórico, com o hash antigo, e os arquivos novos criados no disco.
+    fn cenario_de_edicao(
+        novos: &[(&str, &[u8])],
+    ) -> (std::path::PathBuf, Catalogado, Vec<String>) {
+        let dir = std::env::temp_dir().join(format!("rustyfin-identidade-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let ausente = Catalogado {
+            id: "antigo".into(),
+            path: dir.join("Filme (2020).mkv").to_str().unwrap().into(),
+            size_bytes: 20,
+            content_sha256: Some(Sha256::digest(b"edicao original antiga").to_vec()),
+            content_mtime: None,
+        };
+        let caminhos = novos
+            .iter()
+            .map(|(nome, conteudo)| {
+                let c = dir.join(nome);
+                std::fs::write(&c, conteudo).unwrap();
+                c.to_str().unwrap().to_owned()
+            })
+            .collect();
+        (dir, ausente, caminhos)
+    }
+
+    #[test]
+    fn edicao_renomeada_com_um_unico_candidato_leva_o_historico() {
+        let (dir, ausente, caminhos) = cenario_de_edicao(&[("Filme (2020) Diretor.mkv", b"outra edicao, remontada")]);
+        let com = HashSet::from(["antigo".to_owned()]);
+        let r = verificar(&caminhos, vec![ausente], &com);
+        std::fs::remove_dir_all(dir).unwrap();
+        assert!(r.movimentos.is_empty());
+        assert_eq!(r.edicoes.len(), 1);
+        assert_eq!(r.edicoes[0].0, "antigo");
+        assert_eq!(r.edicoes[0].2, caminhos[0]);
+    }
+
+    #[test]
+    fn edicao_sem_historico_ou_ambigua_nao_move_nada() {
+        // Sem histórico, não há o que proteger.
+        let (dir, ausente, caminhos) = cenario_de_edicao(&[("Filme (2020) Diretor.mkv", b"outra edicao, remontada")]);
+        let r = verificar(&caminhos, vec![ausente], &HashSet::new());
+        std::fs::remove_dir_all(dir).unwrap();
+        assert!(r.edicoes.is_empty());
+
+        // Dois candidatos para o mesmo título: ambíguo.
+        let (dir, ausente, caminhos) = cenario_de_edicao(&[
+            ("Filme (2020) Diretor.mkv", b"edicao remontada um"),
+            ("Filme (2020) Estendida.mkv", b"edicao remontada dois"),
+        ]);
+        let com = HashSet::from(["antigo".to_owned()]);
+        let r = verificar(&caminhos, vec![ausente], &com);
+        std::fs::remove_dir_all(dir).unwrap();
+        assert!(r.edicoes.is_empty());
+
+        // Candidato de outro ano: não é o mesmo filme.
+        let (dir, ausente, caminhos) = cenario_de_edicao(&[("Filme (1999).mkv", b"outro filme com o mesmo nome")]);
+        let com = HashSet::from(["antigo".to_owned()]);
+        let r = verificar(&caminhos, vec![ausente], &com);
+        std::fs::remove_dir_all(dir).unwrap();
+        assert!(r.edicoes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn mover_leva_a_edicao_sem_a_posicao_e_zera_a_retomada_de_uma_troca() {
+        let pool = crate::db::init_db("sqlite::memory:").await.unwrap();
+        let dir = std::env::temp_dir().join(format!("rustyfin-identidade-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let novo = dir.join("Filme (2020) Diretor.mkv");
+        std::fs::write(&novo, b"outra edicao, remontada").unwrap();
+        let novo_s = novo.to_str().unwrap().to_owned();
+        let antigo_s = dir.join("Filme (2020).mkv").to_str().unwrap().to_owned();
+        sqlx::query("INSERT INTO users (id, name) VALUES ('u1', 'Ana')").execute(&pool).await.unwrap();
+        for (id, caminho) in [("antigo", antigo_s.as_str()), ("troca", "/m/troca.mkv")] {
+            sqlx::query("INSERT INTO items (id, name, path, media_type, size_bytes) VALUES (?, 'Filme', ?, 'Movie', 20)")
+                .bind(id)
+                .bind(caminho)
+                .execute(&pool)
+                .await
+                .unwrap();
+            sqlx::query("INSERT INTO playback_state (user_id, item_id, is_played, is_favorite, position_ticks) VALUES ('u1', ?, 1, 1, 5000)")
+                .bind(id)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let (mtime, tamanho) = estado(&std::fs::metadata(&novo).unwrap()).unwrap();
+        let mut recalculadas = HashMap::new();
+        recalculadas.insert(novo_s.clone(), Assinatura { sha256: vec![1], mtime, tamanho });
+        let v = Verificacao {
+            recalculadas,
+            movimentos: Vec::new(),
+            edicoes: vec![("antigo".into(), antigo_s, novo_s.clone())],
+            trocas: vec!["troca".into()],
+            completa: true,
+        };
+        v.mover(&pool, &HashMap::new()).await.unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+
+        let (caminho, hash): (String, Option<Vec<u8>>) =
+            sqlx::query_as("SELECT path, content_sha256 FROM items WHERE id = 'antigo'").fetch_one(&pool).await.unwrap();
+        assert_eq!(caminho, novo_s);
+        assert!(hash.is_none(), "o hash antigo não vale para a outra edição");
+        for id in ["antigo", "troca"] {
+            let (visto, favorito, posicao): (bool, bool, i64) = sqlx::query_as(
+                "SELECT is_played, is_favorite, position_ticks FROM playback_state WHERE item_id = ?",
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert!(visto && favorito, "assistido e favorito ficam ({id})");
+            assert_eq!(posicao, 0, "a posição não vale para outro conteúdo ({id})");
+        }
     }
 }

@@ -72,7 +72,7 @@
 - [x] Revisão de segurança/correção (Argus, v0.2.0): limpeza do scan, login sem senha só na LAN, logs sem token, trava do último admin e outros.
 - [x] Autenticar imagens e segmentos HLS com autorização por usuário e biblioteca, mantendo a compatibilidade com os apps e o carregamento de avatares na tela de login.
 - [x] Aba **Sessões** no painel: dispositivos conectados (aparelho, app, usuário, último uso), encerrar uma ou todas; expiração de tokens parados (`RUSTYFIN_TOKEN_TTL_DAYS`, desligada por padrão).
-- [x] Perfil oculto (fora da lista da tela de login; entra digitando o nome) e foto de perfil (`GET/POST/DELETE /Users/{id}/Images/Primary`, JPEG/PNG/WebP/GIF até 8 MB, enviada pelo app ou pelo painel).
+- [x] Foto de perfil (`GET/POST/DELETE /Users/{id}/Images/Primary`, JPEG/PNG/WebP/GIF até 8 MB, enviada pelo app ou pelo painel).
 - [x] Painel: nome do servidor, intervalo do scan e limite de transcodificações simultâneas, aplicados na hora, sem reiniciar (têm prioridade sobre as variáveis de ambiente).
 
 ### Fase 3: Motor de Streaming Direto (Direct Play & Scrubbing) (Implementada)
@@ -138,18 +138,15 @@ ou convites pela internet.
 - [x] **Identidade estável ao mover arquivos.** Preservar ID, progresso e favoritos quando
   o mesmo conteúdo reaparece em um único caminho novo. Cópias e correspondências ambíguas
   mantêm identidades separadas.
-- [x] **Revisão de alterações do acervo.** Exibir substituições e possíveis edições no
-  painel e permitir transferir favoritos e marcações de assistido para um destino escolhido.
+- [x] ~~**Revisão de alterações do acervo.**~~ Removida na 0.30.0: o histórico acompanha o arquivo sozinho.
 - [x] **Correção de legendas SRT.** Salvar atraso e desvio de tempo por arquivo e faixa,
   com prévia em dois pontos e opção de restaurar o original.
 
-- [x] **Retomar entre edições com dois pontos.** Mapear e confirmar a posição por perfil,
-  com opção de indicar um tempo manualmente para cenas cortadas ou fora do intervalo.
+- [x] ~~**Retomar entre edições com dois pontos.**~~ Removida na 0.30.0: a posição é zerada quando o conteúdo muda.
 
 ### Pesquisa de produto
 
-- [x] **Alinhamento automático entre edições.** Comparar assinaturas de áudio indexadas antes da troca.
-  Usar a posição equivalente só quando houver confiança suficiente na correspondência.
+- [x] ~~**Alinhamento automático entre edições.**~~ Removida na 0.30.0 (assinaturas de áudio).
 - [x] **Preparar versões a partir das sessões.** Recomendar conversões MP4 progressivas que se repetem nos
   dispositivos locais, com orçamento de disco, pausa durante reprodução e originais preservados.
 - [x] ~~**Busca local de cenas com proteção contra spoilers.**~~ Removida na 0.29.0, para manter o foco na reprodução.

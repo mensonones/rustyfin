@@ -30,7 +30,7 @@ leia com `docker compose logs -f`.
 | Um arquivo novo não aparece | O monitoramento leva alguns segundos; use "Escanear agora". Em unidades de rede, o evento de arquivo pode não chegar: o scan periódico é a reserva |
 | Título errado ou sem capa | Renomeie para `Filme (2020).mkv` ou `Serie S01E02.mkv` (veja [nomes](configuracao.md#nomes-de-arquivo-e-pastas)); sem chave do TMDB só há metadados locais |
 | Duas séries misturadas / uma série dividida | O ano separa séries de mesmo nome. Se só parte dos episódios tem o ano, use a mesma pasta e o mesmo padrão em todos |
-| Indexar áudio ou ajustar uma legenda responde que a assinatura ainda está sendo calculada | Depois da primeira varredura o servidor calcula o hash de cada arquivo em segundo plano, um por vez (30 GB levam alguns minutos). Até lá essas ações respondem 409. O painel (`/admin/api/status`, `scan.signaturesPending`) mostra quantos faltam; tente de novo quando chegar a zero |
+| Ajustar uma legenda responde que a assinatura ainda está sendo calculada | Depois da primeira varredura o servidor calcula o hash de cada arquivo em segundo plano, um por vez (30 GB levam alguns minutos). Até lá essa ação responde 409. O painel (`/admin/api/status`, `scan.signaturesPending`) mostra quantos faltam; tente de novo quando chegar a zero |
 | Perdi o progresso depois de mexer nas pastas | O progresso é por item. Uma pasta indisponível **não** apaga o catálogo; se o arquivo realmente sumiu, o item é removido |
 
 ## Reprodução

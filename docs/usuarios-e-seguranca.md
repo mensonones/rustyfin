@@ -6,8 +6,7 @@
 - Cada usuário tem **progresso, favoritos e "continuar assistindo" próprios**.
 - Cada usuário pode ter acesso a **todas as bibliotecas** ou só a algumas (por exemplo, um perfil infantil só com Filmes).
 - Sempre sobra pelo menos **um administrador ativo**: o servidor recusa excluir, desativar ou rebaixar o último.
-- Um usuário pode ser **desativado** (não entra) ou **oculto** (some da lista de perfis da tela de login, mas entra
-  digitando o nome).
+- Um usuário pode ser **desativado** (não entra).
 - Cada usuário pode ter uma **foto de perfil** (JPEG, PNG, WebP ou GIF, até 8 MB), enviada pelo app ou pelo painel.
 
 ## Senhas e login

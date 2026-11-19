@@ -9,7 +9,6 @@ use crate::{
     db::DbPool,
     libraries::{self, LibError, Library},
     library::{self, ScanTrigger},
-    revisao_acervo::{self, MapaRetomada, Previa, Resolucao, Retomada, Revisao},
     settings, transcode,
     users::{self, PolicyUpdate},
 };
@@ -61,10 +60,6 @@ pub fn router(config: Arc<AppConfig>, pool: DbPool, scan: ScanTrigger) -> Router
         )
         .route("/admin/api/acervo", get(super::acervo_admin::listar))
         .route("/admin/api/acervo/:id/capa", get(super::acervo_admin::capa))
-        .route("/admin/api/acervo/revisoes", get(listar_revisoes))
-        .route("/admin/api/acervo/revisoes/:id/previa", post(prever_retomada))
-        .route("/admin/api/acervo/revisoes/:id", post(resolver_revisao))
-        .route("/admin/api/acervo/audio/:id", post(indexar_audio))
         .route("/admin/api/preparos", get(super::preparos::listar))
         .route("/admin/api/preparos/:chave", post(super::preparos::iniciar))
         .route("/admin/api/settings", get(get_settings).put(put_settings))
@@ -376,7 +371,7 @@ async fn rename_folder(State(st): State<AdminState>, RawQuery(raw): RawQuery) ->
 fn user_json(u: &users::User) -> Value {
     json!({
         "id": u.id, "name": u.name, "hasPassword": u.has_password, "isAdmin": u.is_admin,
-        "isDisabled": u.is_disabled, "isHidden": u.is_hidden, "allLibraries": u.all_libraries,
+        "isDisabled": u.is_disabled, "allLibraries": u.all_libraries,
         "libraries": u.libraries, "avatarTag": u.avatar.as_deref().map(crate::api::avatars::image_tag)
     })
 }
@@ -487,7 +482,6 @@ async fn users_policy(
     let upd = PolicyUpdate {
         is_admin: body.get("isAdmin").and_then(serde_json::Value::as_bool),
         is_disabled: body.get("isDisabled").and_then(serde_json::Value::as_bool),
-        is_hidden: body.get("isHidden").and_then(serde_json::Value::as_bool),
         all_libraries: body.get("allLibraries").and_then(serde_json::Value::as_bool),
         libraries: body
             .get("libraries")
@@ -546,90 +540,6 @@ async fn logo() -> impl IntoResponse {
     ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=86400")], include_bytes!("../assets/icon.png").as_slice())
 }
 
-async fn listar_revisoes(State(st): State<AdminState>) -> Result<Json<Vec<Revisao>>, StatusCode> {
-    revisao_acervo::listar(&st.pool).await.map(Json).map_err(|erro| {
-        tracing::error!("Falha ao listar revisões do acervo: {erro}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })
-}
-
-#[derive(serde::Deserialize)]
-#[serde(tag = "acao", rename_all = "camelCase", rename_all_fields = "camelCase")]
-enum AcaoRevisao {
-    Transferir {
-        item_id: String,
-        #[serde(default)]
-        retomadas: Vec<Retomada>,
-    },
-    ManterSeparados,
-}
-
-async fn resolver_revisao(
-    State(st): State<AdminState>, axum::extract::Path(id): axum::extract::Path<String>,
-    Json(acao): Json<AcaoRevisao>,
-) -> Result<StatusCode, StatusCode> {
-    let (destino, retomadas) = match &acao {
-        AcaoRevisao::Transferir { item_id, retomadas } => {
-            (Some(item_id.as_str()), retomadas.as_slice())
-        }
-        AcaoRevisao::ManterSeparados => (None, [].as_slice()),
-    };
-    match revisao_acervo::resolver(&st.pool, &id, destino, retomadas).await {
-        Ok(Resolucao::Aplicada) => Ok(StatusCode::NO_CONTENT),
-        Ok(erro) => Err(status_revisao(erro)),
-        Err(erro) => {
-            tracing::error!("Falha ao resolver revisão do acervo: {erro}");
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
-}
-
-fn status_revisao(erro: Resolucao) -> StatusCode {
-    match erro {
-        Resolucao::RevisaoAusente => StatusCode::NOT_FOUND,
-        Resolucao::DestinoIndisponivel | Resolucao::PosicaoAlterada => StatusCode::CONFLICT,
-        Resolucao::RetomadaInvalida => StatusCode::BAD_REQUEST,
-        Resolucao::Aplicada => StatusCode::NO_CONTENT,
-    }
-}
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ConsultaRetomada {
-    item_id: String,
-    mapa: Option<MapaRetomada>,
-    #[serde(default)]
-    automatico: bool,
-}
-
-async fn prever_retomada(
-    State(st): State<AdminState>, axum::extract::Path(id): axum::extract::Path<String>,
-    Json(consulta): Json<ConsultaRetomada>,
-) -> Result<Json<Previa>, StatusCode> {
-    revisao_acervo::previa(&st.pool, &id, &consulta.item_id, consulta.mapa.as_ref(), consulta.automatico)
-        .await
-        .map_err(|erro| {
-            tracing::error!("Falha ao calcular a retomada: {erro}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .map(Json)
-        .map_err(status_revisao)
-}
-
-async fn indexar_audio(
-    State(st): State<AdminState>, axum::extract::Path(id): axum::extract::Path<String>,
-) -> Result<StatusCode, StatusCode> {
-    let id = crate::api::shows::normalize_id(&id);
-    match crate::audio_edicoes::indexar(&st.pool, &id).await {
-        Ok(true) => Ok(StatusCode::NO_CONTENT),
-        Ok(false) => Err(StatusCode::UNPROCESSABLE_ENTITY),
-        Err(erro) => {
-            tracing::error!("Falha ao indexar áudio: {erro}");
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
-}
-
 /// Desliga o servidor de forma graciosa. Só aceita o próprio computador (o ícone da bandeja do Windows usa isto), mesmo
 /// com a administração liberada para a rede local: outro aparelho da rede não deve poder desligar o servidor.
 async fn desligar(ConnectInfo(addr): ConnectInfo<SocketAddr>) -> StatusCode {
@@ -662,7 +572,7 @@ async fn status(State(st): State<AdminState>) -> Response {
     .await
     .unwrap_or((0,));
     let libs = libraries::list(&st.pool).await.map_or(0, |l| l.len());
-    // Arquivos cujo hash de conteúdo ainda é calculado em segundo plano: até lá, indexar áudio e ajustar legendas
+    // Arquivos cujo hash de conteúdo ainda é calculado em segundo plano: até lá, ajustar legendas
     // respondem 409.
     let assinaturas_pendentes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE content_sha256 IS NULL")
         .fetch_one(&st.pool)

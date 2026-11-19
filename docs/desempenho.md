@@ -48,8 +48,9 @@ O comparativo foi feito para achar pontos fracos, e estes foram corrigidos:
   funcionalidade que preserva o histórico ao mover arquivos calculava o SHA-256 do arquivo inteiro durante a varredura,
   ou seja, lia os 30 GB. Agora a varredura só calcula o hash quando ele decide algo (arquivo alterado que já tinha hash,
   ou arquivo novo com o tamanho ou o nome de um item que sumiu) e o restante é preenchido em segundo plano, um arquivo
-  por vez. O custo é uma janela curta depois da primeira varredura em que um arquivo movido ainda não tem hash: ele não é
-  movido sozinho e vai para a fila de revisão do acervo, em vez de perder o histórico em silêncio.
+  por vez. O custo é uma janela curta depois da primeira varredura em que um arquivo movido ainda não tem hash: ele não
+  casa por conteúdo; se o título é o mesmo e só há um candidato, o item (com assistido e favorito, sem a posição) vai junto,
+  em vez de perder o histórico em silêncio.
 - **Quatro sessões HLS simultâneas: 2 de 4 falhavam (v0.17.4).** O ffmpeg de uma sessão encerrada seguia ocupando a vaga
   até a limpeza de 90 s, e o cliente recebia 503. Agora `Sessions/Playing/Stopped` libera a vaga na hora e, com o limite
   cheio, uma sessão parada há mais de 12 s cede a vaga.

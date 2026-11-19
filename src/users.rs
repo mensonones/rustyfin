@@ -68,7 +68,6 @@ pub struct User {
     pub is_disabled: bool,
     pub all_libraries: bool,
     /// Fora da lista de perfis da tela de login (o login digitando o nome continua valendo).
-    pub is_hidden: bool,
     /// Nome do arquivo da foto de perfil em `<cache>/avatars`.
     pub avatar: Option<String>,
     /// IDs das bibliotecas permitidas (só relevante se `all_libraries` for falso).
@@ -189,16 +188,16 @@ pub fn limiter_ok(key: &str) {
 
 // ---------------------------------------------------------------- consultas
 
-type UserRow = (String, String, Option<String>, bool, bool, bool, bool, Option<String>);
+type UserRow = (String, String, Option<String>, bool, bool, bool, Option<String>);
 
-const USER_COLS: &str = "id, name, password_hash, is_admin, is_disabled, all_libraries, is_hidden, avatar";
+const USER_COLS: &str = "id, name, password_hash, is_admin, is_disabled, all_libraries, avatar";
 
 async fn build_users(pool: &DbPool, rows: Vec<UserRow>) -> Result<Vec<User>, sqlx::Error> {
     let access: Vec<(String, String)> =
         sqlx::query_as("SELECT user_id, library_id FROM user_libraries").fetch_all(pool).await?;
     Ok(rows
         .into_iter()
-        .map(|(id, name, hash, is_admin, is_disabled, all_libraries, is_hidden, avatar)| User {
+        .map(|(id, name, hash, is_admin, is_disabled, all_libraries, avatar)| User {
             libraries: access.iter().filter(|(u, _)| *u == id).map(|(_, l)| l.clone()).collect(),
             id,
             name,
@@ -206,7 +205,6 @@ async fn build_users(pool: &DbPool, rows: Vec<UserRow>) -> Result<Vec<User>, sql
             is_admin,
             is_disabled,
             all_libraries,
-            is_hidden,
             avatar,
         })
         .collect())
@@ -365,7 +363,6 @@ pub async fn set_password(
 pub struct PolicyUpdate {
     pub is_admin: Option<bool>,
     pub is_disabled: Option<bool>,
-    pub is_hidden: Option<bool>,
     pub all_libraries: Option<bool>,
     pub libraries: Option<Vec<String>>,
 }
@@ -383,10 +380,9 @@ pub async fn set_policy(pool: &DbPool, id: &str, upd: PolicyUpdate) -> Result<()
     }
 
     let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE users SET is_admin = ?, is_disabled = ?, is_hidden = ?, all_libraries = ? WHERE id = ?")
+    sqlx::query("UPDATE users SET is_admin = ?, is_disabled = ?, all_libraries = ? WHERE id = ?")
         .bind(is_admin)
         .bind(is_disabled)
-        .bind(upd.is_hidden.unwrap_or(user.is_hidden))
         .bind(upd.all_libraries.unwrap_or(user.all_libraries))
         .bind(id)
         .execute(&mut *tx)

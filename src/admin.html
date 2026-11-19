@@ -111,8 +111,8 @@
   input:focus-visible, select:focus-visible { outline-offset: -1px; }
   input[readonly] { background: var(--paper-2); }
   input[type="checkbox"], input[type="radio"] { width: 20px; min-height: 20px; height: 20px; padding: 0; accent-color: var(--action); flex: none; margin: 0; }
-  label.check, label.destino-revisao { display: flex; gap: 12px; align-items: flex-start; font-weight: 500; margin: 12px 0 0; }
-  label.check span, label.destino-revisao span { display: block; color: var(--muted); font-weight: 400; font-size: var(--text-sm); }
+  label.check { display: flex; gap: 12px; align-items: flex-start; font-weight: 500; margin: 12px 0 0; }
+  label.check span { display: block; color: var(--muted); font-weight: 400; font-size: var(--text-sm); }
   fieldset { min-width: 0; padding: 0; border: 0; margin: 16px 0 0; }
   legend { font-weight: 500; font-size: var(--text-sm); padding: 0; margin-bottom: 8px; }
   .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -176,7 +176,6 @@
   .progress i { display: block; height: 100%; width: 40%; border-radius: 4px; background: var(--action); animation: indeterminado 1.2s var(--ease) infinite; }
   @keyframes indeterminado { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
   .signatures { margin: 0; font-size: var(--text-xs); color: var(--muted); }
-  .maintenance h3 { margin: 0 0 12px; }
   details.card { padding: 0; }
   details.card > summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; cursor: pointer; min-height: 56px; border-radius: var(--radius); }
   details.card > summary::-webkit-details-marker { display: none; }
@@ -187,9 +186,6 @@
   details.card > :not(summary) { margin-inline: 20px; }
   details.card > :last-child { margin-bottom: 20px; }
   details.card[open] > summary { border-radius: var(--radius) var(--radius) 0 0; }
-  #catalogoIndices[open] #buscarIndices { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
-  #buscarIndices label { grid-column: 1 / -1; margin: 0; }
-  #opcoesIndices .row { margin-top: 16px; }
 
   /* Sessões e usuários */
   .person-id .meta .badge { margin: 0; }
@@ -223,10 +219,6 @@
   .legendas video { display: block; max-width: 100%; width: 640px; margin-block: 16px; border-radius: var(--radius-sm); background: var(--paper-3); }
   .amostra { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--rule); }
   .amostra p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0; }
-  .revisoes article { padding-block: 20px; border-top: 1px solid var(--rule); }
-  .revisoes article h3 { margin-bottom: 8px; }
-  .revisoes article p { margin: 8px 0; font-size: var(--text-sm); }
-  .revisoes .row { margin-top: 16px; }
 
   /* Configurações */
   .settings .card { max-width: 720px; padding: 0; }
@@ -431,34 +423,6 @@
       </div>
       <p class="signatures" id="assinaturas" hidden></p>
     </div>
-    <section class="maintenance" aria-labelledby="maintenanceTitle">
-    <h3 id="maintenanceTitle">Manutenção do acervo</h3>
-    <details id="revisoesAcervo" class="card revisoes">
-      <summary><strong>Revisar alterações</strong></summary>
-      <p class="hint">Confira substituições e possíveis correspondências antes de transferir
-        favoritos, marcações de assistido e pontos de retomada confirmados.</p>
-      <button class="btn small" id="recarregarRevisoes" type="button"><svg class="i sm" aria-hidden="true"><use href="#i-refresh-cw"/></svg>Atualizar fila</button>
-      <p id="mensagemRevisoes" class="hint" role="status"></p>
-      <div id="listaRevisoes"></div>
-    </details>
-    <details class="card revisoes" id="catalogoIndices">
-      <summary><strong>Indexar áudio</strong></summary>
-      <p class="hint">Indexe o áudio antes de substituir uma edição.</p>
-      <form id="buscarIndices" class="row">
-        <label for="termoIndices">Título</label>
-        <input id="termoIndices" maxlength="128" required>
-        <button class="btn" type="submit">Buscar</button>
-      </form>
-      <div id="opcoesIndices" hidden>
-        <label for="tituloIndices">Arquivo do título</label>
-        <select id="tituloIndices"></select>
-        <div class="row">
-          <button id="indexarAudio" class="btn" type="button">Indexar áudio</button>
-        </div>
-      </div>
-      <p id="mensagemIndices" role="status" class="hint"></p>
-    </details>
-    </section>
     </div>
     </div>
   </section>
@@ -712,7 +676,6 @@
     <h2 id="permTitle">Permissões</h2>
     <label class="check"><input id="permAdmin" type="checkbox"> Administrador</label>
     <label class="check"><input id="permDisabled" type="checkbox"> Conta desativada (não consegue entrar)</label>
-    <label class="check"><input id="permHidden" type="checkbox"> Perfil oculto (não aparece na lista da tela de login; entra digitando o nome)</label>
     <label class="check"><input id="permAll" type="checkbox"> Acesso a todas as bibliotecas</label>
     <div id="permLibs"></div>
   </div>
@@ -938,265 +901,6 @@ window.addEventListener('hashchange', abrirAba);
 // ---- bibliotecas
 const typeLabel = { movies: 'Filmes', tvshows: 'Séries', anime: 'Anime' };
 let bibliotecasExibidas;
-// ---- revisão de alterações do acervo
-const motivosRevisao = {
-  substituido: 'O conteúdo mudou no mesmo caminho.',
-  mesmo_conteudo: 'O mesmo conteúdo existe em outro caminho. Escolha o destino, se for o caso.',
-  possivel_edicao: 'O nome e os dados do arquivo sugerem outra versão do mesmo título.',
-};
-const rotaRevisoes = '/admin/api/acervo/revisoes';
-let requisicaoRevisoes = 0;
-const duracaoRevisao = (ticks) => {
-  if (!ticks) return 'Duração indisponível';
-  const segundos = Math.round(ticks / 10000000);
-  return Math.floor(segundos / 60) + ' min ' + (segundos % 60) + ' s';
-};
-function lerTempoRevisao(valor) {
-  const partes = valor.trim().match(/^(?:(\d{1,4}):)?([0-5]?\d):([0-5]\d)(?:[.,](\d{1,3}))?$/);
-  if (!partes) return null;
-  const segundos = Number(partes[1] || 0) * 3600 + Number(partes[2]) * 60 + Number(partes[3]);
-  return segundos * 10000000 + Number((partes[4] || '').padEnd(3, '0')) * 10000;
-}
-function tempoRevisao(ticks) {
-  const ms = Math.floor(ticks / 10000);
-  const hora = Math.floor(ms / 3600000);
-  const min = String(Math.floor(ms / 60000) % 60).padStart(2, '0');
-  const seg = String(Math.floor(ms / 1000) % 60).padStart(2, '0');
-  const frac = ms % 1000;
-  return (hora ? hora + ':' : '') + min + ':' + seg
-    + (frac ? '.' + String(frac).padStart(3, '0') : '');
-}
-function montarRetomada(revisao, selecionar) {
-  const caixa = el('details', {}, el('summary', { textContent: 'Mapear retomada' }),
-    el('p', { className: 'hint',
-      textContent: 'Marque as mesmas duas cenas nas edições. Deixe os pontos em branco para digitar uma posição manual.',
-    }));
-  const mensagem = el('p', { className: 'hint' });
-  mensagem.setAttribute('role', 'status');
-  const posicoes = el('div');
-  const referencias = [
-    ['anteriorA', 'Ponto A na edição anterior'], ['novoA', 'Ponto A na nova edição'],
-    ['anteriorB', 'Ponto B na edição anterior'], ['novoB', 'Ponto B na nova edição'],
-  ].map(([chave, rotulo]) => {
-    const label = el('label', { textContent: rotulo });
-    const campo = el('input', { placeholder: 'mm:ss', autocomplete: 'off' });
-    label.append(campo);
-    caixa.append(label);
-    return [chave, campo];
-  });
-  const automatico = el('input', { type: 'checkbox' });
-  caixa.append(el('label', { className: 'destino-revisao' },
-    automatico, 'Sugerir pela trilha de áudio'));
-  let escolhas = [];
-  let geracao = 0;
-  const limpar = () => {
-    geracao++;
-    escolhas = [];
-    posicoes.replaceChildren();
-    mensagem.textContent = '';
-  };
-  for (const [, campo] of referencias) campo.oninput = limpar;
-  automatico.onchange = () => {
-    for (const [, campo] of referencias) campo.disabled = automatico.checked;
-    limpar();
-  };
-  const prever = el('button', {
-    type: 'button', className: 'btn small', textContent: 'Gerar prévia de retomada',
-    onclick: async () => {
-      limpar();
-      const pedido = geracao;
-      const itemId = selecionar();
-      if (!itemId) {
-        mensagem.textContent = 'Escolha um destino.';
-        return;
-      }
-      const temPontos = !automatico.checked && referencias.some(([, campo]) => campo.value.trim());
-      const mapa = temPontos
-        ? Object.fromEntries(referencias.map(([chave, campo]) => [chave, lerTempoRevisao(campo.value)]))
-        : null;
-      if (mapa && Object.values(mapa).some((ticks) => ticks === null)) {
-        mensagem.textContent = 'Use mm:ss ou hh:mm:ss nos quatro pontos.';
-        return;
-      }
-      mensagem.textContent = 'Calculando posições…';
-      try {
-        const previa = await api('POST', rotaRevisoes + '/' + encodeURIComponent(revisao.id) + '/previa',
-          { itemId, mapa, automatico: automatico.checked });
-        if (pedido !== geracao) return;
-        mensagem.textContent = previa.duracaoDestino > 0
-          ? 'Escolha quais posições transferir. Para cenas cortadas, informe o tempo manualmente.'
-          : 'A duração do destino é desconhecida. A transferência de posição está indisponível.';
-        escolhas = previa.posicoes.map((p) => {
-          const marcar = el('input', { type: 'checkbox', disabled: previa.duracaoDestino <= 0,
-            checked: p.atual === 0 && p.sugerida !== null });
-          const tempo = el('input', { placeholder: 'mm:ss', value: p.sugerida === null
-            ? '' : tempoRevisao(p.sugerida), disabled: !marcar.checked });
-          marcar.onchange = () => { tempo.disabled = !marcar.checked; };
-          posicoes.append(el('div', { className: 'amostra' },
-            el('h4', { textContent: p.perfil }),
-            el('p', { className: 'hint',
-              textContent: 'Anterior: ' + tempoRevisao(p.anterior) + ' / Destino atual: '
-                + (p.atual ? tempoRevisao(p.atual) : 'sem posição') }),
-            p.sugerida === null && previa.duracaoDestino > 0
-              ? el('p', { className: 'hint', textContent: automatico.checked
-                  ? 'Sem correspondência de áudio confiável. Informe uma posição manual.'
-                  : 'Sem sugestão entre os pontos. Informe uma posição manual.' })
-              : '',
-            el('label', { className: 'destino-revisao' }, marcar, 'Transferir posição deste perfil'),
-            el('label', {}, 'Posição na nova edição', tempo)));
-          return { p, marcar, tempo, duracao: previa.duracaoDestino };
-        });
-      } catch (erro) {
-        if (pedido === geracao) mensagem.textContent = erro.status === 400
-          ? 'Confira a ordem dos pontos e a duração das duas edições.' : mensagemErro(erro);
-      }
-    },
-  });
-  caixa.append(el('div', { className: 'row' }, prever), mensagem, posicoes);
-  return {
-    caixa, limpar,
-    obter: () => escolhas.filter(({ marcar }) => marcar.checked).map(({ p, tempo, duracao }) => {
-      const ticks = lerTempoRevisao(tempo.value);
-      if (ticks === null || ticks >= duracao) {
-        tempo.focus();
-        throw new Error('Informe uma posição válida dentro da duração do destino.');
-      }
-      return { perfilId: p.perfilId, posicaoTicks: ticks, posicaoEsperadaTicks: p.atual };
-    }),
-  };
-}
-async function decidirRevisao(revisao, acao, controles) {
-  const mensagem = acao.acao === 'transferir'
-    ? 'Transferir marcadores' + (acao.retomadas.length ? ' e as posições selecionadas' : '')
-      + ' para o destino escolhido?'
-    : 'Encerrar esta revisão e manter os itens separados?';
-  if (!(await confirmar(mensagem, { titulo: acao.acao === 'transferir' ? 'Transferir estado' : 'Manter separados',
-    rotulo: acao.acao === 'transferir' ? 'Transferir' : 'Manter separados' }))) return;
-  for (const campo of controles) campo.disabled = true;
-  try {
-    await api('POST', rotaRevisoes + '/' + encodeURIComponent(revisao.id), acao);
-    await carregarRevisoes();
-    toast(acao.acao === 'transferir' ? 'Estado transferido.' : 'Revisão encerrada.');
-  } catch (erro) {
-    if (erro.status === 404 || erro.status === 409) {
-      await carregarRevisoes();
-      toast('A revisão ou o destino mudou. Confira a fila atualizada.', true);
-    } else {
-      toast(mensagemErro(erro), true);
-    }
-  } finally {
-    for (const campo of controles) campo.disabled = false;
-  }
-}
-function montarRevisao(revisao) {
-  const disponiveis = [];
-  const opcoes = revisao.destinos.map((destino, indice) => {
-    const identificador = 'destino-' + revisao.id + '-' + indice;
-    const radio = el('input', {
-      type: 'radio', id: identificador, name: 'destino-' + revisao.id,
-      value: destino.itemId || '', disabled: !destino.itemId,
-    });
-    if (destino.itemId) disponiveis.push(radio);
-    return el('label', { className: 'destino-revisao', htmlFor: identificador },
-      radio, destino.titulo || 'Destino indisponível',
-      el('span', {}, el('code', { textContent: destino.caminho }),
-        ' / ' + duracaoRevisao(destino.duracaoTicks)));
-  });
-  const transferir = el('button', {
-    type: 'button', className: 'btn primary', textContent: 'Transferir estado', disabled: true,
-  });
-  const separar = el('button', {
-    type: 'button', className: 'btn', textContent: 'Manter separados',
-  });
-  const selecionar = () => disponiveis.find((r) => r.checked)?.value;
-  const retomada = revisao.retomadas ? montarRetomada(revisao, selecionar) : null;
-  const controles = [transferir, separar, ...disponiveis];
-  for (const radio of disponiveis) radio.onchange = () => {
-    transferir.disabled = false;
-    retomada?.limpar();
-  };
-  if (disponiveis.length === 1) {
-    disponiveis[0].checked = true;
-    transferir.disabled = false;
-  }
-  transferir.onclick = () => {
-    const itemId = selecionar();
-    if (!itemId) return;
-    try {
-      const retomadas = retomada?.obter() || [];
-      decidirRevisao(revisao, { acao: 'transferir', itemId, retomadas }, controles);
-    } catch (erro) {
-      toast(mensagemErro(erro), true);
-    }
-  };
-  separar.onclick = () => decidirRevisao(revisao, { acao: 'manterSeparados' },
-    controles.filter((campo) => !campo.disabled));
-  return el('article', {},
-    el('h3', { textContent: revisao.titulo }),
-    el('p', { className: 'hint', textContent: motivosRevisao[revisao.motivo] }),
-    el('p', {}, 'Arquivo anterior: ', el('code', { textContent: revisao.caminho }),
-      ' / ' + duracaoRevisao(revisao.duracaoTicks)),
-    revisao.perfis ? el('p', { className: 'hint', textContent: revisao.perfis === 1
-      ? '1 perfil com marcadores' : revisao.perfis + ' perfis com marcadores' }) : '',
-    revisao.retomadas ? el('p', { className: 'hint', textContent: revisao.retomadas === 1
-      ? '1 perfil com posição de retomada' : revisao.retomadas + ' perfis com posição de retomada' }) : '',
-    el('fieldset', {}, el('legend', { textContent: 'Novo arquivo' }), ...opcoes),
-    retomada?.caixa || '',
-    el('div', { className: 'row' }, transferir, separar));
-}
-async function carregarRevisoes() {
-  const atual = ++requisicaoRevisoes;
-  $('recarregarRevisoes').disabled = true;
-  const mensagem = $('mensagemRevisoes');
-  mensagem.textContent = 'Carregando alterações…';
-  try {
-    const revisoes = await api('GET', rotaRevisoes);
-    if (atual !== requisicaoRevisoes) return;
-    $('listaRevisoes').replaceChildren(...revisoes.map(montarRevisao));
-    mensagem.textContent = revisoes.length ? '' : 'Nenhuma alteração para revisar.';
-  } catch (erro) {
-    if (atual === requisicaoRevisoes) {
-      mensagem.textContent = 'Falha ao carregar a fila. ' + mensagemErro(erro);
-    }
-  } finally {
-    if (atual === requisicaoRevisoes) $('recarregarRevisoes').disabled = false;
-  }
-}
-$('recarregarRevisoes').onclick = carregarRevisoes;
-$('revisoesAcervo').ontoggle = () => { if ($('revisoesAcervo').open) carregarRevisoes(); };
-
-$('buscarIndices').onsubmit = async (e) => {
-  e.preventDefault();
-  $('opcoesIndices').hidden = true;
-  e.submitter.disabled = true;
-  try {
-    const termo = $('termoIndices').value.trim();
-    const titulos = await api('GET', '/admin/api/reproducao/titulos?busca=' + encodeURIComponent(termo));
-    $('tituloIndices').replaceChildren(...titulos.map((t) => opcao(t.id, rotuloTitulo(t))));
-    $('opcoesIndices').hidden = !titulos.length;
-    // Logo depois da primeira varredura o hash de cada arquivo ainda é calculado em segundo plano; até lá indexar responde 409.
-    const pendentes = titulos.length ? ((await api('GET', '/admin/api/status')).scan?.signaturesPending || 0) : 0;
-    $('mensagemIndices').textContent = !titulos.length ? 'Nenhum título encontrado.'
-      : pendentes ? pendentes + (pendentes === 1 ? ' arquivo ainda aguarda' : ' arquivos ainda aguardam')
-        + ' a assinatura em segundo plano. Indexar esses títulos funciona quando ela terminar.' : '';
-  } catch (erro) { $('mensagemIndices').textContent = mensagemErro(erro); }
-  finally { e.submitter.disabled = false; }
-};
-$('indexarAudio').onclick = async () => {
-  const id = $('tituloIndices').value;
-  $('indexarAudio').disabled = true;
-  $('mensagemIndices').textContent = 'Indexando…';
-  try {
-    await api('POST', '/admin/api/acervo/audio/' + encodeURIComponent(id));
-    $('mensagemIndices').textContent = 'Áudio indexado.';
-  } catch (erro) {
-    $('mensagemIndices').textContent = erro.status === 422
-      ? 'Áudio indisponível ou indexação ocupada.'
-      : erro.status === 409
-        ? 'A assinatura do arquivo ainda está sendo calculada em segundo plano. Tente de novo em alguns minutos.'
-        : mensagemErro(erro);
-  } finally { $('indexarAudio').disabled = false; }
-};
 async function listarPreparos() {
   try {
     const dados = await api('GET', '/admin/api/preparos');
@@ -1223,7 +927,6 @@ $('listarPreparos').onclick = listarPreparos;
 $('painelPreparos').ontoggle = () => { if ($('painelPreparos').open) listarPreparos(); };
 
 async function loadLibs() {
-  if ($('revisoesAcervo').open) carregarRevisoes();
   const libs = await api('GET', '/admin/api/folders');
   const dados = JSON.stringify(libs);
   if (dados === bibliotecasExibidas) return;
@@ -1387,7 +1090,6 @@ async function loadUsers() {
     const badges = el('div', { className: 'meta' });
     if (u.isAdmin) badges.append(el('span', { className: 'badge', textContent: 'Administrador' }));
     if (u.isDisabled) badges.append(el('span', { className: 'badge bad', textContent: 'Desativado' }));
-    if (u.isHidden) badges.append(el('span', { className: 'badge', textContent: 'Oculto' }));
     badges.append(el('span', { className: 'badge' + (u.hasPassword ? '' : ' warn'), textContent: u.hasPassword ? 'Com senha' : 'Sem senha' }));
     const names = u.allLibraries ? 'todas as bibliotecas' : (u.libraries.map((id) => (libs.find((l) => l.Id === id) || {}).Name).filter(Boolean).join(', ') || 'nenhuma biblioteca');
     const avatar = u.avatarTag
@@ -1449,7 +1151,7 @@ let permUser = null;
 function editPerms(u) {
   permUser = u;
   $('permTitle').textContent = 'Permissões de ' + u.name;
-  $('permAdmin').checked = u.isAdmin; $('permDisabled').checked = u.isDisabled; $('permHidden').checked = u.isHidden; $('permAll').checked = u.allLibraries;
+  $('permAdmin').checked = u.isAdmin; $('permDisabled').checked = u.isDisabled; $('permAll').checked = u.allLibraries;
   const box = $('permLibs'); box.replaceChildren();
   allLibs.forEach((l) => {
     const cb = el('input', { type: 'checkbox', value: l.Id, checked: u.libraries.includes(l.Id) });
@@ -1462,7 +1164,7 @@ function editPerms(u) {
 $('permCancel').onclick = () => $('permDialog').close();
 $('permSave').onclick = () => act(async () => {
   await api('POST', '/admin/api/users/' + permUser.id + '/policy', {
-    isAdmin: $('permAdmin').checked, isDisabled: $('permDisabled').checked, isHidden: $('permHidden').checked, allLibraries: $('permAll').checked,
+    isAdmin: $('permAdmin').checked, isDisabled: $('permDisabled').checked, allLibraries: $('permAll').checked,
     libraries: [...$('permLibs').querySelectorAll('input:checked')].map((i) => i.value),
   });
   $('permDialog').close();
@@ -1861,7 +1563,7 @@ async function atualizarStatus() {
   const pendentes = sc.signaturesPending || 0;
   $('assinaturas').hidden = !pendentes;
   $('assinaturas').textContent = pendentes
-    ? 'Assinaturas pendentes: ' + pendentes + '. Indexar áudio e ajustar legendas funcionam quando chegar a zero.' : '';
+    ? 'Assinaturas pendentes: ' + pendentes + '. Ajustar legendas funciona quando chegar a zero.' : '';
   $('scanBtn').disabled = varreduraSolicitada || sc.running || sc.pending;
   $('retryScan').hidden = true;
   const diagnostico = JSON.stringify([s.items, s.libraries, s.users, s.ffmpeg,
@@ -1974,16 +1676,6 @@ function rotuloEpisodio(t) {
   const marca = t.temporada != null && t.episodio != null ? 'S' + t.temporada + 'E' + t.episodio : '';
   return [t.serie, marca].filter(Boolean).join(' ');
 }
-async function acaoNoTitulo(rota, sucesso, t) {
-  try {
-    const dados = await api('POST', rota + encodeURIComponent(t.id));
-    toast(sucesso(dados));
-    carregarAcervo().catch((e) => toast(mensagemErro(e), true));
-  } catch (erro) {
-    toast(erro.status === 409 ? 'A assinatura do arquivo ainda está sendo calculada. Tente de novo em alguns minutos.'
-      : erro.status === 422 ? 'Áudio ou legenda indisponível, ou indexação ocupada.' : mensagemErro(erro), true);
-  }
-}
 function linhaAcervo(t) {
   const episodio = rotuloEpisodio(t);
   const nome = el('div', { className: 'titulo-acervo' }, episodio || t.nome + (t.ano ? ' (' + t.ano + ')' : ''));
@@ -1994,7 +1686,6 @@ function linhaAcervo(t) {
     duracaoLegivel(t.duracaoSegundos)].filter(Boolean).join(', ');
   const midia = el('div', { className: 'midia-acervo' }, formato || '-', el('small', { textContent: detalhes }));
   const acoes = menu('Ações de ' + t.nome, [
-    ['Indexar áudio', () => acaoNoTitulo('/admin/api/acervo/audio/', () => 'Áudio indexado.', t), false, 'activity'],
     ['Ajustar legenda', () => {
       navegar('status');
       $('legPainel').open = true;

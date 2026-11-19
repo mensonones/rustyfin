@@ -187,12 +187,8 @@ Progresso, "assistido", favoritos e contagem de reproduções são gravados **po
 
 ## Áudio e versões preparadas
 
-Em **Bibliotecas → Manutenção do acervo → Indexar áudio**, selecione um título. Essa ação, e o ajuste de legenda,
-só funcionam depois que o hash do arquivo foi calculado em segundo plano (logo após a primeira varredura ele ainda está
-pendente e o painel avisa para tentar de novo). Indexe a
-primeira faixa de áudio **antes de substituir a edição**. Na revisão, escolha **Sugerir pela trilha de áudio**. A comparação
-é local, usa até três horas de áudio por edição e devolve somente correspondências distintas
-com baixa distância entre as assinaturas. Permanece disponível a confirmação por perfil.
+O ajuste de legenda só funciona depois que o hash do arquivo foi calculado em segundo plano (logo após a primeira varredura
+ele ainda está pendente e o painel avisa para tentar de novo).
 
 Em **Diagnóstico → Versões recomendadas**, o servidor recomenda MP4 progressivo após duas
 sessões relatadas com a mesma configuração elegível. O preparo usa a faixa de áudio padrão,

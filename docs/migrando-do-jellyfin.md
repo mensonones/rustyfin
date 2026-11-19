@@ -33,7 +33,7 @@ lado** (veja abaixo).
 | Recurso | O que faz |
 |---|---|
 | **[Ajuste de legendas SRT](reproducao.md#corrigir-uma-faixa-srt)** | Corrija atraso fixo ou desvio progressivo de uma legenda direto no painel, sem editar o arquivo |
-| **[Revisão do acervo](arquitetura.md#revisar-alterações-do-acervo)** | Troquei um filme por outra edição: transfira favoritos, "assistido" e a posição de retomada para o arquivo novo, inclusive sugerindo pela trilha de áudio |
+| **[Histórico que acompanha o arquivo](arquitetura.md#o-que-acontece-com-o-histórico-quando-o-arquivo-muda)** | Moveu ou trocou um filme de pasta? Favoritos e "assistido" vão junto, sem tela de revisão |
 | **[Versões preparadas](reproducao.md#áudio-e-versões-preparadas)** | O servidor recomenda converter para MP4 o que sempre cai em transcode, e faz isso quando está ocioso |
 | **[Diagnóstico antes do Play](reproducao.md)** | Compare o plano de reprodução (Direct Play, remux ou transcode) de dois aparelhos para um mesmo título |
 | **Painel `/admin`** | Tema claro e escuro, paleta de comandos (`Ctrl K`) e avisos só do que precisa de atenção |
@@ -58,7 +58,7 @@ Dá para testar o Rustyfin **sem desligar nem alterar o Jellyfin**.
 | No Jellyfin | No Rustyfin |
 |---|---|
 | Painel → Bibliotecas | `/admin` → **Bibliotecas** |
-| Painel → Usuários | `/admin` → **Usuários** (senha com Argon2, acesso por biblioteca, perfil oculto, foto) |
+| Painel → Usuários | `/admin` → **Usuários** (senha com Argon2, acesso por biblioteca, foto) |
 | Painel → Dispositivos | `/admin` → **Sessões** |
 | Painel → Reprodução → Transcodificação | `RUSTYFIN_VIDEO_ENCODER` e `RUSTYFIN_MAX_TRANSCODES` ([aceleração por hardware](reproducao.md#aceleração-por-hardware)) |
 | Painel → Painel de controle / Logs | `/admin` → **Diagnóstico** e `docker compose logs -f` |

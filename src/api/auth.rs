@@ -249,7 +249,8 @@ pub fn user_dto(config: &AppConfig, u: &User) -> UserDto {
         },
         policy: UserPolicy {
             is_administrator: u.is_admin,
-            is_hidden: u.is_hidden,
+            // Sem perfis ocultos: o campo existe só porque os apps do Jellyfin o esperam.
+            is_hidden: false,
             is_disabled: u.is_disabled,
             enable_media_playback: true,
             enable_audio_playback_transcoding: true,
@@ -283,12 +284,12 @@ pub fn user_error_response(e: UserError) -> Response {
 
 // ---------------------------------------------------------------- login
 
-/// Tela de login: usuários ativos (como no Jellyfin, quando não estão ocultos).
+/// Tela de login: os usuários ativos.
 pub async fn get_public_users(State((config, pool)): State<AppState>) -> Response {
     match users::list(&pool).await {
         Ok(list) => Json(
             list.iter()
-                .filter(|u| !u.is_disabled && !u.is_hidden)
+                .filter(|u| !u.is_disabled)
                 .map(|u| user_dto(&config, u))
                 .collect::<Vec<_>>(),
         )
@@ -436,7 +437,6 @@ pub fn policy_from_json(body: &Value) -> PolicyUpdate {
     PolicyUpdate {
         is_admin: body.get("IsAdministrator").and_then(serde_json::Value::as_bool),
         is_disabled: body.get("IsDisabled").and_then(serde_json::Value::as_bool),
-        is_hidden: body.get("IsHidden").and_then(serde_json::Value::as_bool),
         all_libraries: body.get("EnableAllFolders").and_then(serde_json::Value::as_bool),
         libraries: body.get("EnabledFolders").and_then(|v| v.as_array()).map(|a| {
             a.iter().filter_map(|v| v.as_str()).map(|s| s.replace('-', "").to_lowercase()).collect()

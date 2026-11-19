@@ -35,7 +35,7 @@ cargo test --locked                                  # unitários e de integraç
 | Tipo | Onde | O que cobre |
 |---|---|---|
 | Unitários | no próprio arquivo (`#[cfg(test)]`) | Parser de nomes, decisão de reprodução, argumentos do ffmpeg, Range, usuários, filtros |
-| Integração | `tests/` | O roteador completo com um SQLite temporário: rotas públicas, token obrigatório, perfis ocultos, sessões, revisão do acervo, ajuste de legenda, indexação de áudio e versões preparadas |
+| Integração | `tests/` | O roteador completo com um SQLite temporário: rotas públicas, token obrigatório, sessões, identidade dos arquivos, ajuste de legenda e versões preparadas |
 | Fluxo de um app | `tools/client_probe.py` | Sequência de um cliente Jellyfin contra um servidor em execução |
 | GPU | `tools/gpu-check.sh` | Diagnóstico da aceleração por hardware dentro do container (veja [reprodução](reproducao.md#aceleração-por-hardware)) |
 | GPU (nativo) | `tools/gpu_test/gpu_test.py` | Formatos, HDR, ABR, avanço, legendas de imagem, 4K, AV1 e a volta para software com o Quick Sync ou o VAAPI, fora do Docker ([como rodar](../tools/gpu_test/README.md)) |

@@ -120,25 +120,6 @@ async fn library_routes_need_a_token() {
 }
 
 #[tokio::test]
-async fn hidden_profiles_leave_the_login_list_but_can_still_sign_in() {
-    let s = server("hidden").await;
-    let admin = login(&s.app, "Admin").await;
-    let (st, user) = call(&s.app, Method::POST, "/Users/New", Some(&admin), Some(json!({ "Name": "Visita" }))).await;
-    assert_eq!(st, StatusCode::OK, "{user}");
-    let id = user["Id"].as_str().unwrap().to_string();
-
-    let names = |v: &Value| -> Vec<String> { v.as_array().unwrap().iter().map(|u| u["Name"].as_str().unwrap().to_string()).collect() };
-    let (_, list) = call(&s.app, Method::GET, "/Users/Public", None, None).await;
-    assert!(names(&list).contains(&"Visita".to_string()));
-
-    let (st, _) = call(&s.app, Method::POST, &format!("/Users/{id}/Policy"), Some(&admin), Some(json!({ "IsHidden": true }))).await;
-    assert_eq!(st, StatusCode::NO_CONTENT);
-    let (_, list) = call(&s.app, Method::GET, "/Users/Public", None, None).await;
-    assert!(!names(&list).contains(&"Visita".to_string()));
-    login(&s.app, "Visita").await; // continua entrando digitando o nome
-}
-
-#[tokio::test]
 async fn revoked_sessions_stop_working_and_tokens_never_leak() {
     let s = server("sessions").await;
     let admin = login(&s.app, "Admin").await;
@@ -340,8 +321,8 @@ async fn ajuste_srt_persiste_e_a_faixa_original_pode_ser_restaurada() {
 
 
 #[tokio::test]
-async fn revisao_de_substituicao_transfere_marcadores_sem_sobrescrever_posicao() {
-    let s = server("revisao-acervo").await;
+async fn conteudo_trocado_no_mesmo_caminho_mantem_assistido_e_favorito_e_zera_a_retomada() {
+    let s = server("troca-de-conteudo").await;
     let pool = db::init_db(&test_config(&s.dir).database_url).await.unwrap();
     let midia = s.dir.join("midia");
     std::fs::create_dir(&midia).unwrap();
@@ -353,100 +334,32 @@ async fn revisao_de_substituicao_transfere_marcadores_sem_sobrescrever_posicao()
     }];
     assert_eq!(scanner::run_scan(&pool, &libs).await, 1);
     scanner::completar_hashes(&pool).await;
-    let antigo = scanner::item_id_for_path(caminho.to_str().unwrap());
+    let id = scanner::item_id_for_path(caminho.to_str().unwrap());
     let token = login(&s.app, "Admin").await;
-    for rota in [format!("/UserFavoriteItems/{antigo}"), format!("/UserPlayedItems/{antigo}")] {
+    for rota in [format!("/UserFavoriteItems/{id}"), format!("/UserPlayedItems/{id}")] {
         let (status, _) = call(&s.app, Method::POST, &rota, Some(&token), None).await;
         assert!(status.is_success(), "{rota}: {status}");
     }
+    let (status, _) = call(
+        &s.app, Method::POST, "/Sessions/Playing/Progress", Some(&token),
+        Some(json!({ "ItemId": id, "PositionTicks": 50_000_000_i64 })),
+    ).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
 
     std::fs::write(&caminho, b"outra edicao com duracao diferente").unwrap();
     assert_eq!(scanner::run_scan(&pool, &libs).await, 1);
-    let (status, fila) = call(&s.app, Method::GET, "/admin/api/acervo/revisoes", None, None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(fila.as_array().unwrap().len(), 1);
-    assert_eq!(fila[0]["id"], antigo);
-    assert_eq!(fila[0]["motivo"], "substituido");
-    let novo = fila[0]["destinos"][0]["itemId"].as_str().unwrap();
-    assert_ne!(novo, antigo);
-
-    let (status, _) = call(
-        &s.app, Method::POST, "/Sessions/Playing/Progress", Some(&token),
-        Some(json!({ "ItemId": novo, "PositionTicks": 50_000_000_i64 })),
-    ).await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-    let rota = format!("/admin/api/acervo/revisoes/{antigo}");
-    let (status, _) = call(
-        &s.app, Method::POST, &rota, None,
-        Some(json!({ "acao": "transferir", "itemId": "outro" })),
-    ).await;
-    assert_eq!(status, StatusCode::CONFLICT);
-    let (status, _) = call(
-        &s.app, Method::POST, &rota, None,
-        Some(json!({ "acao": "transferir", "itemId": novo })),
-    ).await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-    let (_, item) = call(
-        &s.app, Method::GET, &format!("/Items/{novo}"), Some(&token), None,
-    ).await;
+    let itens: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items").fetch_one(&pool).await.unwrap();
+    assert_eq!(itens, 1, "o item é o mesmo, sem fila de revisão");
+    let (_, item) = call(&s.app, Method::GET, &format!("/Items/{id}"), Some(&token), None).await;
+    assert_eq!(item["Id"], id);
     assert_eq!(item["UserData"]["IsFavorite"], true);
     assert_eq!(item["UserData"]["Played"], true);
-    assert_eq!(item["UserData"]["PlaybackPositionTicks"], 50_000_000_i64);
-    assert_eq!(scanner::run_scan(&pool, &libs).await, 1);
-    let (_, fila) = call(&s.app, Method::GET, "/admin/api/acervo/revisoes", None, None).await;
-    assert_eq!(fila, json!([]));
+    assert_eq!(item["UserData"]["PlaybackPositionTicks"], 0, "a posição não vale para outro conteúdo");
 }
 
 
 #[tokio::test]
-async fn retomada_mapeia_3210_para_3255_e_protege_posicao_atualizada() {
-    let s = server("retomada").await;
-    let pool = db::init_db(&test_config(&s.dir).database_url).await.unwrap();
-    let token = login(&s.app, "Admin").await;
-    sqlx::query(
-        "INSERT INTO items (id, name, path, media_type, duration_ticks, content_sha256)
-         VALUES ('nova', 'Edição nova', '/media/nova.mp4', 'Movie', 25000000000, X'01');
-         INSERT INTO media_reviews (id, title, path, duration_ticks, reason) VALUES ('antiga', 'Edição antiga', '/media/antiga.mp4',
-                                          24000000000, 'possivel_edicao');
-         INSERT INTO media_review_targets VALUES ('antiga', '/media/nova.mp4', X'01');
-         INSERT INTO media_review_state
-         SELECT 'antiga', id, 0, 1, 19300000000 FROM users WHERE name = 'Admin';",
-    ).execute(&pool).await.unwrap();
-    let rota = "/admin/api/acervo/revisoes/antiga";
-    let (status, previa) = call(
-        &s.app, Method::POST, &format!("{rota}/previa"), None,
-        Some(json!({
-            "itemId": "nova",
-            "mapa": { "anteriorA": 0, "novoA": 450_000_000_i64,
-                      "anteriorB": 24_000_000_000_i64, "novoB": 24_450_000_000_i64 }
-        })),
-    ).await;
-    assert_eq!(status, StatusCode::OK);
-    let posicao = &previa["posicoes"][0];
-    assert_eq!(posicao["sugerida"], 19_750_000_000_i64);
-    let mut pedido = json!({
-        "acao": "transferir", "itemId": "nova",
-        "retomadas": [{ "perfilId": posicao["perfilId"], "posicaoTicks": posicao["sugerida"],
-                        "posicaoEsperadaTicks": 0 }]
-    });
-    let (status, _) = call(
-        &s.app, Method::POST, "/Sessions/Playing/Progress", Some(&token),
-        Some(json!({ "ItemId": "nova", "PositionTicks": 50_000_000_i64 })),
-    ).await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-    let (status, _) = call(&s.app, Method::POST, rota, None, Some(pedido.clone())).await;
-    assert_eq!(status, StatusCode::CONFLICT);
-    pedido["retomadas"][0]["posicaoEsperadaTicks"] = json!(50_000_000_i64);
-    let (status, _) = call(&s.app, Method::POST, rota, None, Some(pedido)).await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-    let (_, item) = call(&s.app, Method::GET, "/Items/nova", Some(&token), None).await;
-    assert_eq!(item["UserData"]["PlaybackPositionTicks"], 19_750_000_000_i64);
-    assert_eq!(item["UserData"]["IsFavorite"], true);
-}
-
-
-#[tokio::test]
-async fn arquivo_movido_antes_do_hash_vai_para_a_revisao_em_vez_de_perder_o_historico() {
+async fn arquivo_movido_antes_do_hash_mantem_o_historico_sem_a_posicao() {
     let s = server("movido-antes-do-hash").await;
     let pool = db::init_db(&test_config(&s.dir).database_url).await.unwrap();
     let midia = s.dir.join("midia");
@@ -460,14 +373,26 @@ async fn arquivo_movido_antes_do_hash_vai_para_a_revisao_em_vez_de_perder_o_hist
     }];
     assert_eq!(scanner::run_scan(&pool, &libs).await, 1);
     let id = scanner::item_id_for_path(origem.to_str().unwrap());
-    // movido antes de o hash em segundo plano terminar: não dá para casar por conteúdo
+    let token = login(&s.app, "Admin").await;
+    let (status, _) = call(&s.app, Method::POST, &format!("/UserFavoriteItems/{id}"), Some(&token), None).await;
+    assert!(status.is_success());
+    let (status, _) = call(
+        &s.app, Method::POST, "/Sessions/Playing/Progress", Some(&token),
+        Some(json!({ "ItemId": id, "PositionTicks": 50_000_000_i64 })),
+    ).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    // movido antes de o hash em segundo plano terminar: não dá para casar por conteúdo, só pelo título
     std::fs::rename(&origem, &destino).unwrap();
     assert_eq!(scanner::run_scan(&pool, &libs).await, 1);
-    let (status, fila) = call(&s.app, Method::GET, "/admin/api/acervo/revisoes", None, None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(fila.as_array().unwrap().len(), 1, "{fila}");
-    assert_eq!(fila[0]["id"], id);
-    assert_eq!(fila[0]["motivo"], "possivel_edicao");
+    let (caminho, itens): (String, i64) = (
+        sqlx::query_scalar("SELECT path FROM items WHERE id = ?").bind(&id).fetch_one(&pool).await.unwrap(),
+        sqlx::query_scalar("SELECT COUNT(*) FROM items").fetch_one(&pool).await.unwrap(),
+    );
+    assert_eq!(std::path::Path::new(&caminho), destino);
+    assert_eq!(itens, 1);
+    let (_, item) = call(&s.app, Method::GET, &format!("/Items/{id}"), Some(&token), None).await;
+    assert_eq!(item["UserData"]["IsFavorite"], true);
+    assert_eq!(item["UserData"]["PlaybackPositionTicks"], 0);
 }
 
 
@@ -532,31 +457,6 @@ const LEGENDA_SRT: &str = concat!(
     "2\n00:30:00,000 --> 00:30:03,000\nEmpunhe a espada\n\n",
     "3\n01:00:00,000 --> 01:00:04,000\nO castelo caiu\n",
 );
-
-#[tokio::test]
-async fn indexar_audio_exige_titulo_existente_e_com_assinatura() {
-    let s = server("indices-erros").await;
-    let config = Arc::new(test_config(&s.dir));
-    let pool = db::init_db(&config.database_url).await.unwrap();
-    // Título que não existe.
-    let (status, _) = call(&s.app, Method::POST, "/admin/api/acervo/audio/00000000000000000000000000000000", None, None).await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    // Título recém-varrido, sem o hash calculado: a ação espera.
-    let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    let video = s.dir.join("novo.mp4");
-    std::fs::write(&video, b"x").unwrap();
-    let srt = s.dir.join("novo.srt");
-    std::fs::write(&srt, LEGENDA_SRT).unwrap();
-    sqlx::query("INSERT INTO items (id, name, path, media_type, subtitle_path, library_id) VALUES (?, 'Novo', ?, 'Movie', ?, 'lib1')")
-        .bind(id)
-        .bind(video.to_str().unwrap())
-        .bind(srt.to_str().unwrap())
-        .execute(&pool)
-        .await
-        .unwrap();
-    let (status, _) = call(&s.app, Method::POST, &format!("/admin/api/acervo/audio/{id}"), None, None).await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-}
 
 #[tokio::test]
 async fn versoes_preparadas_comecam_vazias_e_nao_aceitam_chaves_desconhecidas() {

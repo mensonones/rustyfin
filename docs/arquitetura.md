@@ -104,25 +104,23 @@ Cópias que já foram indexadas separadamente mantêm IDs próprios. A associaç
 uma varredura completa. Arquivos reencodados, editados ou com metadados internos alterados
 têm outra impressão digital.
 
-### Revisar alterações do acervo
+### O que acontece com o histórico quando o arquivo muda
 
-Em **Bibliotecas → Revisar alterações**, o painel mostra arquivos substituídos no mesmo caminho,
-origens ausentes com cópias conhecidas e possíveis edições identificadas pelo nome de filme ou
-pelos dados de série, temporada e episódio. Quando ambos os anos são conhecidos, eles precisam
-coincidir para o scanner sugerir uma edição em outro caminho. Cada revisão lista até 12 destinos.
+Tudo é resolvido na varredura, sem fila nem tela de revisão:
 
-A fila guarda uma cópia dos favoritos e das marcações de assistido dos perfis. Ao confirmar um
-destino, o Rustyfin combina esses marcadores com os que já existem nele e preserva a posição
-do destino por padrão. A contagem de reproduções e os ajustes de legenda ficam fora da
-transferência. **Manter separados** encerra a revisão e descarta a cópia dos
-marcadores da origem. As duas ações deixam os arquivos de mídia intactos.
+- **Movido ou renomeado, com o mesmo conteúdo, para um único caminho novo:** o item continua o mesmo (ID, progresso,
+  assistido e favoritos).
+- **Mesmo caminho, outro conteúdo (uma edição trocada):** o item fica; assistido e favorito ficam, e a **posição de
+  retomada é zerada**, porque o tempo da outra edição não vale.
+- **Arquivo que sumiu e um único candidato com o mesmo título, ano compatível ou série, temporada e episódio, mas outro
+  conteúdo, para um item que alguém já assistiu, favoritou ou parou no meio:** o item vai para o caminho novo, com
+  assistido e favorito e sem a posição.
+- **Cópias e correspondências ambíguas** (dois destinos com o mesmo conteúdo, dois candidatos para o mesmo título):
+  nenhum histórico muda de dono sozinho; cada arquivo segue com o seu.
 
-Em **Mapear retomada**, informe os tempos de duas cenas correspondentes nas duas edições.
-O painel interpola posições entre as referências e permite confirmar ou editar a posição por
-perfil. Para uma cena cortada ou fora do intervalo, informe o tempo manualmente. A duração
-do destino precisa ser conhecida. Posições que já existem no destino ficam desmarcadas por
-padrão e mudanças feitas após a prévia exigem nova confirmação. Essa opção só está disponível
-para revisões criadas após a atualização que passaram a registrar a posição da origem.
+Os ajustes de legenda e a contagem de reproduções não acompanham uma troca de conteúdo. Até a 0.29.x havia uma fila de
+revisão no painel, com mapeamento de retomada entre edições e comparação de áudio; ela foi removida na 0.30.0, para manter o foco
+na reprodução.
 
 ## Decisões de projeto
 

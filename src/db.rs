@@ -67,10 +67,8 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
             PRIMARY KEY (review_id, user_id)
         );
 
-        CREATE TABLE IF NOT EXISTS audio_assinaturas (
-            hash BLOB PRIMARY KEY,
-            quadros BLOB NOT NULL
-        );
+        -- As assinaturas de áudio das edições foram removidas (0.30.0): eram derivadas e só serviam à revisão manual.
+        DROP TABLE IF EXISTS audio_assinaturas;
 
         -- A busca de cenas foi removida (0.29.0): o índice era derivado das legendas, então some junto com a feature.
         DROP TABLE IF EXISTS cenas_legenda;
@@ -223,7 +221,8 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
     )
     .execute(&pool)
     .await?;
-    // Perfil oculto (fora da lista da tela de login) e foto de perfil (nome do arquivo em cache/avatars).
+    // `is_hidden` era o perfil oculto, removido na 0.30.0: a coluna fica no banco, sem uso. Foto de perfil: nome do
+    // arquivo em cache/avatars.
     add_column_if_missing(&pool, "users", "is_hidden", "BOOLEAN NOT NULL DEFAULT 0").await?;
     add_column_if_missing(&pool, "users", "avatar", "TEXT").await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_tokens_user ON access_tokens(user_id)")
@@ -241,6 +240,38 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_items_created ON items(created_at)")
         .execute(&pool)
         .await?;
+
+    // Revisões do acervo pendentes de uma versão anterior (a fila foi removida na 0.30.0): quando o único destino
+    // sugerido já existe, os marcadores de assistido e favorito vão para ele e a revisão sai. As demais (sem destino ou
+    // com mais de um) ficam nas tabelas `media_review*`, sem uso, para não perder dados.
+    sqlx::query(
+        r"
+        INSERT INTO playback_state (user_id, item_id, is_played, is_favorite)
+        SELECT s.user_id, i.id, s.is_played, s.is_favorite
+        FROM media_reviews r
+        JOIN media_review_state s ON s.review_id = r.id AND (s.is_played OR s.is_favorite)
+        JOIN media_review_targets t ON t.review_id = r.id
+        JOIN items i ON i.path = t.path AND i.content_sha256 = t.content_sha256
+        WHERE (SELECT COUNT(*) FROM media_review_targets t2 WHERE t2.review_id = r.id) = 1
+        ON CONFLICT(user_id, item_id) DO UPDATE SET
+            is_played = (playback_state.is_played OR excluded.is_played),
+            is_favorite = (playback_state.is_favorite OR excluded.is_favorite)
+        ",
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        r"
+        DELETE FROM media_reviews WHERE id IN (
+            SELECT r.id FROM media_reviews r
+            JOIN media_review_targets t ON t.review_id = r.id
+            JOIN items i ON i.path = t.path AND i.content_sha256 = t.content_sha256
+            WHERE (SELECT COUNT(*) FROM media_review_targets t2 WHERE t2.review_id = r.id) = 1
+        )
+        ",
+    )
+    .execute(&pool)
+    .await?;
 
     Ok(pool)
 }
@@ -291,6 +322,47 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(restam, 0);
+        pool.close().await;
+        let _ = std::fs::remove_file(&arquivo);
+    }
+
+    #[tokio::test]
+    async fn revisoes_pendentes_de_um_unico_destino_viram_marcadores_e_as_demais_ficam() {
+        let arquivo = std::env::temp_dir().join(format!("rustyfin-db-revisoes-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&arquivo);
+        let url = format!("sqlite://{}?mode=rwc", arquivo.to_string_lossy().replace('\\', "/"));
+        let pool = init_db(&url).await.unwrap();
+        for sql in [
+            "INSERT INTO users (id, name) VALUES ('u1', 'Ana')",
+            "INSERT INTO items (id, name, path, media_type, content_sha256) VALUES ('nova', 'Filme', '/m/nova.mp4', 'Movie', X'01')",
+            "INSERT INTO items (id, name, path, media_type, content_sha256) VALUES ('a', 'Filme', '/m/a.mp4', 'Movie', X'02')",
+            "INSERT INTO items (id, name, path, media_type, content_sha256) VALUES ('b', 'Filme', '/m/b.mp4', 'Movie', X'02')",
+            "INSERT INTO media_reviews (id, title, path, reason) VALUES ('unica', 'Antiga', '/m/antiga.mp4', 'possivel_edicao')",
+            "INSERT INTO media_review_targets VALUES ('unica', '/m/nova.mp4', X'01')",
+            "INSERT INTO media_review_state VALUES ('unica', 'u1', 1, 1, 500)",
+            "INSERT INTO media_reviews (id, title, path, reason) VALUES ('ambigua', 'Outra', '/m/outra.mp4', 'mesmo_conteudo')",
+            "INSERT INTO media_review_targets VALUES ('ambigua', '/m/a.mp4', X'02')",
+            "INSERT INTO media_review_targets VALUES ('ambigua', '/m/b.mp4', X'02')",
+            "INSERT INTO media_review_state VALUES ('ambigua', 'u1', 1, 0, 0)",
+        ] {
+            sqlx::query(sql).execute(&pool).await.unwrap();
+        }
+        pool.close().await;
+
+        let pool = init_db(&url).await.unwrap();
+        let (visto, favorito, posicao): (bool, bool, i64) = sqlx::query_as(
+            "SELECT is_played, is_favorite, position_ticks FROM playback_state WHERE item_id = 'nova'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(visto && favorito, "os marcadores vão para o único destino");
+        assert_eq!(posicao, 0, "a posição não é transferida");
+        let restam: Vec<String> = sqlx::query_scalar("SELECT id FROM media_reviews ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(restam, ["ambigua"], "a de vários destinos fica, sem uso, para não perder dados");
         pool.close().await;
         let _ = std::fs::remove_file(&arquivo);
     }

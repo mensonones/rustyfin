@@ -53,8 +53,8 @@ sobe em segundos e usa **poucas dezenas de megabytes de memória**.
   plugin para instalar.
 - **GPU Intel e AMD sem dor de cabeça.** Um script liga o Quick Sync ou o VAAPI; se a GPU falhar, o servidor volta para o
   processador sozinho.
-- **Recursos que o Jellyfin não tem:** [ajuste de legendas](docs/reproducao.md#corrigir-uma-faixa-srt) no painel e
-  [revisão do acervo](docs/arquitetura.md#revisar-alterações-do-acervo) que preserva favoritos e progresso ao trocar a edição.
+- **Recursos que o Jellyfin não tem:** [ajuste de legendas](docs/reproducao.md#corrigir-uma-faixa-srt) no painel e favoritos e "assistido" que
+  [acompanham o arquivo](docs/arquitetura.md#o-que-acontece-com-o-histórico-quando-o-arquivo-muda) quando ele é movido ou trocado.
 - **Seus arquivos ficam intactos.** Monte as pastas em somente leitura e o servidor só lê.
 
 Quer saber o que muda e o que falta? Leia [Migrando do Jellyfin](docs/migrando-do-jellyfin.md): ele diz quando **não**
@@ -81,8 +81,8 @@ vale a pena trocar.
 
 **Administração**
 - Painel web em `/admin` com tema claro/escuro, paleta de comandos (Ctrl K) e avisos do que precisa de atenção: bibliotecas, usuários e permissões, dispositivos conectados e configurações, sem reiniciar.
-- [Revisão de alterações do acervo](docs/arquitetura.md#revisar-alterações-do-acervo) para transferir favoritos, marcações de assistido e posições de retomada entre edições.
-- Vários usuários, cada um com progresso e favoritos próprios, acesso por biblioteca, foto de perfil e perfil oculto.
+- [Histórico ao mover ou trocar um arquivo](docs/arquitetura.md#o-que-acontece-com-o-histórico-quando-o-arquivo-muda): favoritos e "assistido" acompanham o título.
+- Vários usuários, cada um com progresso e favoritos próprios, acesso por biblioteca e foto de perfil.
 - Descoberta automática na rede (UDP 7359): o app encontra o servidor sozinho.
 
 ## Compatibilidade
@@ -154,8 +154,8 @@ O painel só é acessível pela rede local e pode exigir senha. Detalhes em
 ![Aba Acervo, com filtros de situação, busca e a lista de títulos](docs/assets/painel-acervo-capas.png)
 
 A aba **Acervo** lista todos os filmes e episódios que a varredura encontrou, com a capa de cada um, e mostra o que falta: metadados,
-capa, legenda e assinatura. Filtre por problema, busque por título ou caminho e rode as ações (indexar áudio, ajustar
-legenda) direto na linha. Serve para achar um nome mal entendido ou uma capa ausente sem abrir o app.
+capa, legenda e assinatura. Filtre por problema, busque por título ou caminho e rode a ação de ajustar legenda direto
+na linha. Serve para achar um nome mal entendido ou uma capa ausente sem abrir o app.
 
 ## Documentação
 
