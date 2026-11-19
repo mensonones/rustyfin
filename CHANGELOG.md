@@ -5,6 +5,15 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.29.0] - 2026-11-19
+
+### Removido
+- **Busca de cenas** (`/cenas`, `GET /api/cenas` e `POST /admin/api/cenas/{id}`), para manter o foco do produto na
+  reprodução. Saem também o botão e a ação de indexar cenas no painel, o filtro "Sem cenas indexadas" e o selo de cenas
+  da aba Acervo (e `selos.cenas` e `resumo.semCenas` da API do Acervo). O índice de falas era derivado das legendas, então
+  as tabelas `cenas_legenda` e `cenas_fontes` são apagadas na primeira subida (as legendas e o ajuste de legendas ficam
+  como estavam). A indexação de áudio, a revisão do acervo e as versões preparadas não mudam.
+
 ## [0.28.0] - 2026-11-18
 
 ### Adicionado
