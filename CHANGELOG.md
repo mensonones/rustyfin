@@ -5,6 +5,15 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.34.0] - 2026-11-19
+
+### Adicionado
+- **Miniaturas ao avançar (trickplay):** o servidor gera, em segundo plano, uma miniatura a cada 10 segundos de cada filme
+  e episódio, em folhas de 10 x 10 (320 px de largura), e as anuncia em `Trickplay` nos detalhes do item. As folhas saem em
+  `GET /Videos/{id}/Trickplay/{largura}/{n}.jpg`, como no Jellyfin. A geração roda depois de cada varredura, um título por vez
+  (o mais novo primeiro), com uma thread do ffmpeg, e espera enquanto houver sessão de transcodificação. Quando o arquivo é
+  trocado, as miniaturas são refeitas. `RUSTYFIN_TRICKPLAY=0` desliga.
+
 ## [0.33.0] - 2026-11-19
 
 ### Adicionado
