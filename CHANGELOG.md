@@ -5,6 +5,15 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.33.0] - 2026-11-19
+
+### Adicionado
+- **Quick Connect:** entrar num app (a TV) com um código de seis dígitos autorizado por um aparelho já logado, como no
+  Jellyfin: `POST /QuickConnect/Initiate`, `GET /QuickConnect/Connect`, `POST /QuickConnect/Authorize` e
+  `POST /Users/AuthenticateWithQuickConnect`. O código vale 10 minutos e serve a um único login; há limites de 5 pedidos por
+  endereço e 100 no total. O painel também autoriza (**Usuários → Entrar na TV com um código**). `GET /QuickConnect/Enabled`
+  deixa de responder sempre `false`; `RUSTYFIN_QUICK_CONNECT=0` desliga.
+
 ## [0.32.0] - 2026-11-19
 
 ### Adicionado
