@@ -5,6 +5,20 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.32.0] - 2026-11-19
+
+### Adicionado
+- **Preferências de áudio e legenda por usuário:** idioma do áudio, "tocar a faixa padrão" (como no Jellyfin), idioma da
+  legenda e modo da legenda (`Default`, `Smart`, `OnlyForced`, `Always`, `None`). O servidor as aplica no `PlaybackInfo`,
+  indicando `DefaultAudioStreamIndex` e `DefaultSubtitleStreamIndex`. Editáveis no painel (**Usuários → Permissões**,
+  `POST /admin/api/users/{id}/playback`) e pelos apps (`POST /Users/Configuration` e `/Users/{id}/Configuration`); os
+  valores voltam em `Configuration` de `/Users/Me`. Idiomas por equivalência (`pt`, `pt-BR` e `por` são o mesmo).
+
+### Alterado
+- O padrão de anime (áudio japonês e legenda em português) passou a ser o modo Inteligente com esses idiomas, aplicado só a
+  quem não escolheu nada. Sem áudio japonês no arquivo e com o áudio padrão em português, a indicação agora é "sem legenda"
+  (antes, nenhuma indicação).
+
 ## [0.31.0] - 2026-11-19
 
 ### Adicionado
