@@ -749,3 +749,59 @@ async fn login_sem_senha_so_vale_para_a_rede_local_mesmo_atras_do_proxy() {
     assert_eq!(entrar("192.168.1.30").await, StatusCode::OK, "da rede local, sem senha");
     assert_ne!(entrar("203.0.113.7").await, StatusCode::OK, "da internet, o usuário sem senha não entra");
 }
+
+#[tokio::test]
+async fn segmentos_de_pular_vem_dos_capitulos_e_os_detalhes_trazem_os_capitulos() {
+    let s = server("segmentos").await;
+    let pool = db::init_db(&test_config(&s.dir).database_url).await.unwrap();
+    let capitulos = json!([
+        { "n": "Recap", "t": 0 }, { "n": "Abertura", "t": 600_000_000_i64 }, { "n": "Capítulo 3", "t": 1_500_000_000_i64 },
+        { "n": "Credits", "t": 13_000_000_000_i64 },
+    ]);
+    sqlx::query(
+        "INSERT INTO items (id, name, path, media_type, duration_ticks, chapters_json) VALUES
+         ('ep1', 'Ep 1', '/m/ep1.mkv', 'Movie', 14000000000, ?),
+         ('semcap', 'Sem capítulos', '/m/semcap.mkv', 'Movie', 14000000000, '[]'),
+         ('antigo', 'Nunca relido', '/m/antigo.mkv', 'Movie', 14000000000, NULL)",
+    )
+    .bind(capitulos.to_string())
+    .execute(&pool)
+    .await
+    .unwrap();
+    let token = login(&s.app, "Admin").await;
+
+    let (status, v) = call(&s.app, Method::GET, "/MediaSegments/ep1", Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK, "{v}");
+    assert_eq!(v["TotalRecordCount"], 3);
+    let tipos: Vec<_> = v["Items"].as_array().unwrap().iter().map(|i| i["Type"].as_str().unwrap().to_string()).collect();
+    assert_eq!(tipos, ["Recap", "Intro", "Outro"]);
+    assert_eq!(v["Items"][1]["StartTicks"], 600_000_000_i64);
+    assert_eq!(v["Items"][1]["EndTicks"], 1_500_000_000_i64);
+    assert_eq!(v["Items"][2]["EndTicks"], 14_000_000_000_i64, "o último vai até o fim do vídeo");
+    assert_eq!(v["Items"][0]["ItemId"], "ep1");
+
+    // Filtro por tipo, repetido e em qualquer caixa.
+    let (_, so_intro) = call(&s.app, Method::GET, "/MediaSegments/ep1?includeSegmentTypes=intro", Some(&token), None).await;
+    assert_eq!(so_intro["TotalRecordCount"], 1);
+    let (_, dois) = call(&s.app, Method::GET, "/MediaSegments/ep1?includeSegmentTypes=Intro&includeSegmentTypes=Outro", Some(&token), None).await;
+    assert_eq!(dois["TotalRecordCount"], 2);
+
+    // Sem capítulos ou nunca inspecionado: lista vazia; item inexistente: 404; sem token: 401.
+    for id in ["semcap", "antigo"] {
+        let (status, v) = call(&s.app, Method::GET, &format!("/MediaSegments/{id}"), Some(&token), None).await;
+        assert_eq!((status, v["TotalRecordCount"].clone()), (StatusCode::OK, json!(0)));
+    }
+    let (status, _) = call(&s.app, Method::GET, "/MediaSegments/naoexiste", Some(&token), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = call(&s.app, Method::GET, "/MediaSegments/ep1", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Os detalhes do item trazem os capítulos (nome e início); sem capítulos, o campo não existe.
+    let (_, item) = call(&s.app, Method::GET, "/Items/ep1", Some(&token), None).await;
+    assert_eq!(item["Chapters"].as_array().unwrap().len(), 4);
+    assert_eq!(item["Chapters"][1]["Name"], "Abertura");
+    assert_eq!(item["Chapters"][1]["StartPositionTicks"], 600_000_000_i64);
+    let (_, sem) = call(&s.app, Method::GET, "/Items/semcap", Some(&token), None).await;
+    assert!(sem.get("Chapters").is_none());
+}
+

@@ -101,6 +101,7 @@ struct DbItemRow {
     video_codec: Option<String>,
     audio_codec: Option<String>,
     streams_json: Option<String>,
+    chapters_json: Option<String>,
     subtitle_path: Option<String>,
     modified_at: i64,
     poster_path: Option<String>,
@@ -126,7 +127,7 @@ struct DbItemRow {
 const SELECT_ITEM: &str = r"
     SELECT
         i.id, i.name, i.path, i.media_type, i.container, i.duration_ticks, i.size_bytes,
-        i.width, i.height, i.video_codec, i.audio_codec, i.streams_json, i.subtitle_path,
+        i.width, i.height, i.video_codec, i.audio_codec, i.streams_json, i.chapters_json, i.subtitle_path,
         i.modified_at,
         COALESCE(i.poster_path, i.tmdb_poster) AS poster_path,
         COALESCE(i.backdrop_path, i.tmdb_backdrop) AS backdrop_path,
@@ -659,6 +660,17 @@ fn embedded_streams(
     streams
 }
 
+/// Os capítulos guardados na varredura, no formato da API. Sem capítulos, o campo some do JSON.
+fn capitulos_do_item(json: Option<&str>) -> Option<Vec<crate::models::ChapterInfo>> {
+    let lista: Vec<crate::capitulos::Capitulo> = serde_json::from_str(json?).ok()?;
+    (!lista.is_empty()).then(|| {
+        lista
+            .into_iter()
+            .map(|c| crate::models::ChapterInfo { name: c.nome, start_position_ticks: c.inicio_ticks })
+            .collect()
+    })
+}
+
 fn map_db_item_to_dto(config: &AppConfig, row: DbItemRow) -> BaseItemDto {
     let mut streams = build_streams(
         row.streams_json.as_deref(),
@@ -749,6 +761,7 @@ fn map_db_item_to_dto(config: &AppConfig, row: DbItemRow) -> BaseItemDto {
         }),
         media_sources: Some(vec![media_source]),
         media_streams: Some(streams),
+        chapters: capitulos_do_item(row.chapters_json.as_deref()),
         image_tags,
         backdrop_image_tags,
         production_year: row.production_year,

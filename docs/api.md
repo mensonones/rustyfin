@@ -55,7 +55,9 @@ O `userId` que algumas rotas trazem no caminho é ignorado: vale sempre o usuár
 | `GET/POST/DELETE /Library/VirtualFolders...` | Bibliotecas e pastas (rede local; veja [segurança](usuarios-e-seguranca.md#painel-de-administração)). `collectionType` aceita `movies`, `tvshows` e `anime`; o anime aparece como `tvshows` em `CollectionType` (o tipo de verdade vai em `RustyfinType`) |
 
 Listas que o Rustyfin não modela respondem **vazias**: `Items/{id}/Ancestors`, `LocalTrailers`, `SpecialFeatures`,
-`Intros`, `Similar`, `ThemeMedia` e `MediaSegments/{id}`.
+`Intros`, `Similar` e `ThemeMedia`.
+
+`GET /MediaSegments/{id}` devolve os trechos de pular (`Intro`, `Outro`, `Recap` e `Preview`) deduzidos dos capítulos do arquivo, com `StartTicks` e `EndTicks`; `includeSegmentTypes` filtra (repetido ou separado por vírgula). Item sem capítulos, ou ainda não relido, devolve a lista vazia, e item inexistente, `404`. Os detalhes do item (`GET /Items/{id}`) trazem `Chapters` (`Name` e `StartPositionTicks`) quando o arquivo tem capítulos.
 
 ### Imagens (token obrigatório)
 

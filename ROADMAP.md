@@ -57,7 +57,7 @@
 - [x] `UserViews`, `Items/Latest`, `QuickConnect/Enabled`, `Branding/Css`, `Library/MediaFolders`, `System/Endpoint`, `Sessions`, `Playback/BitrateTest`, `Items/{id}/Download`, `PlaybackInfo` via GET.
 - [x] Marcar assistido/não assistido e favoritos (filmes, episódios, séries e temporadas), `Filters=IsFavorite`.
 - [x] Nomes de episódio em várias formas: `S01E02`, `1x02`, `Temporada 1 Episódio 2`, `Season 1 Episode 2`, `T1 E2`.
-- [x] Respostas vazias válidas para `Genres`, `Studios`, `Persons`, `Similar`, `Intros`, `ThemeMedia`, `MediaSegments`, `Items/Filters`.
+- [x] Respostas vazias válidas para `Genres`, `Studios`, `Persons`, `Similar`, `Intros`, `ThemeMedia`, `Items/Filters` (e `MediaSegments`, até a 0.30.x; a partir da 0.31.0 vem dos capítulos).
 - [x] Validado no **Moonfin 3.0.0 (Android)**: conexão, login, home com destaques, bibliotecas Filmes/Séries (série → temporada → episódio, NextUp), Direct Play com seek, transcode HLS por limite de bitrate, marcar assistido, WebSocket `/socket`.
 - Validação manual opcional: testar a compatibilidade com Swiftfin, Findroid e TV. `Moonfin/*` e `Plugins/*` retornam 404 de propósito (plugin do servidor não instalado).
 - [x] Descoberta automática (UDP 7359, protocolo "who is JellyfinServer?"): validada no Moonfin. No Docker defina `RUSTYFIN_PUBLIC_URL` (IP do PC) no `.env`; o app esconde da lista "descobertos" os servidores já salvos.
@@ -127,8 +127,9 @@
 
 ## Próximas funcionalidades
 
-O produto tem foco exclusivo na reprodução local. O roadmap não inclui acesso remoto, relay
-ou convites pela internet.
+O produto tem foco na **reprodução**. O acesso de fora de casa só existe atrás de um proxy reverso que você
+controla ([guia](docs/proxy-reverso.md)); relay, convites pela internet, TV ao vivo, DVR, DLNA e plugins ficam fora.
+As prioridades da fase atual estão em [Foco em reprodução](#-foco-em-reprodução-prioridades).
 
 ### Diagnóstico e confiabilidade
 
@@ -150,6 +151,44 @@ ou convites pela internet.
 - [x] **Preparar versões a partir das sessões.** Recomendar conversões MP4 progressivas que se repetem nos
   dispositivos locais, com orçamento de disco, pausa durante reprodução e originais preservados.
 - [x] ~~**Busca local de cenas com proteção contra spoilers.**~~ Removida na 0.29.0, para manter o foco na reprodução.
+
+## 🎯 Foco em reprodução (prioridades)
+
+Levantamento (novembro de 2026) do que Jellyfin, Plex e Emby oferecem e o Rustyfin ainda não tem, ordenado pelo valor para
+quem só quer assistir. Cada item é uma versão própria, com testes, documentação e CHANGELOG.
+
+### 1. Pular abertura e créditos (em andamento)
+- [x] **Capítulos do arquivo.** O ffprobe passa a ler os capítulos, e os detalhes do item os trazem em `Chapters` (nome e
+  início). Itens já indexados são relidos uma vez.
+- [x] **Segmentos a partir de capítulos.** `GET /MediaSegments/{id}` devolve `Intro`, `Outro`, `Recap` e `Preview` quando
+  o nome do capítulo indica (`Intro`, `Opening`, `Abertura`, `OP`, `Credits`, `Créditos`, `Ending`, `ED`, `Recap`,
+  `Previously`...). Os apps do Jellyfin que usam segmentos (como o Android TV 0.18) mostram o botão de pular.
+- [ ] **Validar nos apps.** Confirmar o botão de pular no Moonfin (Android) e verificar o Samsung (Tizen), o Swiftfin e o
+  Findroid.
+- [ ] **Detecção da abertura repetida pelo áudio**, por temporada, para as séries sem capítulos (no estilo do Intro Skipper),
+  em segundo plano e com o servidor ocioso.
+- [ ] **Detecção de créditos** (fim do episódio) e ajuste manual de um segmento no painel.
+
+### 2. Preferências de áudio e legenda por usuário
+- [ ] Idioma preferido do áudio e da legenda, legenda forçada e "legenda só quando o áudio não é o meu idioma", aplicados
+  em `DefaultAudioStreamIndex` e `DefaultSubtitleStreamIndex` (hoje só existe o padrão de anime: áudio japonês e legenda
+  em português).
+- [ ] Lembrar a última escolha de faixa por série.
+
+### 3. Quick Connect
+- [ ] Entrar na TV por um código de seis dígitos autorizado por um aparelho já logado
+  (`/QuickConnect/Initiate`, `/Connect`, `/Authorize`), sem digitar senha com o controle remoto.
+
+### 4. Miniaturas ao avançar (trickplay)
+- [ ] Gerar quadros em grade com o ffmpeg, em segundo plano e com o servidor ocioso (como as versões preparadas), e expor
+  `TrickplayInfo` e `/Videos/{id}/Trickplay/{largura}/{n}.jpg`.
+
+### 5. Depois
+- [ ] Playlists e coleções (`/Playlists`, `BoxSet`).
+- [ ] Transcodificação por GPU NVIDIA (precisa de hardware para validar).
+- [ ] Busca de legendas em um provedor externo, opcional e desligada por padrão.
+- [ ] SyncPlay (assistir junto).
+- [ ] Biblioteca de música.
 
 ## 🧪 Como Testar com o Moonfin
 1. Execute o servidor Rustyfin em `http://127.0.0.1:8096`.

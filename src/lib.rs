@@ -7,6 +7,7 @@
 mod linha_do_tempo;
 pub mod anilist;
 pub mod api;
+pub mod capitulos;
 pub mod config;
 pub mod db;
 pub mod discovery;

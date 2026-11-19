@@ -185,6 +185,29 @@ Progresso, "assistido", favoritos e contagem de reproduções são gravados **po
 `Sessions/Playing`, `.../Progress` e `.../Stopped`. Um item é dado como assistido ao passar de 90% da duração.
 
 
+## Capítulos e pular abertura e créditos
+
+O Rustyfin lê os capítulos do arquivo (MKV e MP4 com capítulos) na varredura e os entrega nos detalhes do item. Quando o
+**nome** de um capítulo indica um trecho a pular, ele vira um segmento em `GET /MediaSegments/{id}`, e os apps do Jellyfin
+com suporte a segmentos (como o Android TV 0.18 e os clientes baseados nele) mostram o botão de pular:
+
+| Segmento | Nomes de capítulo reconhecidos |
+|---|---|
+| `Intro` | `Intro`, `Opening`, `Abertura`, `OP`, `OP1`, `Main Title` |
+| `Outro` | `Credits`, `Créditos`, `Ending`, `End Credits`, `Encerramento`, `Outro`, `ED`, `ED1`, `Closing` |
+| `Recap` | `Recap`, `Previously`, `Anteriormente`, `Resumo` |
+| `Preview` | `Preview`, `Next Time`, `Prévia`, `Teaser`, `Próximo` |
+
+O nome vale inteiro, ou seguido só de um número (`Opening 1`): "Introduction to the Dragon" não é uma abertura. Cada segmento
+vai do início do capítulo até o início do seguinte (ou o fim do vídeo), e capítulos seguidos do mesmo tipo (`ED1`, `ED2`)
+formam um só.
+
+- **Arquivos sem capítulos nomeados** (a maioria dos downloads) não têm botão de pular. A detecção da abertura repetida pelo áudio
+  é a próxima etapa do [roadmap](../ROADMAP.md#-foco-em-reprodução-prioridades).
+- Na primeira subida depois de atualizar, os títulos já indexados são inspecionados de novo, uma única vez, para ler os
+  capítulos. Dá para editar os capítulos de um MKV com o MKVToolNix, ou adicionar `[CHAPTER]` em um arquivo de metadados do
+  ffmpeg, e a varredura seguinte reflete a mudança quando o arquivo é alterado.
+
 ## Áudio e versões preparadas
 
 O ajuste de legenda só funciona depois que o hash do arquivo foi calculado em segundo plano (logo após a primeira varredura

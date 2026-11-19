@@ -103,6 +103,15 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
     add_column_if_missing(&pool, "items", "content_mtime", "TEXT").await?;
     add_column_if_missing(&pool, "items", "probed", "BOOLEAN NOT NULL DEFAULT 0").await?;
     add_column_if_missing(&pool, "items", "streams_json", "TEXT").await?;
+    // Capítulos do arquivo (JSON). Os itens já indexados são inspecionados de novo, uma única vez, quando a coluna nasce.
+    let tinha_capitulos: Option<(String,)> =
+        sqlx::query_as("SELECT name FROM pragma_table_info('items') WHERE name = 'chapters_json'")
+            .fetch_optional(&pool)
+            .await?;
+    add_column_if_missing(&pool, "items", "chapters_json", "TEXT").await?;
+    if tinha_capitulos.is_none() {
+        sqlx::query("UPDATE items SET probed = 0 WHERE probed = 1").execute(&pool).await?;
+    }
     add_column_if_missing(&pool, "items", "subtitle_path", "TEXT").await?;
     add_column_if_missing(&pool, "items", "poster_path", "TEXT").await?;
     add_column_if_missing(&pool, "items", "backdrop_path", "TEXT").await?;
@@ -363,6 +372,33 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(restam, ["ambigua"], "a de vários destinos fica, sem uso, para não perder dados");
+        pool.close().await;
+        let _ = std::fs::remove_file(&arquivo);
+    }
+
+    #[tokio::test]
+    async fn itens_ja_inspecionados_sao_relidos_uma_vez_quando_nasce_a_coluna_de_capitulos() {
+        let arquivo = std::env::temp_dir().join(format!("rustyfin-db-capitulos-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&arquivo);
+        let url = format!("sqlite://{}?mode=rwc", arquivo.to_string_lossy().replace('\\', "/"));
+        let pool = init_db(&url).await.unwrap();
+        sqlx::query("INSERT INTO items (id, name, path, media_type, probed) VALUES ('a', 'A', '/m/a.mp4', 'Movie', 1)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        // Um banco de antes dos capítulos não tem a coluna.
+        sqlx::query("ALTER TABLE items DROP COLUMN chapters_json").execute(&pool).await.unwrap();
+        pool.close().await;
+
+        let pool = init_db(&url).await.unwrap();
+        let probed: bool = sqlx::query_scalar("SELECT probed FROM items WHERE id = 'a'").fetch_one(&pool).await.unwrap();
+        assert!(!probed, "o item volta a ser inspecionado para ler os capítulos");
+        // Já com a coluna, uma nova subida não mexe mais.
+        sqlx::query("UPDATE items SET probed = 1 WHERE id = 'a'").execute(&pool).await.unwrap();
+        pool.close().await;
+        let pool = init_db(&url).await.unwrap();
+        let probed: bool = sqlx::query_scalar("SELECT probed FROM items WHERE id = 'a'").fetch_one(&pool).await.unwrap();
+        assert!(probed);
         pool.close().await;
         let _ = std::fs::remove_file(&arquivo);
     }

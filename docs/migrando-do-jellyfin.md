@@ -23,7 +23,8 @@ números vêm do [comparativo de desempenho](desempenho.md).
 - precisa de **GPU NVIDIA**: o foco é Intel e AMD; a NVIDIA não está testada;
 - precisa de **muitos usuários e acesso pela internet** com todo o ecossistema de contas, quotas e Quick Connect: o
   Rustyfin é um servidor de rede doméstica;
-- depende de **trickplay** (miniaturas ao passar o mouse na barra de progresso) ou de capítulos com imagens.
+- depende de **trickplay** (miniaturas ao passar o mouse na barra de progresso) ou de capítulos com imagens (os capítulos
+  e o botão de pular abertura e créditos existem; as imagens dos capítulos, não).
 
 Se a sua lista de "preciso" cabe na primeira, vale testar. E testar não custa nada, porque os dois podem rodar **lado a
 lado** (veja abaixo).

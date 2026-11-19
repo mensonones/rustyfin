@@ -4,6 +4,7 @@ pub mod avatars;
 pub mod compat;
 mod acervo_admin;
 mod preparos;
+mod segmentos;
 pub mod facets;
 pub mod images;
 pub mod items;
@@ -113,7 +114,7 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
         .route("/Items/:id/Similar", get(compat::empty_query))
         .route("/Items/:id/Intros", get(compat::empty_query))
         .route("/Items/:id/ThemeMedia", get(compat::theme_media))
-        .route("/MediaSegments/:id", get(compat::empty_query))
+        .route("/MediaSegments/:id", get(segmentos::segmentos_do_item).with_state(pool.clone()))
         .route("/Playback/BitrateTest", get(compat::bitrate_test))
         .route("/Sessions", get(compat::sessions_list))
         .route("/Sessions/Logout", post(auth::logout).with_state(app_state_tuple.clone()))

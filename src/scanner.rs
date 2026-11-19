@@ -26,6 +26,8 @@ pub struct MediaMetadata {
     pub video_codec: Option<String>,
     pub audio_codec: Option<String>,
     pub streams: Vec<MediaStream>,
+    /// Capítulos do arquivo (podem não existir).
+    pub chapters: Vec<crate::capitulos::Capitulo>,
 }
 
 /// ID inicial determinístico (UUID v5 do caminho). Mudanças reconhecidas mantêm o ID anterior.
@@ -641,7 +643,10 @@ async fn process_media_file(
         video_codec: None,
         audio_codec: None,
         streams: Vec::new(),
+        chapters: Vec::new(),
     });
+    // `[]` quando o arquivo foi inspecionado e não tem capítulos; NULL (nunca inspecionado) só quando o ffprobe falhou.
+    let chapters_json = probed.then(|| serde_json::to_string(&media_meta.chapters).ok()).flatten();
     let streams_json = if media_meta.streams.is_empty() {
         None
     } else {
@@ -651,8 +656,8 @@ async fn process_media_file(
     sqlx::query(
         r"
         INSERT INTO items (id, name, path, media_type, container, duration_ticks, size_bytes,
-                           width, height, video_codec, audio_codec, modified_at, probed, streams_json)
-        VALUES (?, ?, ?, 'Movie', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           width, height, video_codec, audio_codec, modified_at, probed, streams_json, chapters_json)
+        VALUES (?, ?, ?, 'Movie', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(path) DO UPDATE SET
             container = excluded.container,
             size_bytes = excluded.size_bytes,
@@ -663,7 +668,8 @@ async fn process_media_file(
             audio_codec = excluded.audio_codec,
             modified_at = excluded.modified_at,
             probed = excluded.probed,
-            streams_json = excluded.streams_json
+            streams_json = excluded.streams_json,
+            chapters_json = excluded.chapters_json
         ",
     )
     .bind(&item_id)
@@ -679,6 +685,7 @@ async fn process_media_file(
     .bind(modified_at)
     .bind(probed)
     .bind(streams_json)
+    .bind(chapters_json)
     .execute(pool)
     .await?;
 
@@ -741,7 +748,7 @@ async fn update_parsed(
 
 async fn probe_file(path: &Path) -> Option<MediaMetadata> {
     let output = Command::new(crate::transcode::ffprobe_path())
-        .args(["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams"])
+        .args(["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters"])
         .arg(path)
         .kill_on_drop(true)
         .output()
@@ -864,6 +871,7 @@ fn parse_ffprobe(stdout: &[u8]) -> Option<MediaMetadata> {
         video_codec,
         audio_codec,
         streams,
+        chapters: crate::capitulos::ler(&json),
     })
 }
 
@@ -1065,5 +1073,17 @@ mod tests {
         assert!(m.streams[1].is_default);
         assert_eq!(m.streams[3].r#type, "Subtitle");
         assert_eq!(m.streams[3].display_title.as_deref(), Some("Full"));
+    }
+
+    #[test]
+    fn ffprobe_com_capitulos_devolve_nome_e_inicio() {
+        let saida = br#"{"format":{"duration":"1400.0"},"streams":[],"chapters":[
+            {"id":0,"start_time":"0.000000","tags":{"title":"Abertura"}},
+            {"id":1,"start_time":"90.000000","tags":{"title":"Cena 1"}}]}"#;
+        let meta = parse_ffprobe(saida).unwrap();
+        assert_eq!(meta.duration_ticks, 14_000_000_000);
+        assert_eq!(meta.chapters.len(), 2);
+        assert_eq!((meta.chapters[0].nome.as_str(), meta.chapters[1].inicio_ticks), ("Abertura", 900_000_000));
+        assert!(parse_ffprobe(br#"{"format":{"duration":"1.0"},"streams":[]}"#).unwrap().chapters.is_empty());
     }
 }

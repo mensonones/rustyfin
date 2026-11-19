@@ -103,6 +103,9 @@ pub struct BaseItemDto {
     pub user_data: Option<UserItemDataDto>,
     pub media_sources: Option<Vec<MediaSourceInfo>>,
     pub media_streams: Option<Vec<MediaStream>>,
+    /// Capítulos do arquivo, quando ele os tem.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chapters: Option<Vec<ChapterInfo>>,
     pub image_tags: HashMap<String, String>,
     pub backdrop_image_tags: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -355,4 +358,12 @@ pub struct PlaybackProgressReport {
     pub position_ticks: Option<i64>,
     pub is_paused: Option<bool>,
     pub play_session_id: Option<String>,
+}
+
+/// Capítulo de um arquivo, como a API do Jellyfin o descreve.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "PascalCase")]
+pub struct ChapterInfo {
+    pub name: String,
+    pub start_position_ticks: i64,
 }
