@@ -86,7 +86,12 @@ def passo_rede(a):
         c = a.conexao()
         c.connect()
         c.close()
-        ok("conexão TCP" + (" e TLS (certificado válido)" if a.esquema == "https" else ""))
+        if a.esquema != "https":
+            ok("conexão TCP")
+        elif a.ctx.verify_mode == ssl.CERT_NONE:
+            ok("conexão TCP e TLS (certificado NÃO validado: --inseguro)")
+        else:
+            ok("conexão TCP e TLS (certificado válido)")
     except ssl.SSLCertVerificationError as e:
         falha(f"certificado recusado: {e.verify_message}", "o app do iOS também recusa; use um certificado válido (Let's Encrypt) "
               "para o mesmo nome, com a cadeia completa (fullchain). Teste de novo com --inseguro só para isolar")

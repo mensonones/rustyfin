@@ -20,8 +20,13 @@ rede local. Por isso o servidor segue estas regras:
 
 ```text
 RUSTYFIN_TRUSTED_PROXIES=192.168.1.10          # um proxy em outro aparelho, ou o IP da rede do próprio PC
-RUSTYFIN_TRUSTED_PROXIES=172.16.0.0/12         # proxy em outro contêiner Docker (rede padrão do Docker)
+RUSTYFIN_TRUSTED_PROXIES=172.28.0.10           # proxy em outro contêiner Docker: o IP fixo dele (veja o aviso abaixo)
 ```
+
+> **Proxy em contêiner Docker:** dê ao proxy um **IP fixo** numa rede criada por você (`ipam` no compose) e confie **só
+> nesse IP**, não na rede inteira. O acesso direto à porta publicada do Rustyfin chega com o IP do *gateway* da rede (por
+> exemplo `172.28.0.1`); se a rede toda for confiável, esse acesso direto vira "proxy sem cabeçalho" e o painel é recusado até
+> para você em `localhost`.
 
 > **Proxy no mesmo PC:** aponte o `proxy_pass` para o **IP da rede do PC** (`http://192.168.1.10:8096`) e confie nesse IP,
 > em vez de confiar em `127.0.0.1`. Assim, quem abre `http://localhost:8096/admin` direto no PC continua sendo reconhecido
@@ -107,7 +112,7 @@ services:
   rustyfin:
     # ... (o serviço do compose do projeto)
     environment:
-      RUSTYFIN_TRUSTED_PROXIES: 172.16.0.0/12      # a rede Docker em que o Traefik está
+      RUSTYFIN_TRUSTED_PROXIES: 172.28.0.10        # o IP fixo do Traefik numa rede Docker com ipam (não a rede toda)
     labels:
       - traefik.enable=true
       - traefik.http.routers.midia.rule=Host(`midia.exemplo.com`)
@@ -138,7 +143,7 @@ client_max_body_size 20m;
 ```
 
 O NPM já envia `X-Forwarded-For` e `X-Real-IP`. Em `RUSTYFIN_TRUSTED_PROXIES`, ponha o IP (ou a rede Docker, como
-`172.16.0.0/12`) **de onde o NPM se conecta ao Rustyfin**.
+`172.28.0.10`, o IP fixo do contêiner) **de onde o NPM se conecta ao Rustyfin**.
 
 ## Rede em que tudo precisa passar pela porta 443
 
