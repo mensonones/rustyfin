@@ -5,6 +5,24 @@ versionamento [SemVer](https://semver.org/lang/pt-BR/) (na série 0.x, mudanças
 
 ## [Não lançado]
 
+## [0.30.0] - 2026-11-19
+
+### Removido
+- **Perfil oculto.** Todos os usuários ativos aparecem na tela de login. `IsHidden` na política do usuário deixa de
+  existir (os apps ainda recebem `false`), e a opção some do painel. A foto de perfil continua.
+- **Fila de revisão do acervo, mapeamento de retomada entre edições e comparação de áudio** (`/admin/api/acervo/revisoes*`
+  e `/admin/api/acervo/audio/{id}`, e a seção "Manutenção do acervo" do painel). No lugar, o histórico acompanha o
+  arquivo sozinho, na varredura:
+  - movido para um único caminho novo com o mesmo conteúdo: o item vai junto (como já era);
+  - **mesmo caminho com outro conteúdo:** o item fica, com assistido e favorito, e a **posição de retomada é zerada**
+    (antes, ele virava uma revisão e o item novo começava do zero);
+  - arquivo que sumiu e **um único candidato com o mesmo título** (outra edição renomeada), para um item com histórico: o
+    item vai para o caminho novo, com assistido e favorito e sem a posição;
+  - cópias e correspondências ambíguas não transferem nada sozinhas.
+- Na primeira subida, a tabela `audio_assinaturas` é apagada (era derivada). As revisões pendentes de uma versão anterior
+  com um único destino já catalogado viram marcadores de assistido e favorito nesse destino e saem da fila; as demais
+  ficam nas tabelas `media_review*`, sem uso, para não perder dados. A coluna `users.is_hidden` também fica no banco, sem uso.
+
 ## [0.29.0] - 2026-11-19
 
 ### Removido
