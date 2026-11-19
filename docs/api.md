@@ -22,7 +22,10 @@ O `userId` que algumas rotas trazem no caminho é ignorado: vale sempre o usuár
 |---|---|
 | `GET /System/Info/Public`, `GET /System/Info`, `GET /System/Ping`, `GET /System/Endpoint` | Informações do servidor; as duas primeiras e o `Ping` são públicas |
 | `GET /Branding/Configuration`, `GET /Branding/Css` | Públicas |
-| `GET /QuickConnect/Enabled` | Sempre `false` |
+| `GET /QuickConnect/Enabled` | `true`, ou `false` com `RUSTYFIN_QUICK_CONNECT=0` |
+| `POST /QuickConnect/Initiate`, `GET /QuickConnect/Connect?secret=` | Sem login: o app pede um código (`Code`, `Secret`) e consulta até `Authenticated` ficar verdadeiro. Os pedidos valem 10 minutos; no máximo 5 por endereço (`429`) e 100 no total (`503`) |
+| `POST /QuickConnect/Authorize?code=&userId=` | Com login: autoriza o código para o próprio usuário, ou para outro (`userId`) se for administrador. Código desconhecido ou vencido: `404` |
+| `POST /Users/AuthenticateWithQuickConnect` | Corpo `{ "Secret": "..." }`: troca o segredo autorizado por um token (uso único; sem autorização, `401`) |
 | `GET /socket` | WebSocket aceito; as mensagens são ignoradas |
 | `GET /Playback/BitrateTest` | Teste de largura de banda |
 | `GET /System/Configuration/encoding` | Configuração de codificação (leitura) |
@@ -108,6 +111,7 @@ Usada por `/admin`. O painel abre em Bibliotecas, onde mostra a última varredur
 | `GET/POST /admin/api/folders`, `.../folders/paths`, `.../folders/name` | Bibliotecas e pastas |
 | `GET/POST /admin/api/users`, `DELETE /admin/api/users/{id}` | Usuários |
 | `POST /admin/api/users/{id}/password`, `/policy`, `/rename` | Senha, permissões e nome |
+| `POST /admin/api/quickconnect/authorize` | Autoriza um código de Quick Connect para um usuário (`code`, `userId`); só da rede local |
 | `POST /admin/api/users/{id}/playback` | Preferências de áudio e legenda (`audioLanguage`, `playDefaultAudio`, `subtitleLanguage`, `subtitleMode`) |
 | `POST/DELETE /admin/api/users/{id}/avatar` | Foto de perfil (corpo: bytes da imagem) |
 | `GET /admin/api/sessions`, `DELETE /admin/api/sessions[/{id}]` | Dispositivos conectados; encerrar uma ou todas as sessões |

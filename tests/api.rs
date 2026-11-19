@@ -30,6 +30,7 @@ fn test_config(dir: &std::path::Path) -> AppConfig {
         watch_enabled: false,
         discovery_enabled: false,
         anonymous_images: true,
+        quick_connect: true,
         admin_password: None,
         public_url: None,
         trusted_proxies: Vec::new(),
@@ -882,5 +883,117 @@ async fn preferencias_de_audio_e_legenda_viram_as_faixas_padrao_do_playback_info
     assert_eq!(status, StatusCode::FORBIDDEN);
     let (status, _) = call(&s.app, Method::POST, &format!("/Users/{alvo}/Configuration"), Some(&visita), Some(json!({ "SubtitleMode": "None" }))).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn quick_connect_leva_o_codigo_de_um_aparelho_logado_ate_o_login_da_tv() {
+    let s = server("quick-connect").await;
+    // A TV ainda não tem login.
+    let (_, ligado) = call(&s.app, Method::GET, "/QuickConnect/Enabled", None, None).await;
+    assert_eq!(ligado, json!(true));
+    let (status, pedido) = call(&s.app, Method::POST, "/QuickConnect/Initiate", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{pedido}");
+    let (codigo, segredo) = (pedido["Code"].as_str().unwrap().to_string(), pedido["Secret"].as_str().unwrap().to_string());
+    assert_eq!(codigo.len(), 6);
+    assert_eq!(pedido["Authenticated"], false);
+    assert_eq!(pedido["AppName"], "teste");
+    assert!(pedido["DateAdded"].as_str().unwrap().ends_with('Z'));
+
+    // Enquanto ninguém autoriza, a consulta mostra pendente e o segredo não troca por token.
+    let consulta = format!("/QuickConnect/Connect?secret={segredo}");
+    let (_, p) = call(&s.app, Method::GET, &consulta, None, None).await;
+    assert_eq!(p["Authenticated"], false);
+    let troca = json!({ "Secret": segredo });
+    let (status, _) = call(&s.app, Method::POST, "/Users/AuthenticateWithQuickConnect", None, Some(troca.clone())).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _) = call(&s.app, Method::GET, "/QuickConnect/Connect?secret=inventado", None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Autorizar exige login; um código desconhecido é 404.
+    let autorizar = format!("/QuickConnect/Authorize?code={codigo}");
+    let (status, _) = call(&s.app, Method::POST, &autorizar, None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let admin = login(&s.app, "Admin").await;
+    let (status, _) = call(&s.app, Method::POST, "/QuickConnect/Authorize?code=000000", Some(&admin), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, ok) = call(&s.app, Method::POST, &autorizar, Some(&admin), None).await;
+    assert_eq!((status, ok), (StatusCode::OK, json!(true)));
+
+    let (_, p) = call(&s.app, Method::GET, &consulta, None, None).await;
+    assert_eq!(p["Authenticated"], true);
+    let (status, resultado) = call(&s.app, Method::POST, "/Users/AuthenticateWithQuickConnect", None, Some(troca.clone())).await;
+    assert_eq!(status, StatusCode::OK, "{resultado}");
+    assert_eq!(resultado["User"]["Name"], "Admin");
+    let token = resultado["AccessToken"].as_str().unwrap().to_string();
+    let (status, eu) = call(&s.app, Method::GET, "/Users/Me", Some(&token), None).await;
+    assert_eq!((status, eu["Name"].clone()), (StatusCode::OK, json!("Admin")));
+    // Cada código serve a um único login.
+    let (status, _) = call(&s.app, Method::POST, "/Users/AuthenticateWithQuickConnect", None, Some(troca)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _) = call(&s.app, Method::GET, &consulta, None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn quick_connect_para_outro_usuario_so_por_administrador_ou_pelo_painel() {
+    let s = server("quick-connect-outro").await;
+    let admin = login(&s.app, "Admin").await;
+    let (_, novo) = call(&s.app, Method::POST, "/Users/New", Some(&admin), Some(json!({ "Name": "Visita" }))).await;
+    let visita_id = novo["Id"].as_str().unwrap().to_string();
+    let visita = login(&s.app, "Visita").await;
+    let (_, eu_admin) = call(&s.app, Method::GET, "/Users/Me", Some(&admin), None).await;
+    let admin_id = eu_admin["Id"].as_str().unwrap().to_string();
+
+    let novo_pedido = || async {
+        let (_, p) = call(&s.app, Method::POST, "/QuickConnect/Initiate", None, None).await;
+        (p["Code"].as_str().unwrap().to_string(), p["Secret"].as_str().unwrap().to_string())
+    };
+    // Um usuário comum não autoriza para outro.
+    let (codigo, _) = novo_pedido().await;
+    let (status, _) = call(&s.app, Method::POST, &format!("/QuickConnect/Authorize?code={codigo}&userId={admin_id}"), Some(&visita), None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    // O administrador autoriza para a Visita, e a TV entra como ela.
+    let (codigo, segredo) = novo_pedido().await;
+    let (status, _) = call(&s.app, Method::POST, &format!("/QuickConnect/Authorize?code={codigo}&userId={visita_id}"), Some(&admin), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, r) = call(&s.app, Method::POST, "/Users/AuthenticateWithQuickConnect", None, Some(json!({ "Secret": segredo }))).await;
+    assert_eq!(r["User"]["Name"], "Visita");
+    // O painel (rede local) também autoriza, para o usuário escolhido; usuário ou código desconhecido é 404.
+    let (codigo, segredo) = novo_pedido().await;
+    let (status, _) = call(&s.app, Method::POST, "/admin/api/quickconnect/authorize", None, Some(json!({ "code": codigo, "userId": admin_id }))).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, r) = call(&s.app, Method::POST, "/Users/AuthenticateWithQuickConnect", None, Some(json!({ "Secret": segredo }))).await;
+    assert_eq!(r["User"]["Name"], "Admin");
+    let (status, _) = call(&s.app, Method::POST, "/admin/api/quickconnect/authorize", None, Some(json!({ "code": "000000", "userId": admin_id }))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (codigo, _) = novo_pedido().await;
+    let (status, _) = call(&s.app, Method::POST, "/admin/api/quickconnect/authorize", None, Some(json!({ "code": codigo, "userId": "inexistente" }))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    // Fora da rede local, o painel não autoriza.
+    let mut req = Request::builder()
+        .method(Method::POST)
+        .uri("/admin/api/quickconnect/authorize")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json!({ "code": "000000", "userId": admin_id }).to_string()))
+        .unwrap();
+    req.extensions_mut().insert(ConnectInfo("203.0.113.7:5000".parse::<SocketAddr>().unwrap()));
+    assert_eq!(s.app.clone().oneshot(req).await.unwrap().status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn quick_connect_desligado_recusa_tudo_e_o_pedido_por_endereco_tem_limite() {
+    let s = server_com("quick-connect-off", |c| c.quick_connect = false).await;
+    let (_, ligado) = call(&s.app, Method::GET, "/QuickConnect/Enabled", None, None).await;
+    assert_eq!(ligado, json!(false));
+    let (status, _) = call(&s.app, Method::POST, "/QuickConnect/Initiate", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let s = server("quick-connect-limite").await;
+    for _ in 0..5 {
+        let (status, _) = call(&s.app, Method::POST, "/QuickConnect/Initiate", None, None).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    let (status, _) = call(&s.app, Method::POST, "/QuickConnect/Initiate", None, None).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
 }
 

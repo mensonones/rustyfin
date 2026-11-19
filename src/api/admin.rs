@@ -93,6 +93,7 @@ pub fn router(config: Arc<AppConfig>, pool: DbPool, scan: ScanTrigger) -> Router
         .route("/admin/api/users/:id/password", post(users_password))
         .route("/admin/api/users/:id/policy", post(users_policy))
         .route("/admin/api/users/:id/playback", post(users_playback))
+        .route("/admin/api/quickconnect/authorize", post(super::quick_connect::autorizar_pelo_painel))
         .route("/admin/api/users/:id/rename", post(users_rename))
         .layer(from_fn_with_state(state.clone(), guard))
         .with_state(state)

@@ -472,6 +472,18 @@
     </div>
     <div id="usersWarn"></div>
     <div id="users" class="records grade"></div>
+    <details class="card" id="quickConnect">
+      <summary><strong>Entrar na TV com um código (Quick Connect)</strong></summary>
+      <p class="hint">No app da TV, escolha "Quick Connect" e digite aqui o código de seis dígitos que ele mostra. O código vale 10 minutos
+        e serve a um único login.</p>
+      <label for="qcCodigo">Código</label>
+      <input id="qcCodigo" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="123456">
+      <label for="qcUsuario">Entrar como</label>
+      <select id="qcUsuario"></select>
+      <div class="row">
+        <button class="btn primary" id="qcAutorizar" type="button">Autorizar</button>
+      </div>
+    </details>
   </section>
 
   <section id="tab-sessions" role="tabpanel" aria-label="Sessões" hidden>
@@ -1095,6 +1107,7 @@ async function loadUsers() {
   allLibs = libs;
   const root = $('users');
   root.replaceChildren();
+  $('qcUsuario').replaceChildren(...users.filter((u) => !u.isDisabled).map((u) => opcao(u.id, u.name)));
   const noPassAdmin = users.some((u) => u.isAdmin && !u.isDisabled && !u.hasPassword);
   $('usersWarn').replaceChildren(noPassAdmin ? el('div', { className: 'warnbox' }, icone('triangle-alert'),
     el('span', { textContent: 'Senha é opcional: sem ela, o painel e os apps ficam abertos a quem está na sua rede local. Se quiser, defina uma senha para um administrador (o painel passa a pedir login).' })) : '');
@@ -1161,6 +1174,13 @@ $('passSave').onclick = () => act(async () => {
   $('passDialog').close();
   await loadUsers();
 }, 'Senha atualizada.');
+
+$('qcAutorizar').onclick = () => act(async () => {
+  const code = $('qcCodigo').value.trim();
+  if (!/^\d{6}$/.test(code)) throw new Error('O código tem seis dígitos.');
+  await api('POST', '/admin/api/quickconnect/authorize', { code, userId: $('qcUsuario').value });
+  $('qcCodigo').value = '';
+}, 'Aparelho autorizado: ele entra em instantes.');
 
 let permUser = null;
 // Seleciona o valor; um código fora da lista (como pt-br) ganha uma opção própria.

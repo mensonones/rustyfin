@@ -128,6 +128,9 @@ pub fn is_public(path: &str) -> bool {
             | "/Users/Public"
             | "/Users/AuthenticateByName"
             | "/QuickConnect/Enabled"
+            | "/QuickConnect/Initiate"
+            | "/QuickConnect/Connect"
+            | "/Users/AuthenticateWithQuickConnect"
             | "/Branding/Configuration"
             | "/Branding/Css"
     ) || path.starts_with("/admin") // tem guarda própria (api/admin.rs)

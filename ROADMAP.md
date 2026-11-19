@@ -177,8 +177,9 @@ quem só quer assistir. Cada item é uma versão própria, com testes, documenta
 - [ ] Lembrar a última escolha de faixa por série.
 
 ### 3. Quick Connect
-- [ ] Entrar na TV por um código de seis dígitos autorizado por um aparelho já logado
-  (`/QuickConnect/Initiate`, `/Connect`, `/Authorize`), sem digitar senha com o controle remoto.
+- [x] Entrar na TV por um código de seis dígitos autorizado por um aparelho já logado
+  (`/QuickConnect/Initiate`, `/Connect`, `/Authorize` e `/Users/AuthenticateWithQuickConnect`), sem digitar senha com o
+  controle remoto. O painel também autoriza. Ainda falta confirmar a tela de Quick Connect no Moonfin.
 
 ### 4. Miniaturas ao avançar (trickplay)
 - [ ] Gerar quadros em grade com o ffmpeg, em segundo plano e com o servidor ocioso (como as versões preparadas), e expor

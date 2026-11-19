@@ -68,10 +68,6 @@ async fn handle_socket(mut socket: WebSocket) {
     }
 }
 
-pub async fn quick_connect_enabled() -> impl IntoResponse {
-    Json(false)
-}
-
 pub async fn branding_css() -> impl IntoResponse {
     ([(header::CONTENT_TYPE, "text/css")], "")
 }

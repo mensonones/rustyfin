@@ -4,6 +4,7 @@ pub mod avatars;
 pub mod compat;
 mod acervo_admin;
 mod preparos;
+mod quick_connect;
 mod segmentos;
 pub mod facets;
 pub mod images;
@@ -94,7 +95,14 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
         .route("/Sessions/Playing/Progress", post(playback::report_progress).with_state(pool.clone()))
         .route("/Sessions/Playing/Stopped", post(playback::report_stopped).with_state(pool.clone()))
         // 5b. Compatibilidade com clientes 10.9+
-        .route("/QuickConnect/Enabled", get(compat::quick_connect_enabled))
+        .route("/QuickConnect/Enabled", get(quick_connect::ativado).with_state(app_state_tuple.clone()))
+        .route("/QuickConnect/Initiate", post(quick_connect::iniciar).with_state(app_state_tuple.clone()))
+        .route("/QuickConnect/Connect", get(quick_connect::conectar).with_state(app_state_tuple.clone()))
+        .route("/QuickConnect/Authorize", post(quick_connect::autorizar).with_state(app_state_tuple.clone()))
+        .route(
+            "/Users/AuthenticateWithQuickConnect",
+            post(quick_connect::autenticar).with_state(app_state_tuple.clone()),
+        )
         .route("/socket", get(compat::socket))
         .route("/System/Configuration/encoding", get(compat::encoding_configuration))
         .route("/Items/:id/Ancestors", get(compat::empty_array))
@@ -152,6 +160,7 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
         .merge(admin::router(config.clone(), pool.clone(), scan))
         .layer(axum::Extension(reproducao_admin::Perfis::default()))
         .layer(axum::Extension(preparos::Preparos::default()))
+        .layer(axum::Extension(quick_connect::QuickConnect::default()))
         // Toda rota (exceto as públicas) exige token válido; o CORS fica por fora para o preflight passar
         .layer(from_fn_with_state(
             auth::AuthState { pool: pool.clone(), anonymous_images: config.anonymous_images },

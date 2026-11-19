@@ -50,6 +50,7 @@ Para as configurações que existem nos dois lugares, **o valor salvo no painel 
 |---|---|---|
 | `RUSTYFIN_ADMIN_PASSWORD` | vazio | Senha extra do painel (HTTP Basic, qualquer usuário). Útil antes de criar um administrador com senha |
 | `RUSTYFIN_TRUSTED_PROXIES` | vazio | IPs ou redes (separados por vírgula) dos proxies reversos em que o servidor confia para saber o IP real do cliente (`192.168.1.10` ou `172.28.0.10`, o IP exato do proxy, não a rede toda). Sem isso, requisições com `X-Forwarded-For` são tratadas como da internet. Veja [proxy reverso](proxy-reverso.md) |
+| `RUSTYFIN_QUICK_CONNECT` | `true` | `0` desliga o [Quick Connect](usuarios-e-seguranca.md#quick-connect) (entrar na TV por um código) |
 | `RUSTYFIN_IMAGENS_ANONIMAS` | `true` | Capas e fundos abertos sem token para clientes da rede local (necessário para o Moonfin na TV Samsung). `false` exige token nas imagens e as capas somem nos apps que não o enviam. Veja [usuários e segurança](usuarios-e-seguranca.md) |
 | `RUSTYFIN_TOKEN_TTL_DAYS` | `0` (nunca) | Dias sem uso para um dispositivo perder o login e voltar à tela de entrada |
 

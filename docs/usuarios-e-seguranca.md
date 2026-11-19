@@ -44,6 +44,7 @@ Para os apps funcionarem, algumas rotas são públicas:
 | Rota | Motivo |
 |---|---|
 | `GET /System/Info/Public`, `/System/Ping`, `/Branding/*`, `/QuickConnect/Enabled` | Descoberta e tela de conexão |
+| `POST /QuickConnect/Initiate`, `GET /QuickConnect/Connect`, `POST /Users/AuthenticateWithQuickConnect` | Quick Connect (veja abaixo) |
 | `GET /Users/Public`, `POST /Users/AuthenticateByName` | Tela de login |
 | Avatares de usuários (`/Users/{id}/Images/*`) | Os apps carregam os avatares na tela de login |
 | Capas e fundos (`/Items/{id}/Images/*`), só da rede local | Os apps que usam `<img>` não enviam token (veja abaixo) |
@@ -69,3 +70,16 @@ O log de requisições registra só o método e o caminho. Tokens e `api_key` da
 ## Reportar uma falha de segurança
 
 Abra uma *issue* no repositório sem detalhes que permitam explorar a falha e peça um contato privado.
+
+## Quick Connect
+
+Entrar num app (a TV, por exemplo) sem digitar usuário e senha com o controle remoto: o app mostra um **código de seis
+dígitos**, e você o autoriza num aparelho já logado (num app que tenha a tela de Quick Connect, como o app oficial do
+Jellyfin) ou no painel, em **Usuários → Entrar na TV com um código**. O app então recebe o login do usuário que autorizou.
+
+- O código **vale 10 minutos** e serve a **um único login**; os pedidos ficam só em memória (sumem ao reiniciar).
+- Pedir um código não exige login, mas **nada entra sem alguém autorizar**: sem a autorização, o segredo do app não troca por
+  token. Não digite um código que você não viu aparecer na sua própria TV.
+- Há limites: 5 pedidos pendentes por endereço e 100 no servidor todo.
+- Um administrador pode autorizar para outro usuário; os demais só para si.
+- Para desligar, `RUSTYFIN_QUICK_CONNECT=0`.
