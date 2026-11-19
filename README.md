@@ -53,8 +53,7 @@ sobe em segundos e usa **poucas dezenas de megabytes de memória**.
   plugin para instalar.
 - **GPU Intel e AMD sem dor de cabeça.** Um script liga o Quick Sync ou o VAAPI; se a GPU falhar, o servidor volta para o
   processador sozinho.
-- **Recursos que o Jellyfin não tem:** [busca de cenas](docs/reproducao.md#áudio-cenas-e-versões-preparadas) por fala,
-  [ajuste de legendas](docs/reproducao.md#corrigir-uma-faixa-srt) no painel e
+- **Recursos que o Jellyfin não tem:** [ajuste de legendas](docs/reproducao.md#corrigir-uma-faixa-srt) no painel e
   [revisão do acervo](docs/arquitetura.md#revisar-alterações-do-acervo) que preserva favoritos e progresso ao trocar a edição.
 - **Seus arquivos ficam intactos.** Monte as pastas em somente leitura e o servidor só lê.
 
@@ -155,16 +154,8 @@ O painel só é acessível pela rede local e pode exigir senha. Detalhes em
 ![Aba Acervo, com filtros de situação, busca e a lista de títulos](docs/assets/painel-acervo-capas.png)
 
 A aba **Acervo** lista todos os filmes e episódios que a varredura encontrou, com a capa de cada um, e mostra o que falta: metadados,
-capa, legenda, assinatura e cenas indexadas. Filtre por problema, busque por título ou caminho e rode as ações (indexar
-cenas e áudio, ajustar legenda) direto na linha. Serve para achar um nome mal entendido ou uma capa ausente sem abrir o app.
-
-## Busca de cenas
-
-![Busca de cenas com horários, falas encontradas e filtro de spoilers](docs/assets/busca-cenas.jpg)
-
-Lembra de uma fala, mas não do filme? Em `/cenas`, entre com o seu perfil e procure pelo trecho: o Rustyfin mostra o título
-e o minuto, e esconde o que você ainda não assistiu. Como indexar as legendas:
-[reprodução](docs/reproducao.md#áudio-cenas-e-versões-preparadas).
+capa, legenda e assinatura. Filtre por problema, busque por título ou caminho e rode as ações (indexar áudio, ajustar
+legenda) direto na linha. Serve para achar um nome mal entendido ou uma capa ausente sem abrir o app.
 
 ## Documentação
 

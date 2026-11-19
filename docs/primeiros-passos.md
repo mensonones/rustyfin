@@ -85,8 +85,7 @@ Abra **http://localhost:8096/admin** no navegador do PC.
 Os arquivos precisam de nomes razoáveis: `Filme (2020).mkv`, `Serie S01E02.mkv` ou `Serie/Season 1/...`. Veja todos os
 padrões em [configuração](configuracao.md#nomes-de-arquivo-e-pastas).
 
-**Dica:** atalhos do painel. `Ctrl K` abre a paleta de comandos (ir para uma aba, iniciar a varredura, abrir a busca de
-cenas) e o botão de sol e lua alterna entre tema claro e escuro.
+**Dica:** atalhos do painel. `Ctrl K` abre a paleta de comandos (ir para uma aba, iniciar a varredura) e o botão de sol e lua alterna entre tema claro e escuro.
 
 ## 5. Conecte o app
 
@@ -152,7 +151,7 @@ O esquema do banco é atualizado sozinho na subida. Confira a versão em `http:/
 
 ### Backup e restauração
 
-Tudo que o Rustyfin guarda (usuários, bibliotecas, progresso, favoritos, ajustes de legenda, cenas indexadas) está em
+Tudo que o Rustyfin guarda (usuários, bibliotecas, progresso, favoritos, ajustes de legenda) está em
 `./data`. Seus vídeos não são tocados. Para fazer backup com o servidor parado:
 
 ```bash

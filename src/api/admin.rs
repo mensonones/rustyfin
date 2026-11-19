@@ -64,7 +64,6 @@ pub fn router(config: Arc<AppConfig>, pool: DbPool, scan: ScanTrigger) -> Router
         .route("/admin/api/acervo/revisoes", get(listar_revisoes))
         .route("/admin/api/acervo/revisoes/:id/previa", post(prever_retomada))
         .route("/admin/api/acervo/revisoes/:id", post(resolver_revisao))
-        .route("/admin/api/cenas/:id", post(super::cenas::indexar))
         .route("/admin/api/acervo/audio/:id", post(indexar_audio))
         .route("/admin/api/preparos", get(super::preparos::listar))
         .route("/admin/api/preparos/:chave", post(super::preparos::iniciar))
@@ -534,7 +533,7 @@ async fn logo_dark() -> impl IntoResponse {
     ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=86400")], include_bytes!("../assets/icon-dark.png").as_slice())
 }
 
-/// Fontes do painel e da busca de cenas (Geist, licença OFL), embutidas no binário. Públicas e imutáveis.
+/// Fontes do painel (Geist, licença OFL), embutidas no binário. Públicas e imutáveis.
 pub async fn fonte_geist() -> impl IntoResponse {
     ([(header::CONTENT_TYPE, "font/woff2"), (header::CACHE_CONTROL, "public, max-age=31536000, immutable")], include_bytes!("../assets/fontes/geist-latin.woff2").as_slice())
 }
@@ -663,7 +662,7 @@ async fn status(State(st): State<AdminState>) -> Response {
     .await
     .unwrap_or((0,));
     let libs = libraries::list(&st.pool).await.map_or(0, |l| l.len());
-    // Arquivos cujo hash de conteúdo ainda é calculado em segundo plano: até lá, indexar áudio e cenas e ajustar legendas
+    // Arquivos cujo hash de conteúdo ainda é calculado em segundo plano: até lá, indexar áudio e ajustar legendas
     // respondem 409.
     let assinaturas_pendentes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE content_sha256 IS NULL")
         .fetch_one(&st.pool)

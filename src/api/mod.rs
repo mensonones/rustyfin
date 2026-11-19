@@ -3,7 +3,6 @@ pub mod auth;
 pub mod avatars;
 pub mod compat;
 mod acervo_admin;
-mod cenas;
 mod preparos;
 pub mod facets;
 pub mod images;
@@ -31,10 +30,8 @@ pub fn build_router(config: Arc<AppConfig>, pool: DbPool, scan: crate::library::
     let app_state_tuple = (config.clone(), pool.clone());
 
     Router::new()
-        .route("/cenas", get(cenas::pagina))
         .route("/assets/fontes/geist-latin.woff2", get(admin::fonte_geist))
         .route("/assets/fontes/geist-mono-latin.woff2", get(admin::fonte_geist_mono))
-        .route("/api/cenas", get(cenas::buscar).with_state(pool.clone()))
         // 1. System & Discovery
         .route("/System/Info/Public", get(system::get_system_info_public).with_state(config.clone()))
         .route("/System/Info", get(system::get_system_info).with_state(config.clone()))

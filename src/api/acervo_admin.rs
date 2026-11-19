@@ -1,5 +1,5 @@
 //! Aba **Acervo** do painel: lista os filmes e episódios com o estado de cada um (metadados, capa,
-//! legenda, assinatura e cenas), para achar o que a varredura entendeu errado ou deixou incompleto.
+//! legenda e assinatura), para achar o que a varredura entendeu errado ou deixou incompleto.
 
 use super::admin::AdminState;
 use crate::libraries;
@@ -21,8 +21,6 @@ const SQL_CAPA: &str =
     "(poster_path IS NOT NULL OR tmdb_poster IS NOT NULL OR series_poster_path IS NOT NULL)";
 const SQL_LEGENDA: &str =
     "(subtitle_path IS NOT NULL OR COALESCE(streams_json, '') LIKE '%\"Type\":\"Subtitle\"%')";
-const SQL_CENAS: &str =
-    "EXISTS (SELECT 1 FROM cenas_fontes c WHERE c.item_id = items.id)";
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -56,7 +54,6 @@ struct Linha {
     capa: i64,
     legenda: i64,
     assinatura: i64,
-    cenas: i64,
     analisado: i64,
 }
 
@@ -67,7 +64,6 @@ struct Selos {
     capa: bool,
     legenda: bool,
     assinatura: bool,
-    cenas: bool,
     analisado: bool,
 }
 
@@ -103,7 +99,6 @@ struct Resumo {
     sem_capa: i64,
     sem_legenda: i64,
     sem_assinatura: i64,
-    sem_cenas: i64,
     nao_analisados: i64,
 }
 
@@ -124,7 +119,6 @@ fn condicao_problema(problema: &str) -> Option<String> {
         "capa" => format!("NOT {SQL_CAPA}"),
         "legenda" => format!("NOT {SQL_LEGENDA}"),
         "assinatura" => "content_sha256 IS NULL".into(),
-        "cenas" => format!("NOT {SQL_CENAS}"),
         "analise" => "probed = 0".into(),
         _ => return None,
     })
@@ -179,7 +173,7 @@ pub(super) async fn listar(
          video_codec, audio_codec, width AS largura, height AS altura, \
          duration_ticks AS duracao_ticks, size_bytes AS tamanho, \
          (tmdb_id IS NOT NULL) AS metadados, {SQL_CAPA} AS capa, {SQL_LEGENDA} AS legenda, \
-         (content_sha256 IS NOT NULL) AS assinatura, {SQL_CENAS} AS cenas, probed AS analisado \
+         (content_sha256 IS NOT NULL) AS assinatura, probed AS analisado \
          FROM items WHERE {onde} \
          ORDER BY lower(COALESCE(series_name, name)), season_number, episode_number, lower(name), id \
          LIMIT {por_pagina} OFFSET {}",
@@ -199,7 +193,6 @@ pub(super) async fn listar(
          COALESCE(SUM(NOT {SQL_CAPA}), 0) AS sem_capa, \
          COALESCE(SUM(NOT {SQL_LEGENDA}), 0) AS sem_legenda, \
          COALESCE(SUM(content_sha256 IS NULL), 0) AS sem_assinatura, \
-         COALESCE(SUM(NOT {SQL_CENAS}), 0) AS sem_cenas, \
          COALESCE(SUM(probed = 0), 0) AS nao_analisados \
          FROM items WHERE media_type IN ('Movie', 'Episode')"
     ))
@@ -220,7 +213,6 @@ pub(super) async fn listar(
                 capa: l.capa != 0,
                 legenda: l.legenda != 0,
                 assinatura: l.assinatura != 0,
-                cenas: l.cenas != 0,
                 analisado: l.analisado != 0,
             },
             id: l.id,

@@ -72,23 +72,9 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn Error + Send 
             quadros BLOB NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS cenas_legenda (
-            item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-            faixa INTEGER NOT NULL,
-            inicio INTEGER NOT NULL,
-            fim INTEGER NOT NULL,
-            texto TEXT NOT NULL,
-            texto_busca TEXT NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_cenas_item ON cenas_legenda(item_id, faixa);
-
-        CREATE TABLE IF NOT EXISTS cenas_fontes (
-            item_id TEXT PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
-            hash BLOB NOT NULL,
-            caminho TEXT NOT NULL,
-            alterada INTEGER NOT NULL
-        );
+        -- A busca de cenas foi removida (0.29.0): o índice era derivado das legendas, então some junto com a feature.
+        DROP TABLE IF EXISTS cenas_legenda;
+        DROP TABLE IF EXISTS cenas_fontes;
 
         CREATE TABLE IF NOT EXISTS versoes_preparadas (
             chave TEXT PRIMARY KEY,
@@ -279,4 +265,33 @@ async fn add_column_if_missing(
             .await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn as_tabelas_da_busca_de_cenas_removida_somem_na_proxima_subida() {
+        let arquivo = std::env::temp_dir().join(format!("rustyfin-db-cenas-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&arquivo);
+        let url = format!("sqlite://{}?mode=rwc", arquivo.to_string_lossy().replace('\\', "/"));
+        let pool = init_db(&url).await.unwrap();
+        // Um banco de uma versão anterior ainda tem as tabelas, com dados.
+        sqlx::query("CREATE TABLE cenas_legenda (item_id TEXT, texto TEXT)").execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO cenas_legenda VALUES ('x', 'fala')").execute(&pool).await.unwrap();
+        sqlx::query("CREATE TABLE cenas_fontes (item_id TEXT)").execute(&pool).await.unwrap();
+        pool.close().await;
+
+        let pool = init_db(&url).await.unwrap();
+        let restam: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name IN ('cenas_legenda', 'cenas_fontes')",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(restam, 0);
+        pool.close().await;
+        let _ = std::fs::remove_file(&arquivo);
+    }
 }

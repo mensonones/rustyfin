@@ -446,46 +446,6 @@ async fn retomada_mapeia_3210_para_3255_e_protege_posicao_atualizada() {
 
 
 #[tokio::test]
-async fn busca_de_cenas_respeita_progresso_e_biblioteca() {
-    let s = server("cenas").await;
-    let pool = db::init_db(&test_config(&s.dir).database_url).await.unwrap();
-    sqlx::query(
-        "INSERT INTO items (id, name, path, media_type, content_sha256, library_id)
-         VALUES ('abc', 'Filme', '/media/filme.mkv', 'Movie', X'01', 'privada');
-         INSERT INTO cenas_fontes VALUES ('abc', X'01', '', 0);
-         INSERT INTO cenas_legenda VALUES ('abc', 1, 10000000, 20000000, 'Fala inicial', 'fala inicial'),
-                                        ('abc', 1, 30000000, 40000000, 'Fala final', 'fala final');",
-    ).execute(&pool).await.unwrap();
-    let rota = "/api/cenas?q=FALA";
-    let (status, _) = call(&s.app, Method::GET, rota, None, None).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-    let token = login(&s.app, "Admin").await;
-    let (_, antes) = call(&s.app, Method::GET, rota, Some(&token), None).await;
-    assert_eq!(antes, json!([]));
-    call(
-        &s.app, Method::POST, "/Sessions/Playing/Progress", Some(&token),
-        Some(json!({"ItemId": "abc", "PositionTicks": 35_000_000_i64})),
-    ).await;
-    let (_, cenas) = call(&s.app, Method::GET, rota, Some(&token), None).await;
-    assert_eq!(cenas.as_array().unwrap().len(), 1);
-    assert_eq!(cenas[0]["previa"], "Fala inicial");
-
-    let (_, usuario) = call(
-        &s.app, Method::POST, "/Users/New", Some(&token), Some(json!({"Name": "Visitante"})),
-    ).await;
-    let id = usuario["Id"].as_str().unwrap();
-    let (status, _) = call(
-        &s.app, Method::POST, &format!("/Users/{id}/Policy"), Some(&token),
-        Some(json!({"EnableAllFolders": false, "EnabledFolders": []})),
-    ).await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-    let visitante = login(&s.app, "Visitante").await;
-    let sem_filtro = format!("{rota}&spoilers=true");
-    let (_, cenas) = call(&s.app, Method::GET, &sem_filtro, Some(&visitante), None).await;
-    assert_eq!(cenas, json!([]));
-}
-
-#[tokio::test]
 async fn arquivo_movido_antes_do_hash_vai_para_a_revisao_em_vez_de_perder_o_historico() {
     let s = server("movido-antes-do-hash").await;
     let pool = db::init_db(&test_config(&s.dir).database_url).await.unwrap();
@@ -567,109 +527,26 @@ async fn item_com_legenda(pool: &db::DbPool, dir: &std::path::Path, id: &str, le
     (video, srt)
 }
 
-const LEGENDA_CENAS: &str = concat!(
+const LEGENDA_SRT: &str = concat!(
     "1\n00:00:10,000 --> 00:00:12,000\nO dragão acordou\n\n",
     "2\n00:30:00,000 --> 00:30:03,000\nEmpunhe a espada\n\n",
     "3\n01:00:00,000 --> 01:00:04,000\nO castelo caiu\n",
 );
 
 #[tokio::test]
-async fn indexar_cenas_le_o_srt_e_a_busca_acompanha_o_progresso() {
-    let s = server("cenas-indexacao").await;
-    let config = Arc::new(test_config(&s.dir));
-    let pool = db::init_db(&config.database_url).await.unwrap();
-    let id = "0123456789abcdef0123456789abcdef";
-    item_com_legenda(&pool, &s.dir, id, LEGENDA_CENAS).await;
-
-    let (status, indice) = call(&s.app, Method::POST, &format!("/admin/api/cenas/{id}"), None, None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(indice["trechos"], 3);
-
-    let token = login(&s.app, "Admin").await;
-    let busca = |q: &'static str, spoilers: bool| {
-        let uri = format!("/api/cenas?q={q}&spoilers={spoilers}");
-        let (app, token) = (s.app.clone(), token.clone());
-        async move { call(&app, Method::GET, &uri, Some(&token), None).await }
-    };
-    // Sem assistir nada, só quem libera os spoilers vê as falas.
-    let (_, escondida) = busca("espada", false).await;
-    assert_eq!(escondida.as_array().unwrap().len(), 0, "sem progresso nada é liberado");
-    let (_, com_spoiler) = busca("espada", true).await;
-    assert_eq!(com_spoiler.as_array().unwrap().len(), 1);
-    assert_eq!(com_spoiler[0]["previa"], "Empunhe a espada");
-    assert_eq!(com_spoiler[0]["inicioTicks"], 30 * 60 * 10_000_000_i64);
-    // A busca ignora maiúsculas.
-    let (_, maiuscula) = busca("ESPADA", true).await;
-    assert_eq!(maiuscula.as_array().unwrap().len(), 1);
-
-    // Assistido até os 40 min: a fala dos 30 min aparece, a dos 60 min não.
-    let (status, _) = call(
-        &s.app, Method::POST, "/Sessions/Playing/Progress", Some(&token),
-        Some(json!({ "ItemId": id, "PositionTicks": 40 * 60 * 10_000_000_i64 })),
-    ).await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-    assert_eq!(busca("espada", false).await.1.as_array().unwrap().len(), 1);
-    assert_eq!(busca("dragão", false).await.1.as_array().unwrap().len(), 1);
-    assert_eq!(busca("castelo", false).await.1.as_array().unwrap().len(), 0);
-
-    // Título marcado como assistido: todas as falas ficam disponíveis.
-    let (status, _) = call(&s.app, Method::POST, &format!("/UserPlayedItems/{id}"), Some(&token), None).await;
-    assert!(status.is_success());
-    assert_eq!(busca("castelo", false).await.1.as_array().unwrap().len(), 1);
-
-    // Termos muito curtos são recusados.
-    let (status, _) = call(&s.app, Method::GET, "/api/cenas?q=a", Some(&token), None).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    // E a busca exige login.
-    let (status, _) = call(&s.app, Method::GET, "/api/cenas?q=espada", None, None).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-}
-
-#[tokio::test]
-async fn reindexar_cenas_substitui_o_indice_e_legenda_alterada_nao_devolve_o_antigo() {
-    let s = server("cenas-reindexacao").await;
-    let config = Arc::new(test_config(&s.dir));
-    let pool = db::init_db(&config.database_url).await.unwrap();
-    let id = "fedcba9876543210fedcba9876543210";
-    let (_, srt) = item_com_legenda(&pool, &s.dir, id, LEGENDA_CENAS).await;
-    let (status, _) = call(&s.app, Method::POST, &format!("/admin/api/cenas/{id}"), None, None).await;
-    assert_eq!(status, StatusCode::OK);
-
-    let token = login(&s.app, "Admin").await;
-    let (_, visivel) = call(&s.app, Method::GET, "/api/cenas?q=espada&spoilers=true", Some(&token), None).await;
-    assert_eq!(visivel.as_array().unwrap().len(), 1);
-
-    // Trocar a legenda invalida o índice: a busca não devolve o texto antigo até reindexar.
-    std::fs::write(&srt, "1\n00:00:05,000 --> 00:00:06,000\nOutra fala\n").unwrap();
-    let depois = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
-    std::fs::OpenOptions::new().write(true).open(&srt).unwrap().set_modified(depois).unwrap();
-    let (_, velho) = call(&s.app, Method::GET, "/api/cenas?q=espada&spoilers=true", Some(&token), None).await;
-    assert_eq!(velho.as_array().unwrap().len(), 0, "legenda alterada não pode devolver o índice antigo");
-    let (status, reindexado) = call(&s.app, Method::POST, &format!("/admin/api/cenas/{id}"), None, None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(reindexado["trechos"], 1);
-    let (_, nova) = call(&s.app, Method::GET, "/api/cenas?q=outra&spoilers=true", Some(&token), None).await;
-    assert_eq!(nova.as_array().unwrap().len(), 1);
-    let (_, antiga) = call(&s.app, Method::GET, "/api/cenas?q=espada&spoilers=true", Some(&token), None).await;
-    assert_eq!(antiga.as_array().unwrap().len(), 0);
-}
-
-#[tokio::test]
-async fn indexar_cenas_e_audio_exigem_titulo_existente_e_com_assinatura() {
+async fn indexar_audio_exige_titulo_existente_e_com_assinatura() {
     let s = server("indices-erros").await;
     let config = Arc::new(test_config(&s.dir));
     let pool = db::init_db(&config.database_url).await.unwrap();
     // Título que não existe.
-    let (status, _) = call(&s.app, Method::POST, "/admin/api/cenas/00000000000000000000000000000000", None, None).await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
     let (status, _) = call(&s.app, Method::POST, "/admin/api/acervo/audio/00000000000000000000000000000000", None, None).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    // Título recém-varrido, sem o hash calculado: as duas ações esperam.
+    // Título recém-varrido, sem o hash calculado: a ação espera.
     let id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     let video = s.dir.join("novo.mp4");
     std::fs::write(&video, b"x").unwrap();
     let srt = s.dir.join("novo.srt");
-    std::fs::write(&srt, LEGENDA_CENAS).unwrap();
+    std::fs::write(&srt, LEGENDA_SRT).unwrap();
     sqlx::query("INSERT INTO items (id, name, path, media_type, subtitle_path, library_id) VALUES (?, 'Novo', ?, 'Movie', ?, 'lib1')")
         .bind(id)
         .bind(video.to_str().unwrap())
@@ -677,8 +554,6 @@ async fn indexar_cenas_e_audio_exigem_titulo_existente_e_com_assinatura() {
         .execute(&pool)
         .await
         .unwrap();
-    let (status, _) = call(&s.app, Method::POST, &format!("/admin/api/cenas/{id}"), None, None).await;
-    assert_eq!(status, StatusCode::CONFLICT);
     let (status, _) = call(&s.app, Method::POST, &format!("/admin/api/acervo/audio/{id}"), None, None).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
@@ -713,7 +588,7 @@ async fn aba_acervo_lista_com_selos_filtros_busca_e_paginacao() {
     let config = Arc::new(test_config(&s.dir));
     let pool = db::init_db(&config.database_url).await.unwrap();
     let id = "0123456789abcdef0123456789abcdef";
-    item_com_legenda(&pool, &s.dir, id, LEGENDA_CENAS).await;
+    item_com_legenda(&pool, &s.dir, id, LEGENDA_SRT).await;
     sqlx::query(
         "INSERT INTO items (id, name, path, media_type, series_name, season_number, episode_number, \
          library_id, probed) VALUES ('ep1', 'Piloto', '/x/serie/s01e01.mkv', 'Episode', 'Série X', 1, 1, 'lib2', 1)",
@@ -769,15 +644,10 @@ async fn aba_acervo_lista_com_selos_filtros_busca_e_paginacao() {
     let (_, por_caminho) = call(&s.app, Method::GET, "/admin/api/acervo?busca=lote/7", None, None).await;
     assert_eq!(por_caminho["total"], 1);
 
-    // Selos do título com legenda externa e assinatura, ainda sem cenas indexadas.
+    // Selos do título com legenda externa e assinatura.
     let (_, filme) = call(&s.app, Method::GET, &format!("/admin/api/acervo?busca={id}"), None, None).await;
     let selos = &filme["itens"][0]["selos"];
-    assert_eq!((selos["legenda"].clone(), selos["assinatura"].clone(), selos["cenas"].clone()),
-        (json!(true), json!(true), json!(false)));
-    let (_, indexado) = call(&s.app, Method::POST, &format!("/admin/api/cenas/{id}"), None, None).await;
-    assert_eq!(indexado["trechos"], 3);
-    let (_, filme) = call(&s.app, Method::GET, &format!("/admin/api/acervo?busca={id}"), None, None).await;
-    assert_eq!(filme["itens"][0]["selos"]["cenas"], true);
+    assert_eq!((selos["legenda"].clone(), selos["assinatura"].clone()), (json!(true), json!(true)));
 
     // A capa sai por uma rota do painel, sem token: usa a imagem local do título.
     let capa = s.dir.join("capa.jpg");
@@ -819,7 +689,7 @@ async fn capas_abrem_para_a_rede_local_sem_token_mas_nao_para_fora_nem_com_a_opc
     let config = Arc::new(test_config(&s.dir));
     let pool = db::init_db(&config.database_url).await.unwrap();
     let id = "0123456789abcdef0123456789abcdef";
-    item_com_legenda(&pool, &s.dir, id, LEGENDA_CENAS).await;
+    item_com_legenda(&pool, &s.dir, id, LEGENDA_SRT).await;
     let capa = s.dir.join("capa.jpg");
     std::fs::write(&capa, b"imagem-de-teste").unwrap();
     sqlx::query("UPDATE items SET poster_path = ? WHERE id = ?")
@@ -879,36 +749,6 @@ async fn desligar_so_aceita_o_proprio_computador() {
     assert_eq!(pedir("192.168.1.50").await, StatusCode::FORBIDDEN, "outro aparelho da rede local");
     assert_eq!(pedir("203.0.113.9").await, StatusCode::FORBIDDEN, "fora da rede local");
     assert_eq!(pedir("127.0.0.1").await, StatusCode::ACCEPTED, "o próprio computador");
-}
-
-#[tokio::test]
-async fn legendas_desatualizadas_nao_gastam_o_limite_da_busca_de_cenas() {
-    let s = server("cenas-limite").await;
-    let config = Arc::new(test_config(&s.dir));
-    let pool = db::init_db(&config.database_url).await.unwrap();
-    // O título A tem 100 falas com o termo, todas antes das do B na ordem da busca, mas a legenda dele muda depois de
-    // indexada. Antes, as 80 primeiras linhas eram todas do A, descartadas, e a busca devolvia zero resultados.
-    let (a, b) = ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
-    let mut legenda_a = String::new();
-    for n in 0..100 {
-        legenda_a.push_str(&format!("{}\n00:{:02}:00,000 --> 00:{:02}:02,000\nA espada {n}\n\n", n + 1, n % 60, n % 60));
-    }
-    let (_, srt_a) = item_com_legenda(&pool, &s.dir, a, &legenda_a).await;
-    item_com_legenda(&pool, &s.dir, b, "1\n02:00:00,000 --> 02:00:03,000\nA espada do outro titulo\n").await;
-    for id in [a, b] {
-        let (status, _) = call(&s.app, Method::POST, &format!("/admin/api/cenas/{id}"), None, None).await;
-        assert_eq!(status, StatusCode::OK);
-    }
-    let token = login(&s.app, "Admin").await;
-    let (_, antes) = call(&s.app, Method::GET, "/api/cenas?q=espada&spoilers=true", Some(&token), None).await;
-    assert_eq!(antes.as_array().unwrap().len(), 80, "com as duas legendas em dia o limite é de 80 falas");
-
-    tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-    std::fs::write(&srt_a, "1\n00:00:01,000 --> 00:00:02,000\nLegenda trocada\n").unwrap();
-    let (_, depois) = call(&s.app, Method::GET, "/api/cenas?q=espada&spoilers=true", Some(&token), None).await;
-    let depois = depois.as_array().unwrap();
-    assert_eq!(depois.len(), 1, "as falas do título desatualizado saem, e as do outro título continuam");
-    assert_eq!(depois[0]["previa"], "A espada do outro titulo");
 }
 
 #[tokio::test]

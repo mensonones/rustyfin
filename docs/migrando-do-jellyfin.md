@@ -32,10 +32,9 @@ lado** (veja abaixo).
 
 | Recurso | O que faz |
 |---|---|
-| **[Busca de cenas](reproducao.md#áudio-cenas-e-versões-preparadas)** | Pesquise uma fala nas legendas de toda a biblioteca e veja em que filme e minuto ela está, sem spoilers além do seu progresso |
 | **[Ajuste de legendas SRT](reproducao.md#corrigir-uma-faixa-srt)** | Corrija atraso fixo ou desvio progressivo de uma legenda direto no painel, sem editar o arquivo |
 | **[Revisão do acervo](arquitetura.md#revisar-alterações-do-acervo)** | Troquei um filme por outra edição: transfira favoritos, "assistido" e a posição de retomada para o arquivo novo, inclusive sugerindo pela trilha de áudio |
-| **[Versões preparadas](reproducao.md#áudio-cenas-e-versões-preparadas)** | O servidor recomenda converter para MP4 o que sempre cai em transcode, e faz isso quando está ocioso |
+| **[Versões preparadas](reproducao.md#áudio-e-versões-preparadas)** | O servidor recomenda converter para MP4 o que sempre cai em transcode, e faz isso quando está ocioso |
 | **[Diagnóstico antes do Play](reproducao.md)** | Compare o plano de reprodução (Direct Play, remux ou transcode) de dois aparelhos para um mesmo título |
 | **Painel `/admin`** | Tema claro e escuro, paleta de comandos (`Ctrl K`) e avisos só do que precisa de atenção |
 

@@ -123,8 +123,6 @@ pub(super) async fn salvar(
     )
     .bind(&id).bind(indice).bind(versao).bind(ajuste)
     .execute(&mut *tx).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    sqlx::query("DELETE FROM cenas_fontes WHERE item_id = ?")
-        .bind(&id).execute(&mut *tx).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     tx.commit().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -141,8 +139,6 @@ pub(super) async fn excluir(
         .execute(&mut *tx)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    sqlx::query("DELETE FROM cenas_fontes WHERE item_id = ?")
-        .bind(&id).execute(&mut *tx).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     tx.commit().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
 }

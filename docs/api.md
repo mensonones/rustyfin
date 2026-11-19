@@ -87,10 +87,9 @@ Usada por `/admin`. O painel abre em Bibliotecas, onde mostra a última varredur
 |---|---|
 | `GET /admin` | Página do painel; `/admin/favicon[-dark].png` e `/admin/logo[-dark].png` são os ícones (claro e escuro) |
 | `GET /admin/api/status` | Contagens, `ffmpeg`, TMDB, descoberta, último scan e `scan.signaturesPending` (arquivos cujo hash ainda é calculado em segundo plano) |
-| `GET /admin/api/acervo?busca=&biblioteca=&problema=&pagina=&porPagina=` | Filmes e episódios, 50 por página por padrão (`porPagina` de 10 a 200), com `selos` por título (metadados, capa, legenda, assinatura, cenas, analisado) e um `resumo` com as contagens do acervo inteiro. `busca` procura no título, na série e no caminho; `biblioteca` é o ID; `problema` é `metadados`, `capa`, `legenda`, `assinatura`, `cenas` ou `analise`. A busca, o filtro e a paginação rodam no servidor, nunca sobre dados já baixados. Valores inválidos respondem 400 e biblioteca inexistente, 404 |
+| `GET /admin/api/acervo?busca=&biblioteca=&problema=&pagina=&porPagina=` | Filmes e episódios, 50 por página por padrão (`porPagina` de 10 a 200), com `selos` por título (metadados, capa, legenda, assinatura, analisado) e um `resumo` com as contagens do acervo inteiro. `busca` procura no título, na série e no caminho; `biblioteca` é o ID; `problema` é `metadados`, `capa`, `legenda`, `assinatura` ou `analise`. A busca, o filtro e a paginação rodam no servidor, nunca sobre dados já baixados. Valores inválidos respondem 400 e biblioteca inexistente, 404 |
 | `GET /admin/api/acervo/{id}/capa` | Capa do título para as miniaturas do painel, sem token: imagem local, do TMDB ou um quadro do vídeo. Aceita `maxWidth`, `maxHeight` e `quality` |
 | `POST /admin/api/acervo/audio/{id}` | Indexa a primeira faixa de áudio para futuras revisões |
-| `POST /admin/api/cenas/{id}` | Indexa trechos das faixas SRT de um título |
 | `GET /admin/api/preparos` | Lista conversões MP4 sugeridas e estado do preparo |
 | `POST /admin/api/preparos/{chave}` | Solicita o preparo de uma versão recomendada |
 | `GET /admin/api/acervo/revisoes` | Até 30 revisões pendentes e seus destinos catalogados |
@@ -132,6 +131,4 @@ Para desvio progressivo, use `modo: "doisPontos"` e os campos `originalAMs`, `co
 `originalBMs` e `corrigidoBMs`. Se a origem mudar desde a consulta, a escrita retorna HTTP 409.
 
 
-`GET /api/cenas?q=termo` exige token e respeita as bibliotecas do perfil. Por padrão só retorna
-trechos concluídos no histórico do perfil. `spoilers=true` desativa apenas esse filtro.
 A prévia de retomada aceita `automatico: true` quando nenhum mapa manual é informado.

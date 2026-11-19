@@ -124,7 +124,6 @@ pub fn is_public(path: &str) -> bool {
     matches!(
         path,
         "/System/Info/Public"
-            | "/cenas"
             | "/System/Ping"
             | "/Users/Public"
             | "/Users/AuthenticateByName"
@@ -132,7 +131,7 @@ pub fn is_public(path: &str) -> bool {
             | "/Branding/Configuration"
             | "/Branding/Css"
     ) || path.starts_with("/admin") // tem guarda própria (api/admin.rs)
-        || path.starts_with("/assets/fontes/") // fontes do painel e da busca de cenas, estáticas
+        || path.starts_with("/assets/fontes/") // fontes do painel, estáticas
         || path.starts_with("/Library/VirtualFolders")
         || (path.starts_with("/Users/") && path.contains("/Images/")) // avatar: 404 em vez de 401
 }

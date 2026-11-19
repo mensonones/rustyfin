@@ -152,8 +152,7 @@ ou convites pela internet.
   Usar a posição equivalente só quando houver confiança suficiente na correspondência.
 - [x] **Preparar versões a partir das sessões.** Recomendar conversões MP4 progressivas que se repetem nos
   dispositivos locais, com orçamento de disco, pausa durante reprodução e originais preservados.
-- [x] **Busca local de cenas com proteção contra spoilers.** Indexar SRT com timestamps e
-  permitir que cada perfil filtre falas e prévias pelo ponto que já assistiu.
+- [x] ~~**Busca local de cenas com proteção contra spoilers.**~~ Removida na 0.29.0, para manter o foco na reprodução.
 
 ## 🧪 Como Testar com o Moonfin
 1. Execute o servidor Rustyfin em `http://127.0.0.1:8096`.
